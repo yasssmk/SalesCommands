@@ -472,7 +472,6 @@ function ObjectiveDetailView({
   const showOriginLink = Boolean(
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
-  const hasMetrics = Boolean(signal.success_criteria || signal.target_date || signal.notes);
 
   return (
     <>
@@ -565,19 +564,12 @@ function ObjectiveDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Metrics (one discreet line when empty). */}
+        {/* Section 3 — Metrics: the edit's « How is success measured? » — each
+            field ALWAYS shown, the edit's placeholder when empty (8i-1). */}
         <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
-        {hasMetrics ? (
-          <>
-            <ReadRow label="Success criteria" value={signal.success_criteria} />
-            <ReadRow label="Target date" value={formatDate(signal.target_date)} />
-            <ReadRow label="Notes" value={signal.notes} />
-          </>
-        ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
-            No metrics defined
-          </Typography>
-        )}
+        <ReadRow label="Success criteria" value={signal.success_criteria || placeholder("No success criteria")} />
+        <ReadRow label="Target date" value={formatDate(signal.target_date) || placeholder("No date set")} />
+        <ReadRow label="Notes" value={signal.notes || placeholder(SIGNAL_NO_NOTES)} />
 
         <Divider sx={{ my: 2 }} />
 
@@ -839,7 +831,7 @@ PainDetailView.propTypes = {
 //      separate Theme row (mirror of Pain / Objective).
 //   2. Scope     — Scope level + Department(s) (M2M). Impact has NO Category
 //      (shadow-override), NO Notes, NO Related tool (proven absent on Impact).
-//   3. Metrics   — impact_type + metric_text (masked when empty). human_impact
+//   3. Metrics   — impact_type + metric_text (placeholders when empty, 8i-1). human_impact
 //      is NOT rendered on this surface (PO decision). Rendered with the chassis
 //      ReadRow (NOT ImpactDetailBlock, which is the flush-branch block and keeps
 //      human_impact).
@@ -956,20 +948,16 @@ function ImpactDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Metrics: impact_type is OPTIONAL (S3-fix). When absent →
-            a single "No metric defined" line (no orphan metric row). When present
-            → impact_type + metric_text (masked if empty). */}
+        {/* Section 3 — Metrics: impact_type is OPTIONAL (S3-fix). */}
         <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
-        {signal.impact_type ? (
-          <>
-            <ReadRow label="Impact type" value={signal.impact_type_display} />
-            <ReadRow label="Impact description" value={signal.metric_text} />
-          </>
-        ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
-            No metric defined
-          </Typography>
-        )}
+        {/* 8i-1: both fields ALWAYS shown — the edit's « No impact type », the
+            detail's « No metric defined » for an empty description (a
+            description without a type no longer vanishes). */}
+        <ReadRow
+          label="Impact type"
+          value={(signal.impact_type && signal.impact_type_display) || placeholder("No impact type")}
+        />
+        <ReadRow label="Impact description" value={signal.metric_text || placeholder("No metric defined")} />
 
         <Divider sx={{ my: 2 }} />
 

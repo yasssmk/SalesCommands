@@ -95,3 +95,63 @@ describe("People detail — the edit's structure", () => {
     expect(sectionOf(container, screen.getByText("No contact attributed"))).toBe(1);
   });
 });
+
+// ==============================|| 8i-1 — EVERY DETAIL, THE EDIT'S STRUCTURE + PLACEHOLDERS ||============================== //
+// Extension of TD-276 (PO): the detail follows the edit — same sections, same
+// order — and an empty field reads the edit's placeholder, never vanishes.
+
+describe("The other details — the edit's sections (8i-1)", () => {
+  const base = { id: "x1", status: "PENDING", source_quote: "", source_context: { contacts: [] } };
+  it.each([
+    ["objective", { summary: "Cut reporting time", scope_level: "BUSINESS" }, ["Goal", "Scope", "Metrics", "Source"]],
+    ["impact", { summary: "Lose 2 days a month", scope_level: "BUSINESS" }, ["Diagnosis", "Scope", "Metrics", "Source"]],
+    ["blockers", { summary: "No budget" }, ["Summary", "Raised by", "Source"]],
+    ["tech-stack", { tech_name: "Salesforce" }, ["Technology", "Usage", "Lifecycle", "Notes", "Source"]],
+    ["competitors", { competitor_name: "Acme CRM", summary: "" }, ["Competitor", "Source"]],
+  ])("%s: the edit drawer's sections, in its order", (signalType, fields, expected) => {
+    const { container } = render(
+      <SignalDetailPanel signal={{ ...base, ...fields }} signalType={signalType} currentActivityId="act-1" />,
+    );
+    expect(titles(container)).toEqual(expected);
+  });
+});
+
+describe("Objective detail — §3 placeholders, as the edit (8i-1)", () => {
+  const OBJ = { id: "o1", status: "PENDING", summary: "Cut reporting time", scope_level: "BUSINESS",
+    success_criteria: "", target_date: null, notes: "", source_quote: "", source_context: { contacts: [] } };
+
+  it("only a target date: the date + « No success criteria » + « No notes », all in §3", () => {
+    const { container } = render(
+      <SignalDetailPanel signal={{ ...OBJ, target_date: "2026-12-31" }} signalType="objective" />,
+    );
+    expect(sectionOf(container, screen.getByText("No success criteria"))).toBe(3);
+    expect(sectionOf(container, screen.getByText("No notes"))).toBe(3);
+    expect(screen.getByText("Target date")).toBeInTheDocument();
+  });
+
+  it("all empty: the three placeholders (no single « No metrics defined » line)", () => {
+    const { container } = render(<SignalDetailPanel signal={OBJ} signalType="objective" />);
+    ["No success criteria", "No date set", "No notes"].forEach((t) =>
+      expect(sectionOf(container, screen.getByText(t))).toBe(3));
+    expect(screen.queryByText("No metrics defined")).toBeNull();
+  });
+});
+
+describe("Impact detail — §3 placeholders, as the edit (8i-1)", () => {
+  const IMP = { id: "i1", status: "PENDING", summary: "Lose 2 days a month", scope_level: "BUSINESS",
+    impact_type: "", impact_type_display: "", metric_text: "", source_quote: "", source_context: { contacts: [] } };
+
+  it("a description without type: the description stays + « No impact type »", () => {
+    const { container } = render(
+      <SignalDetailPanel signal={{ ...IMP, metric_text: "Two days lost every month" }} signalType="impact" />,
+    );
+    expect(sectionOf(container, screen.getByText("Two days lost every month"))).toBe(3);
+    expect(sectionOf(container, screen.getByText("No impact type"))).toBe(3);
+  });
+
+  it("both empty: « No impact type » + « No metric defined »", () => {
+    const { container } = render(<SignalDetailPanel signal={IMP} signalType="impact" />);
+    expect(sectionOf(container, screen.getByText("No impact type"))).toBe(3);
+    expect(sectionOf(container, screen.getByText("No metric defined"))).toBe(3);
+  });
+});

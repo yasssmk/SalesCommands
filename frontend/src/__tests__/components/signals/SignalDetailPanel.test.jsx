@@ -356,7 +356,7 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText(/impact:DATA:TIME/)).toBeInTheDocument();
   });
 
-  it("S3-fix: impact_type present — type + metric shown, metric masked when empty, human never shown", () => {
+  it("S3-fix / 8i-1: impact_type present — type shown, empty metric → « No metric defined », human never shown", () => {
     const bare = {
       ...MOCK_IMPACT_CHASSIS,
       id: "impact-bare",
@@ -367,18 +367,18 @@ describe("SignalDetailPanel", () => {
     };
     render(<SignalDetailPanel signal={bare} signalType="impact" />);
 
-    // impact_type present → its row shows; NOT the "No metric defined" line.
+    // impact_type present → its row shows.
     expect(screen.getByText("Impact type")).toBeInTheDocument();
     expect(screen.getByText("Time impact")).toBeInTheDocument();
-    expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
-    // metric_text masked when empty.
-    expect(screen.queryByText("Impact description")).not.toBeInTheDocument();
+    // 8i-1: an empty metric_text keeps its row, with the placeholder.
+    expect(screen.getByText("Impact description")).toBeInTheDocument();
+    expect(screen.getByText("No metric defined")).toBeInTheDocument();
     // human_impact is never rendered on the Activity chassis.
     expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
-  it("S3-fix (a/c): impact_type EMPTY → 'No metric defined', metric_text + human_impact ABSENT", () => {
+  it("S3-fix (a/c) / 8i-1: impact_type EMPTY → « No impact type », metric_text KEPT, human_impact ABSENT", () => {
     const noType = {
       ...MOCK_IMPACT_CHASSIS,
       id: "impact-no-type",
@@ -389,10 +389,10 @@ describe("SignalDetailPanel", () => {
     };
     render(<SignalDetailPanel signal={noType} signalType="impact" />);
 
-    expect(screen.getByText("No metric defined")).toBeInTheDocument();
-    // No orphan metric / human rows.
-    expect(screen.queryByText("Impact type")).not.toBeInTheDocument();
-    expect(screen.queryByText("5 hours per week")).not.toBeInTheDocument();
+    // 8i-1: the type row reads the edit's placeholder; the description stays.
+    expect(screen.getByText("Impact type")).toBeInTheDocument();
+    expect(screen.getByText("No impact type")).toBeInTheDocument();
+    expect(screen.getByText("5 hours per week")).toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
@@ -596,7 +596,7 @@ describe("SignalDetailPanel", () => {
     expect(rule).not.toContain("border-radius:4px");
   });
 
-  it("P-PLACEHOLDER: objective detail empties (No metrics / No source quote) read in text.secondary, not disabled", () => {
+  it("P-PLACEHOLDER: objective detail empties (No success criteria / No source quote) read in text.secondary, not disabled", () => {
     const bare = {
       ...MOCK_OBJECTIVE,
       id: "o-ph",
@@ -606,9 +606,9 @@ describe("SignalDetailPanel", () => {
       source_quote: "",
     };
     render(<SignalDetailPanel signal={bare} signalType="objective" />);
-    expect(getComputedStyle(screen.getByText("No metrics defined")).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(screen.getByText("No success criteria")).color).toBe(testTheme.palette.text.secondary);
     expect(getComputedStyle(screen.getByText("No source quote")).color).toBe(testTheme.palette.text.secondary);
-    expect(getComputedStyle(screen.getByText("No metrics defined")).color).not.toBe(testTheme.palette.text.disabled);
+    expect(getComputedStyle(screen.getByText("No success criteria")).color).not.toBe(testTheme.palette.text.disabled);
   });
 
   it("UI-9: the low action bar and the content box are rendered by ONE DrawerContentLayout (shared chassis, like the edit drawers)", () => {
@@ -638,12 +638,16 @@ describe("SignalDetailPanel", () => {
     expect(getComputedStyle(line).color).not.toBe(testTheme.palette.text.disabled);
   });
 
-  it("SIG-5e-fix3: empty Metrics renders a single 'No metrics defined' line", () => {
+  // 8i-1 (PO, TD-276 extension) replaces SIG-5e-fix3's single line: each
+  // Metrics field stays, with the edit's placeholder.
+  it("8i-1: empty Metrics keeps each field with the edit's placeholder", () => {
     const noMetrics = { ...MOCK_OBJECTIVE, id: "o-nm", success_criteria: "", target_date: "", notes: "" };
     render(<SignalDetailPanel signal={noMetrics} signalType="objective" />);
-    expect(screen.getByText("No metrics defined")).toBeInTheDocument();
-    expect(screen.queryByText("Success criteria")).not.toBeInTheDocument();
-    expect(screen.queryByText("Target date")).not.toBeInTheDocument();
+    expect(screen.queryByText("No metrics defined")).not.toBeInTheDocument();
+    expect(screen.getByText("Success criteria")).toBeInTheDocument();
+    expect(screen.getByText("No success criteria")).toBeInTheDocument();
+    expect(screen.getByText("Target date")).toBeInTheDocument();
+    expect(screen.getByText("No date set")).toBeInTheDocument();
   });
 
   it("SIG-5e: 'View origin activity' hidden when the origin IS the current activity", () => {
