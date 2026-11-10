@@ -14,8 +14,10 @@ Key tier rules applied here:
                         is already processing the same key.
     R4 (key strategy) : deterministic Idempotency-Key from frontend
                         (sha256 of activity_id + transcript).
-    R6 (DB dedup)     : layer-2 lookup on AIPipelineRun.input_hash,
-                        NOW filtered by pipeline_type (resolves TD-8).
+    R6 (one analysis) : a pipeline already analysed for the activity
+                        (a SUCCESS / PARTIAL run of that pipeline_type —
+                        services/analysis_state.py) is NEVER re-run,
+                        whatever the transcript (« Source / Notes » 1.6).
 ================================================================================
 
 Endpoint
@@ -50,17 +52,21 @@ Response shape (200 OK)
         }
     }
 
-Dedup strategy (resolves TD-8)
-------------------------------
-Each sub-pipeline is deduped INDEPENDENTLY by
-(client_id, source_activity, input_hash, pipeline_type, status).
-If one sub-pipeline has a prior successful run, its cached run metadata
-is returned (from_cache: true) and only the missing sub-pipeline is
-executed. If BOTH have prior runs, 409 ALREADY_EXTRACTED is returned
-with the cached payload of both.
+One analysis per pipeline (sprint « Source / Notes » 1.6 — PO, Q4)
+------------------------------------------------------------------
+Each sub-pipeline is checked INDEPENDENTLY against THE « analysed » rule
+(services/analysis_state.py: a SUCCESS or PARTIAL run of that
+pipeline_type on the activity), whatever the transcript posted:
+  * an analysed pipeline is SKIPPED — its cached run and signals are
+    returned (from_cache: true) — and the other requested one runs;
+  * when EVERYTHING requested is already analysed, the endpoint answers
+    the standard error: 400 { "error": AIPipelineErrorMessages.
+    ANALYSIS_ALREADY_DONE, "code": ANALYSIS_ALREADY_DONE_CODE } (shown as
+    INFORMATION by the front). It replaces the former 409
+    ALREADY_EXTRACTED.
+A failed run (PARSE_ERROR / LLM_ERROR / TIMEOUT) does not count.
 """
 
-import hashlib
 import uuid
 
 from rest_framework import status as http_status
@@ -77,9 +83,8 @@ from core.idempotency import (
 )
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import ctx_from_request, get_logger
+from core.error_messages import AIPipelineErrorMessages
 from core.timeout_conventions import (
-    AI_PIPELINE_BACKEND_DB_DEDUP_REQUIRED,
-    AI_PIPELINE_DEDUP_RUN_STATUSES,
     AI_PIPELINE_TIER,
     IDEMPOTENCY_REDIS_TTL_SECONDS,
     POLLING_ENDPOINT_PATTERN,
@@ -115,8 +120,8 @@ from app_modules.signals.serializers.next_step_serializer import (
     NextStepSignalDetailSerializer,
 )
 
-from ..constants import AIPipelineType
-from ..models import AIPipelineRun
+from ..constants import ANALYSIS_ALREADY_DONE_CODE, AIPipelineType
+from ..services.analysis_state import analysed_run_of
 from ..pipelines.transcript_signals import QualificationSignalsPipeline
 from ..pipelines.next_steps import NextStepsPipeline
 from ..serializers.transcript_signals_serializer import (
@@ -242,35 +247,26 @@ class ActivityExtractionView(BaseAPIView):
         )
 
         # -----------------------------------------------------------------
-        # 3. Layer 2 — per-pipeline DB dedup
+        # 3. One analysis per pipeline (« Source / Notes » 1.6) — THE
+        #    « analysed » rule, whatever the transcript: an analysed
+        #    pipeline is skipped (served from its run), never re-run.
         # -----------------------------------------------------------------
-        input_hash = self._compute_transcript_hash(transcript)
+        qualif_cached_run = (
+            analysed_run_of(activity, client_id, AIPipelineType.TRANSCRIPT_SIGNALS)
+            if want_qualif else None
+        )
+        nextsteps_cached_run = (
+            analysed_run_of(activity, client_id, AIPipelineType.NEXT_STEPS)
+            if want_nextsteps else None
+        )
 
-        qualif_cached_run = None
-        nextsteps_cached_run = None
-
-        if AI_PIPELINE_BACKEND_DB_DEDUP_REQUIRED:
-            if want_qualif:
-                qualif_cached_run = self._find_existing_run(
-                    client_id=client_id,
-                    activity=activity,
-                    input_hash=input_hash,
-                    pipeline_type=AIPipelineType.TRANSCRIPT_SIGNALS,
-                )
-            if want_nextsteps:
-                nextsteps_cached_run = self._find_existing_run(
-                    client_id=client_id,
-                    activity=activity,
-                    input_hash=input_hash,
-                    pipeline_type=AIPipelineType.NEXT_STEPS,
-                )
-
-        # Both requested pipelines cached → 409 ALREADY_EXTRACTED
+        # Everything requested already analysed → the standard refusal
+        # (400, centralised message + code, shown as INFO by the front).
         qualif_resolved = (not want_qualif) or (qualif_cached_run is not None)
         nextsteps_resolved = (not want_nextsteps) or (nextsteps_cached_run is not None)
         if qualif_resolved and nextsteps_resolved and (qualif_cached_run or nextsteps_cached_run):
             logger.info(
-                'activity_extraction.both_cached',
+                'activity_extraction.already_analysed',
                 extra={
                     **log_ctx_idemp,
                     # A pipeline not requested (or skipped by the DC-only
@@ -283,16 +279,17 @@ class ActivityExtractionView(BaseAPIView):
                     ),
                 },
             )
-            body = self._build_cached_body(
-                qualif_run=qualif_cached_run,
-                nextsteps_run=nextsteps_cached_run,
-                request=request,
-            )
+            # Through the idempotency bookkeeping (complete_op), as any
+            # final answer of this endpoint: a replay of the same key gets
+            # the same refusal.
             return self._complete_and_respond(
                 client_id_str=client_id_str,
                 key=idempotency_key,
-                body=body,
-                response_status=http_status.HTTP_409_CONFLICT,
+                body={
+                    'error': str(AIPipelineErrorMessages.ANALYSIS_ALREADY_DONE),
+                    'code':  ANALYSIS_ALREADY_DONE_CODE,
+                },
+                response_status=http_status.HTTP_400_BAD_REQUEST,
                 log_ctx=log_ctx_idemp,
             )
 
@@ -393,31 +390,6 @@ class ActivityExtractionView(BaseAPIView):
         )
 
     # =========================================================================
-    # DB DEDUP (per-pipeline — resolves TD-8)
-    # =========================================================================
-
-    @staticmethod
-    def _find_existing_run(*, client_id, activity, input_hash, pipeline_type):
-        """
-        Layer 2 dedup: look up a prior successful AIPipelineRun for a
-        specific (activity, transcript, pipeline_type) combination.
-
-        Now filters by pipeline_type — resolves TD-8.
-        """
-        return (
-            AIPipelineRun.objects
-            .filter(
-                client_id=client_id,
-                source_activity=activity,
-                input_hash=input_hash,
-                pipeline_type=pipeline_type,
-                status__in=AI_PIPELINE_DEDUP_RUN_STATUSES,
-            )
-            .order_by('-created_at')
-            .first()
-        )
-
-    # =========================================================================
     # STATUS HELPERS
     # =========================================================================
 
@@ -492,49 +464,6 @@ class ActivityExtractionView(BaseAPIView):
         }
 
         return {'success': True, 'data': data}
-
-    def _build_cached_body(self, *, qualif_run, nextsteps_run, request):
-        """
-        Build 409 response body when every requested pipeline is already
-        extracted. A pipeline that was not requested (or skipped by the
-        DC-only guard) has no run: its run is null and its signals empty,
-        same shape as _build_response_body.
-
-        Note on cache replay scope (TD-11): the serialized signals are
-        ALL signals matching source_activity, not only those produced by
-        these specific runs. Signals created manually or by prior runs
-        on different transcripts will appear here. Acceptable for MVP;
-        to be resolved when adding source_run FK tracking to signals.
-        """
-        ser_ctx = {'request': request}
-        return {
-            'success': False,
-            'error': (
-                'Both qualification signals and next steps have already '
-                'been extracted for this transcript. Existing signals are '
-                'available in the Signals and Next Steps tabs.'
-            ),
-            'code': 'ALREADY_EXTRACTED',
-            'data': {
-                'status':                'SUCCESS',
-                'qualification_run':     (
-                    self._serialize_run(qualif_run, from_cache=True)
-                    if qualif_run is not None else None
-                ),
-                'next_steps_run':        (
-                    self._serialize_run(nextsteps_run, from_cache=True)
-                    if nextsteps_run is not None else None
-                ),
-                'qualification_signals': (
-                    self._serialize_cached_qualif_signals(qualif_run, ser_ctx)
-                    if qualif_run is not None else self._empty_qualif_signals()
-                ),
-                'next_step_signals':     (
-                    self._serialize_cached_nextstep_signals(nextsteps_run, ser_ctx)
-                    if nextsteps_run is not None else []
-                ),
-            },
-        }
 
     # =========================================================================
     # SERIALIZATION HELPERS
@@ -779,7 +708,3 @@ class ActivityExtractionView(BaseAPIView):
                 'activity_extraction.fail_op_failed',
                 extra=log_ctx,
             )
-
-    @staticmethod
-    def _compute_transcript_hash(transcript):
-        return hashlib.sha256(transcript.encode('utf-8')).hexdigest()

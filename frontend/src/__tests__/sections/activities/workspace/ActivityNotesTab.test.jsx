@@ -149,6 +149,23 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByText('LLM provider error')).toBeInTheDocument();
   });
 
+  // « Source / Notes » 1.6 — « already analysed » is a business rule: the
+  // server's refusal is shown as INFORMATION (InfoNotice), never as a red
+  // error, and offers no « Try again » (an analysis is never re-run).
+  it('shows the « already analysed » refusal as information, not an error', () => {
+    renderTab({
+      pipelineRunner: makePipelineRunner({
+        state: PIPELINE_STATE.INFO,
+        error: 'This activity has already been analysed.',
+      }),
+    });
+
+    const notice = screen.getByTestId('analysis-already-done-notice');
+    expect(notice).toHaveTextContent('This activity has already been analysed.');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Try again')).toBeNull();
+  });
+
   it('shows success result alert after pipeline success', () => {
     renderTab({
       pipelineRunner: makePipelineRunner({

@@ -7,6 +7,11 @@ the 7 signal types bare: every detail serializer field (provenance, audit
 users, per-type FKs) then cost one query per signal. The replay now reuses
 each type ViewSet's queryset (the aggregated view's pattern): the query count
 no longer grows with the number of cached signals.
+
+« Source / Notes » 1.6 — the 409 replay is gone (everything already analysed
+is now the standard refusal); the cached qualification signals are served on
+the MIXED path: qualification already analysed (skipped, from its run) while
+the next steps run. That is where the property is measured now.
 Builders reused from tests/signals/test_aggregated_signals_endpoint.py.
 """
 
@@ -63,16 +68,29 @@ def _cached_signals(activity, user, run, per_type):
             type(signal).objects.filter(pk=signal.pk).update(source_run=run)
 
 
+# The next steps answer no suggestion: their run costs the same each time.
+EMPTY_NEXT_STEPS = '{"signals": []}'
+
+
 def _replay(api, activity):
+    """Qualification served from its run, next steps run (the mixed path)."""
+    from app_modules.ai_pipelines.models import AIPipelineRun
+    AIPipelineRun.objects.filter(source_activity=activity,
+                                 pipeline_type=AIPipelineType.NEXT_STEPS).delete()
     with CaptureQueriesContext(connection) as ctx:
-        r = api.post(URL, {'activity_id': str(activity.id), 'transcript': TRANSCRIPT,
-                           'run_next_steps': False}, format='json')
-    assert r.status_code == 409, r.content
-    signals = r.json()['data']['qualification_signals']
+        r = api.post(URL, {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
+                     format='json')
+    assert r.status_code == 200, r.content
+    data = r.json()['data']
+    assert data['qualification_run']['from_cache'] is True
+    signals = data['qualification_signals']
     return len(ctx.captured_queries), sum(len(v) for v in signals.values())
 
 
-def test_the_cached_replay_has_no_n_plus_one(authed_api_a, account, user_a):
+def test_the_cached_replay_has_no_n_plus_one(
+    authed_api_a, account, user_a, patch_active_provider, fake_provider,
+):
+    fake_provider.replies = {'next_steps': EMPTY_NEXT_STEPS}
     activity = _activity_in_cycle(account, user_a)
     run = _qualification_run(activity, user_a)
     _cached_signals(activity, user_a, run, 1)

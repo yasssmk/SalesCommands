@@ -278,3 +278,15 @@ class PeopleEvidenceStatus(models.TextChoices):
     OK                     = 'ok',                     _('Ok')
     QUOTE_NOT_FOUND        = 'quote_not_found',        _('Quote not found')
     QUOTE_NOT_ABOUT_PERSON = 'quote_not_about_person', _('Quote not about the person')
+
+
+# ============================================================================
+# ONE ANALYSIS PER PIPELINE (sprint « Source / Notes », 1.6 — PO, Q4)
+# ============================================================================
+# The machine code of the standard refusal returned by the extraction
+# endpoint when EVERYTHING requested is already analysed (a SUCCESS or
+# PARTIAL run of each requested pipeline — services/analysis_state.py). The
+# front reads it to display the refusal as INFORMATION, not as an error
+# (frontend api/aiPipelines/activityExtraction.js). It replaces the former
+# 409 ALREADY_EXTRACTED.
+ANALYSIS_ALREADY_DONE_CODE = 'ANALYSIS_ALREADY_DONE'

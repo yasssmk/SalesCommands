@@ -686,6 +686,12 @@ class AIPipelineErrorMessages:
         "At least one pipeline must be selected "
         "(run_qualification or run_next_steps)."
     )
+    # One analysis per pipeline (sprint « Source / Notes » 1.6, Q4) —
+    # ai_pipelines/services/analysis_state.py. Business rule, shown as INFO.
+    ANALYSIS_ALREADY_DONE = _(
+        "This activity has already been analysed: its signals and next steps "
+        "are on the page. An analysis is never re-run."
+    )
 
     # -----------------------------------------------------------------
     # Provider errors

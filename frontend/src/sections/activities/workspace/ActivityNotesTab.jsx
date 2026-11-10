@@ -170,6 +170,14 @@ export default function ActivityNotesTab({
         {/* Failed/stuck run banner */}
         {renderLatestRunBanner()}
 
+        {/* Already analysed (« Source / Notes » 1.6): the server's refusal is
+            a business rule — INFORMATION (the shared InfoNotice, as the
+            transcript-analysed notice above), never a red error, no
+            « Try again » (an analysis is never re-run). */}
+        {pipelineState === PIPELINE_STATE.INFO && pipelineError && (
+          <InfoNotice data-testid="analysis-already-done-notice">{pipelineError}</InfoNotice>
+        )}
+
         {/* Extraction error */}
         {pipelineState === PIPELINE_STATE.ERROR && pipelineError && (
           <Alert
