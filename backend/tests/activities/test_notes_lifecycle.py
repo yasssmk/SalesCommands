@@ -211,3 +211,44 @@ def test_the_closure_methods_take_no_note():
     from app_modules.activities.models import Activity
     assert 'notes' not in inspect.signature(Activity.complete).parameters
     assert 'notes' not in inspect.signature(Activity.cancel).parameters
+
+
+# =============================================================================
+# 1.3 — reopening keeps the note (PO): POST /reopen/ and a PATCH of status
+# COMPLETED → other no longer clear the activity's notes; the outcome and
+# completed_at are still cleared (a reopened activity has no result).
+# =============================================================================
+
+def _closed(account, user, activity_status, outcome=None):
+    from django.utils import timezone
+    from app_modules.activities.models import Activity
+    activity = _with_note(_activity(account, user, activity_status))
+    Activity.objects.filter(id=activity.id).update(outcome=outcome, completed_at=timezone.now())
+    activity.refresh_from_db()
+    return activity
+
+
+@pytest.mark.parametrize('activity_status, outcome', [
+    (ActivityStatus.COMPLETED, 'SUCCESSFUL'),
+    (ActivityStatus.CANCELLED, None),
+])
+def test_reopen_keeps_the_note(authed_api_a, account, user_a, activity_status, outcome):
+    activity = _closed(account, user_a, activity_status, outcome)
+    r = authed_api_a.post(f'{URL}{activity.id}/reopen/', {}, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    activity.refresh_from_db()
+    assert activity.status == ActivityStatus.PLANNED
+    assert activity.outcome is None
+    assert activity.completed_at is None
+    assert activity.outcome_notes == NOTE
+
+
+def test_a_status_patch_out_of_completed_keeps_the_note(authed_api_a, account, user_a):
+    activity = _closed(account, user_a, ActivityStatus.COMPLETED, 'SUCCESSFUL')
+    r = _patch(authed_api_a, activity, status=ActivityStatus.PLANNED)
+    assert r.status_code == status.HTTP_200_OK, r.content
+    activity.refresh_from_db()
+    assert activity.status == ActivityStatus.PLANNED
+    assert activity.outcome is None
+    assert activity.completed_at is None
+    assert activity.outcome_notes == NOTE

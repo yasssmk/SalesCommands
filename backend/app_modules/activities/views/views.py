@@ -831,7 +831,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         POST /activities/{id}/reopen/
         
         Behavior:
-            - Clears outcome, outcome_notes, and completed_at
+            - Clears outcome and completed_at; KEEPS the notes (outcome_notes)
             - Sets status back to PLANNED
             - Only works on COMPLETED or CANCELLED activities
         """
@@ -863,10 +863,11 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         old_status = activity.status
         
-        # Clear outcome fields and reopen as PLANNED
+        # Clear the result and reopen as PLANNED. The activity's notes
+        # (outcome_notes) are KEPT: filled throughout the lifecycle, never
+        # cleared (sprint « Source / Notes »).
         activity.status = ActivityStatus.PLANNED
         activity.outcome = None
-        activity.outcome_notes = None
         activity.completed_at = None
         
         activity.save(user=request.user)

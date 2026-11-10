@@ -1238,7 +1238,8 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     Business Rules:
         - contacts cannot be empty (at least 1 required)
         - outcome is only valid when status=COMPLETED
-        - reopening (from COMPLETED to other status) clears outcome
+        - reopening (from COMPLETED to other status) clears the outcome and
+          completed_at, never the notes (outcome_notes)
     """
 
     owner_id = serializers.UUIDField(write_only=True, required=False)
@@ -1343,10 +1344,11 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             current_status = instance.status
             
             if new_status and new_status != current_status:
-                # Rule: If reopening (from COMPLETED to non-COMPLETED), clear outcome
+                # Rule: If reopening (from COMPLETED to non-COMPLETED), clear
+                # the result (outcome, completed_at). The notes (outcome_notes)
+                # are KEPT — filled throughout the lifecycle (« Source / Notes »).
                 if current_status == ActivityStatus.COMPLETED and new_status != ActivityStatus.COMPLETED:
                     attrs['outcome'] = None
-                    attrs['outcome_notes'] = None
                     attrs['completed_at'] = None
                 
                 # Rule: If completing, set completed_at
