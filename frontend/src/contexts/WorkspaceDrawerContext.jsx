@@ -20,7 +20,9 @@
 // ConfirmDialog): « Keep editing » keeps the content, « Discard » applies the
 // action. While ANY source is modified (drawer or page), beforeunload is
 // prevented (reload / tab close). A route change cannot be blocked here (the
-// pathname effect runs after the navigation): see 2.3.
+// pathname effect runs after the navigation): the internal LINKS are
+// intercepted before it by components/drawer/UnsavedLinkGuard (2.3), through
+// guardUnsaved (scope: any source).
 
 "use client";
 
@@ -54,6 +56,7 @@ const WorkspaceDrawerContext = createContext({
   registerUnsaved: () => {},
   releaseUnsaved: () => {},
   hasUnsaved: () => false,
+  guardUnsaved: (apply) => apply(),
   pendingDiscard: null,
   confirmDiscard: () => {},
   cancelDiscard: () => {},
@@ -96,17 +99,25 @@ export function WorkspaceDrawerProvider({ children }) {
   );
 
   // The action waiting for « Discard » (null = no confirmation shown):
-  // { apply, keep } — `keep` runs on « Keep editing » (e.g. re-fold the menu).
+  // { apply, keep, scope } — `keep` runs on « Keep editing » (e.g. re-fold
+  // the menu); `scope` = the sources the action discards (none = all).
   const [pendingDiscard, setPendingDiscard] = useState(null);
-  const guard = useCallback(
-    (apply, keep) => {
-      if (hasUnsaved(UNSAVED_SCOPE.DRAWER)) {
-        setPendingDiscard({ apply, keep: keep ?? null });
+  // THE guard: `apply` runs at once when no source of `scope` is modified
+  // (no scope = any source), else after « Discard ».
+  const guardUnsaved = useCallback(
+    (apply, { scope, keep } = {}) => {
+      if (hasUnsaved(scope)) {
+        setPendingDiscard({ apply, keep: keep ?? null, scope });
         return;
       }
       apply();
     },
     [hasUnsaved],
+  );
+  // The drawer's own actions only guard the drawer's sources.
+  const guard = useCallback(
+    (apply, keep) => guardUnsaved(apply, { scope: UNSAVED_SCOPE.DRAWER, keep }),
+    [guardUnsaved],
   );
 
   const resetContent = useCallback(() => {
@@ -139,10 +150,11 @@ export function WorkspaceDrawerProvider({ children }) {
   const confirmDiscard = useCallback(() => {
     const pending = pendingDiscard;
     setPendingDiscard(null);
-    // The discarded content's sources go with it (it unmounts) — clear the
-    // drawer scope now so the applied action is not intercepted again.
+    // The discarded sources go with the action (they unmount) — clear them
+    // now so the applied action is not intercepted again (beforeunload
+    // included).
     for (const [id, scope] of unsavedRef.current) {
-      if (scope === UNSAVED_SCOPE.DRAWER) unsavedRef.current.delete(id);
+      if (!pending?.scope || scope === pending.scope) unsavedRef.current.delete(id);
     }
     pending?.apply();
   }, [pendingDiscard]);
@@ -197,11 +209,13 @@ export function WorkspaceDrawerProvider({ children }) {
   const value = useMemo(
     () => ({
       isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer,
-      registerUnsaved, releaseUnsaved, hasUnsaved, pendingDiscard, confirmDiscard, cancelDiscard,
+      registerUnsaved, releaseUnsaved, hasUnsaved, guardUnsaved,
+      pendingDiscard, confirmDiscard, cancelDiscard,
     }),
     [
       isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer,
-      registerUnsaved, releaseUnsaved, hasUnsaved, pendingDiscard, confirmDiscard, cancelDiscard,
+      registerUnsaved, releaseUnsaved, hasUnsaved, guardUnsaved,
+      pendingDiscard, confirmDiscard, cancelDiscard,
     ],
   );
 
