@@ -137,8 +137,12 @@ describe("ActivityHeader ⋮ — adaptive by status", () => {
     renderHarness(base);
     await userEvent.click(screen.getByRole("button"));
     await userEvent.click(screen.getByText("Cancel"));
-    // a light confirmation dialog appears with a confirm action
+    // a light confirmation dialog appears with a confirm action — THE shared
+    // ConfirmDialog (« Source / Notes » 2.1, TD-120), its labels unchanged
     const confirm = await screen.findByTestId("confirm-cancel-activity");
+    expect(screen.getByTestId("confirm-dialog")).toHaveTextContent("Cancel this activity?");
+    expect(screen.getByRole("button", { name: "Keep" })).toBeInTheDocument();
+    expect(confirm).toHaveTextContent("Cancel activity");
     // « Source / Notes » 1.5 — a SIMPLE confirmation: no cancellation reason.
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.queryByLabelText(/reason/i)).toBeNull();

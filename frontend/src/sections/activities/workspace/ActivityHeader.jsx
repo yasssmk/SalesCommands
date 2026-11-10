@@ -21,10 +21,6 @@ import { useRouter } from "next/navigation";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Avatar from "@mui/material/Avatar";
-import Button from "@mui/material/Button";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import Menu from "@mui/material/Menu";
@@ -44,6 +40,7 @@ import {
 
 // Primitives
 import StatusPill from "components/chips/StatusPill";
+import ConfirmDialog from "components/dialogs/ConfirmDialog";
 import OutcomeChip from "components/outcomes/OutcomeChip";
 import { OUTCOME_META } from "utils/outcomes";
 // Shared clickable-text affordance (neutral bold at rest, primary + underline on
@@ -664,18 +661,18 @@ export default function useActivityHeaderProps({
         }}
       />
 
-      {/* Cancel confirmation — a simple one (no reason, « Source / Notes » 1.5). */}
-      <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>Cancel this activity?</DialogTitle>
-        <DialogActions>
-          <Button color="inherit" onClick={() => setCancelDialogOpen(false)}>
-            Keep
-          </Button>
-          <Button color="error" data-testid="confirm-cancel-activity" onClick={handleCancelConfirm}>
-            Cancel activity
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Cancel confirmation — a simple one (no reason, « Source / Notes » 1.5),
+          through THE shared ConfirmDialog (2.1, TD-120). */}
+      <ConfirmDialog
+        open={cancelDialogOpen}
+        title="Cancel this activity?"
+        cancelLabel="Keep"
+        confirmLabel="Cancel activity"
+        confirmColor="error"
+        confirmTestId="confirm-cancel-activity"
+        onCancel={() => setCancelDialogOpen(false)}
+        onConfirm={handleCancelConfirm}
+      />
     </>
   );
 
