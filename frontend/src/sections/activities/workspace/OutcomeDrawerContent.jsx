@@ -8,9 +8,11 @@
 //   - outcome pills filtered by activity type (OutcomeSelector). On a DEAL
 //     activity, CALLBACK_REQUESTED is hidden (callback is a campaign mechanic and
 //     the standalone complete ignores callback_date backend-side).
-//   - an optional note (outcome_notes).
 //   - for CAMPAIGN activities, choosing CALLBACK_REQUESTED reveals a REQUIRED
 //     callback DatePicker (a callback with no date is a backend no-op).
+//
+// No note at closure (« Source / Notes » 1.5, PO): the activity's notes are
+// filled throughout its lifecycle in the Source band, never here.
 //
 // Save "Complete" posts /complete/ via completeActivity (the backend branches on
 // campaign_id); a campaign completion also revalidates the playlist. Draft-only
@@ -24,9 +26,7 @@ import dayjs from "dayjs";
 
 // MUI
 import Box from "@mui/material/Box";
-import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
@@ -51,7 +51,6 @@ export default function OutcomeDrawerContent({ activity, onSaved }) {
   const isCampaign = Boolean(activity?.campaign_detail);
 
   const [outcome, setOutcome] = useState(null);
-  const [notes, setNotes] = useState("");
   const [callbackDate, setCallbackDate] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -63,7 +62,7 @@ export default function OutcomeDrawerContent({ activity, onSaved }) {
   const handleSave = async () => {
     if (saveDisabled) return;
     setSubmitting(true);
-    const payload = { outcome, outcome_notes: notes?.trim() || undefined };
+    const payload = { outcome };
     if (isCampaign && callbackDate) {
       payload.callback_date = dayjs(callbackDate).format("YYYY-MM-DD");
     }
@@ -124,22 +123,6 @@ export default function OutcomeDrawerContent({ activity, onSaved }) {
             </LocalizationProvider>
           </Box>
         )}
-
-        <Divider />
-
-        {/* ---- SECTION 2 — Note (optional). The section header labels it. ---- */}
-        <SectionHeader index={2} title="Note" subtitle="Optional — what to remember." />
-        <Box>
-          <TextField
-            fullWidth
-            multiline
-            minRows={2}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional note…"
-            inputProps={{ "data-testid": "outcome-note" }}
-          />
-        </Box>
       </Stack>
     </DrawerContentLayout>
   );

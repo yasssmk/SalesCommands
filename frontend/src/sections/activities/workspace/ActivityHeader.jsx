@@ -24,14 +24,12 @@ import Avatar from "@mui/material/Avatar";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 // Date formatting
@@ -127,7 +125,6 @@ export default function useActivityHeaderProps({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   // Cancel confirmation (light) + optional reason.
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [cancelNote, setCancelNote] = useState("");
 
   // ==============================|| EARLY RETURN (no data) ||============================== //
 
@@ -191,17 +188,18 @@ export default function useActivityHeaderProps({
     }
   };
 
-  // Cancel — light confirmation (optional reason) then cancelActivity.
+  // Cancel — a simple confirmation then cancelActivity. No cancellation
+  // reason: the activity's notes are never written at closure (« Source /
+  // Notes » 1.5, PO).
   const handleCancelClick = () => {
     handleMenuClose();
     setCancelDialogOpen(true);
   };
   const handleCancelConfirm = async () => {
-    const result = await cancelActivity(activity.id, { notes: cancelNote?.trim() || undefined });
+    const result = await cancelActivity(activity.id);
     if (result?.success) {
       displaySuccessSnackbar("Activity cancelled");
       setCancelDialogOpen(false);
-      setCancelNote("");
     } else {
       displayErrorSnackbar(result);
     }
@@ -666,20 +664,9 @@ export default function useActivityHeaderProps({
         }}
       />
 
-      {/* Cancel confirmation — light, with an optional reason. */}
+      {/* Cancel confirmation — a simple one (no reason, « Source / Notes » 1.5). */}
       <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Cancel this activity?</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            multiline
-            minRows={2}
-            margin="dense"
-            label="Reason (optional)"
-            value={cancelNote}
-            onChange={(e) => setCancelNote(e.target.value)}
-          />
-        </DialogContent>
         <DialogActions>
           <Button color="inherit" onClick={() => setCancelDialogOpen(false)}>
             Keep

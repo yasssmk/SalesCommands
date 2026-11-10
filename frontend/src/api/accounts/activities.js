@@ -980,8 +980,11 @@ export async function deleteActivity(activityId) {
 /**
  * COMPLETE ACTIVITY
  *
+ * No note at closure (« Source / Notes » 1.5): the activity's notes
+ * (outcome_notes) are written through updateActivity only.
+ *
  * @param {string} activityId - UUID of the activity
- * @param {Object} payload - {outcome, outcome_notes}
+ * @param {Object} payload - {outcome, callback_date?}
  * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
  */
 export async function completeActivity(activityId, payload = {}) {
@@ -993,9 +996,7 @@ export async function completeActivity(activityId, payload = {}) {
     };
   }
 
-  const sanitized = sanitizeObject(payload, ["outcome_notes"]);
-
-  const result = await api.post(endpoints.complete(activityId), sanitized);
+  const result = await api.post(endpoints.complete(activityId), payload);
 
   if (result.success) {
     revalidateMetricSurfaces([
@@ -1021,11 +1022,13 @@ export async function completeActivity(activityId, payload = {}) {
 /**
  * CANCEL ACTIVITY
  *
+ * No cancellation reason, and the activity's notes are never written at
+ * closure (« Source / Notes » 1.5): the POST carries no body.
+ *
  * @param {string} activityId - UUID of the activity
- * @param {Object} payload - {notes}
  * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
  */
-export async function cancelActivity(activityId, payload = {}) {
+export async function cancelActivity(activityId) {
   if (!activityId || !isValidUUID(activityId)) {
     return {
       success: false,
@@ -1034,7 +1037,7 @@ export async function cancelActivity(activityId, payload = {}) {
     };
   }
 
-  const result = await api.post(endpoints.cancel(activityId), payload);
+  const result = await api.post(endpoints.cancel(activityId), {});
 
   if (result.success) {
     revalidateMetricSurfaces([
@@ -1061,7 +1064,7 @@ export async function cancelActivity(activityId, payload = {}) {
  * REOPEN ACTIVITY
  *
  * Reopens a completed or cancelled activity.
- * Clears outcome, outcome_notes, and completed_at.
+ * Clears outcome and completed_at; KEEPS the activity's notes (outcome_notes).
  *
  * @param {string} activityId - UUID of the activity
  * @param {Object} payload - {status?: 'PLANNED' | 'IN_PROGRESS'} - defaults to 'PLANNED'

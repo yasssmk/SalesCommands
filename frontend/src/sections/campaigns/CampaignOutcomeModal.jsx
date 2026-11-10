@@ -6,7 +6,7 @@
  *   Step 1: Who answered? (contact from completed activities)
  *   Step 2: Which activity?
  *   Step 3: What was the outcome? (group selection)
- *   Step 4: Details (date / sub-option / notes)
+ *   Step 4: Details (date / sub-option)
  *   Step 5: Scope (cancel siblings — conditional on outcome)
  *
  * Mode B — "Log Outcome" (from PlaylistActivityCard, activity already known):
@@ -41,7 +41,6 @@ import Paper from "@mui/material/Paper";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 // date picker
@@ -485,7 +484,6 @@ export default function CampaignOutcomeModal({
 
   // ── Shared outcome state ──
   const [group, setGroup] = useState(null);
-  const [notes, setNotes] = useState("");
   const [callbackDate, setCallbackDate] = useState(null);
   const [failOption, setFailOption] = useState("NOT_INTERESTED");
   const [scopeChoice, setScopeChoice] = useState("contact");
@@ -537,7 +535,6 @@ export default function CampaignOutcomeModal({
     setSelectedContactId(null);
     setSelectedActivityId(null);
     setGroup(null);
-    setNotes("");
     setCallbackDate(null);
     setFailOption("NOT_INTERESTED");
     setScopeChoice("contact");
@@ -572,7 +569,9 @@ export default function CampaignOutcomeModal({
     setSubmitting(true);
 
     const outcome = resolveOutcome(group, failOption);
-    const payload = { outcome, outcome_notes: notes || undefined };
+    // No note at closure (« Source / Notes » 1.5, PO): the activity's notes
+    // are filled throughout its lifecycle in the Source band, never here.
+    const payload = { outcome };
     if (group === "callback" && callbackDate) {
       // Format in local time: the rep picks a calendar day, so the payload must
       // carry that day. toISOString() converts to UTC first, shifting the date
@@ -593,7 +592,7 @@ export default function CampaignOutcomeModal({
       let wasCompleted = true;
 
       if (isCallNoAnswerRetry) {
-        const raw = await recordCallNoAnswer(activeActivity.id, notes);
+        const raw = await recordCallNoAnswer(activeActivity.id);
         const updatedStatus = raw?.data?.status || raw?.status;
         wasCompleted = updatedStatus === "COMPLETED";
         result = { success: true };
@@ -658,7 +657,6 @@ export default function CampaignOutcomeModal({
     group,
     failOption,
     scopeChoice,
-    notes,
     callbackDate,
     activeActivity,
     isModeB,
@@ -832,16 +830,6 @@ export default function CampaignOutcomeModal({
                 </RadioGroup>
               )}
 
-              <TextField
-                label="Notes (optional)"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                multiline
-                rows={3}
-                size="small"
-                fullWidth
-                placeholder="Add any relevant context…"
-              />
             </Stack>
           )}
 

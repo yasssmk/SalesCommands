@@ -121,27 +121,20 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByTestId('etb-charcount-transcript')).toBeInTheDocument();
   });
 
-  // 5.12d (1) — the transcript has its own lock (CANCELLED only); the notes
-  // keep the page lock (isLocked).
-  it('disables the notes when isLocked; the transcript only on CANCELLED', () => {
-    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
-    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
-    expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
-    cleanup();
+  // « Source / Notes » 1.5 (PO) — ONE note per activity, filled throughout its
+  // lifecycle: the notes follow the transcript's lock, isActivitySignalsLocked
+  // (CANCELLED only) — read from the activity, whatever the page lock says.
+  it('locks the notes and the transcript on CANCELLED only', () => {
     renderTab({ isLocked: true, activity: { ...mockActivity, status: 'CANCELLED' } });
 
     expect(screen.getByTestId('etb-input-transcript')).toBeDisabled();
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
-  // 5.12c (5) — PO: the AI action is locked ONLY on a CANCELLED activity
-  // (isActivitySignalsLocked); the page lock (isLocked: COMPLETED or
-  // CANCELLED) keeps locking the notes only (the transcript: 5.12d).
-  it('on a COMPLETED activity (page-locked): notes locked, transcript editable', () => {
+  it('on a COMPLETED activity: the notes AND the transcript stay editable', () => {
     renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
 
-    // The notes keep the page lock; the transcript is editable (5.12d).
-    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
+    expect(screen.getByTestId('etb-input-outcome_notes')).not.toBeDisabled();
     expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
   });
 

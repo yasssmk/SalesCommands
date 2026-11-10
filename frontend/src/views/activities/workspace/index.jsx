@@ -54,7 +54,7 @@ import {
   hasNextStepsBand,
   showsCampaignConversion,
 } from "utils/nextStepsBand";
-import { isActivitySignalsLocked, TRANSCRIPT_FIELD } from "utils/activitySignalsLock";
+import { isActivitySignalsLocked, SOURCE_LOCKED_FIELDS } from "utils/activitySignalsLock";
 
 // The Signals band halo reads the COMPLETE validable set (all 3 statuses).
 const HALO_STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
@@ -140,11 +140,13 @@ export default function ActivityWorkspacePage() {
   const isLocked =
     activity?.status === "COMPLETED" || activity?.status === "CANCELLED";
 
-  // Handle inline field save — blocked when activity is locked. The
-  // transcript follows the signal bands' lock instead (CANCELLED only, 5.12d).
+  // Handle inline field save — blocked when activity is locked. The Source
+  // band's transcript AND notes follow the signal bands' lock instead
+  // (CANCELLED only — 5.12d, « Source / Notes » 1.5).
   const handleSaveField = async (fieldKey, newValue) => {
-    const fieldLocked =
-      fieldKey === TRANSCRIPT_FIELD ? isActivitySignalsLocked(activity) : isLocked;
+    const fieldLocked = SOURCE_LOCKED_FIELDS.includes(fieldKey)
+      ? isActivitySignalsLocked(activity)
+      : isLocked;
     if (fieldLocked) return false;
 
     try {
@@ -341,7 +343,6 @@ export default function ActivityWorkspacePage() {
             <ActivityNotesTab
               activity={activity}
               onSave={handleSaveField}
-              isLocked={isLocked}
               pipelineRunner={pipelineRunner}
               lastRun={lastRun}
               latestRun={latestRun}

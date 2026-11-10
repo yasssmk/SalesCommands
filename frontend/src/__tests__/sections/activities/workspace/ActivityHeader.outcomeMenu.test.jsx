@@ -139,8 +139,12 @@ describe("ActivityHeader ⋮ — adaptive by status", () => {
     await userEvent.click(screen.getByText("Cancel"));
     // a light confirmation dialog appears with a confirm action
     const confirm = await screen.findByTestId("confirm-cancel-activity");
+    // « Source / Notes » 1.5 — a SIMPLE confirmation: no cancellation reason.
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByLabelText(/reason/i)).toBeNull();
     fireEvent.click(confirm);
-    await waitFor(() => expect(cancelActivity).toHaveBeenCalledWith("act-1", expect.any(Object)));
+    await waitFor(() => expect(cancelActivity).toHaveBeenCalledTimes(1));
+    expect(cancelActivity.mock.calls[0]).toEqual(["act-1"]);
     await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalled());
   });
 });

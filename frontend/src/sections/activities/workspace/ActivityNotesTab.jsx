@@ -19,7 +19,12 @@ import EditableTextBlock from 'components/EditableTextBlock';
 import InfoNotice from 'components/display/InfoNotice';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
-import { isTranscriptLocked, TRANSCRIPT_FIELD } from 'utils/activitySignalsLock';
+import {
+  isActivitySignalsLocked,
+  isTranscriptLocked,
+  NOTES_FIELD,
+  TRANSCRIPT_FIELD,
+} from 'utils/activitySignalsLock';
 
 // assets
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
@@ -32,7 +37,6 @@ const FAILED_STATUSES = new Set(['PARSE_ERROR', 'LLM_ERROR', 'TIMEOUT']);
 export default function ActivityNotesTab({
   activity,
   onSave,
-  isLocked,
   pipelineRunner,
   lastRun,
   latestRun,
@@ -128,21 +132,22 @@ export default function ActivityNotesTab({
   return (
     <Box sx={{ p: 0 }}>
       <Stack spacing={3}>
-        {/* Notes section */}
+        {/* Notes section — ONE note per activity, filled throughout its
+            lifecycle (« Source / Notes » 1.5): the lock of the signal bands,
+            CANCELLED only — editable on a COMPLETED activity. */}
         <EditableTextBlock
           label="Notes"
-          field="outcome_notes"
+          field={NOTES_FIELD}
           initialValue={outcomeNotes}
           rows={5}
           placeholder="Capture key takeaways, observations, decisions made during the call..."
           onSave={onSave}
-          isLocked={isLocked}
+          isLocked={isActivitySignalsLocked(activity)}
         />
 
         {/* Transcript section — its own lock (5.12d: CANCELLED, so a
             transcript can be added after the call; 8g-7: or ANALYSED — no
-            re-run, the transcript stays the analysed one). The notes keep
-            isLocked. */}
+            re-run, the transcript stays the analysed one). */}
         <EditableTextBlock
           label="Transcript"
           field={TRANSCRIPT_FIELD}
@@ -201,7 +206,6 @@ ActivityNotesTab.propTypes = {
     status: PropTypes.string,
   }),
   onSave: PropTypes.func.isRequired,
-  isLocked: PropTypes.bool,
   pipelineRunner: PropTypes.shape({
     run: PropTypes.func.isRequired,
     state: PropTypes.string.isRequired,

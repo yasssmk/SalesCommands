@@ -200,8 +200,24 @@ describe("The transcript — locked ONLY on CANCELLED (5.12d (1))", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("COMPLETED: the OTHER Source fields keep their rule — the notes stay read-only", () => {
+  // « Source / Notes » 1.5 (PO) — ONE note per activity, filled throughout its
+  // lifecycle: the notes follow the transcript's lock (CANCELLED only), so a
+  // COMPLETED activity's notes are editable and saved.
+  it("COMPLETED: the notes are editable and saved", async () => {
+    vi.mocked(updateActivity).mockResolvedValue({ success: true });
     mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    openSource();
+    fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Takeaways written after the call." } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
+    expect(updateActivity).toHaveBeenCalledWith("act-1", {
+      outcome_notes: "Takeaways written after the call.",
+    });
+  });
+
+  it("CANCELLED: the notes are read-only", () => {
+    mockActivity = dcActivity({ status: "CANCELLED" });
     render(<ActivityWorkspacePage />);
     openSource();
     fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));

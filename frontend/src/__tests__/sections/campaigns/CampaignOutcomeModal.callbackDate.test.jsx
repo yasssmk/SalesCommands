@@ -107,3 +107,37 @@ describe("CampaignOutcomeModal — callback date is sent in local time", () => {
     expect(payload.callback_date).not.toBe("2026-07-25");
   });
 });
+
+// ==============================|| « SOURCE / NOTES » 1.5 — NO NOTE AT CLOSURE ||============================== //
+// PO: the activity's notes are filled throughout its lifecycle (Source band),
+// never at closure — the campaign outcome steps carry no note field, and
+// neither the completion nor the no-answer call sends one.
+
+import { recordCallNoAnswer } from "api/campaigns/campaigns";
+
+describe("CampaignOutcomeModal — no note at closure", () => {
+  it("the detail step has no note field, and the completion sends none", async () => {
+    render(
+      <CampaignOutcomeModal open activity={modeBActivity} campaignId="camp-1" onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByText("Callback"));
+    expect(screen.queryByLabelText(/notes/i)).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.click(screen.getByTestId("pick-callback-26"));
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
+    await waitFor(() => expect(completePlaylistActivity).toHaveBeenCalledTimes(1));
+    const [, , payload] = completePlaylistActivity.mock.calls[0];
+    expect(payload).not.toHaveProperty("outcome_notes");
+  });
+
+  it("a no-answer on a call records the attempt without a note", async () => {
+    render(
+      <CampaignOutcomeModal open activity={modeBActivity} campaignId="camp-1" onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByText("No Answer"));
+    expect(screen.queryByLabelText(/notes/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
+    await waitFor(() => expect(recordCallNoAnswer).toHaveBeenCalledTimes(1));
+    expect(recordCallNoAnswer.mock.calls[0]).toEqual(["act-1"]);
+  });
+});
