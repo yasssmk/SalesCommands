@@ -193,15 +193,23 @@ export default function NextStepValidateFlow({ nextStep, hasCycle = true, onCrea
       selected.id,
       buildLinkUpdates(selected, decisions),
     );
-    setSubmitting(false);
     if (result.success) {
+      // Still « submitting » until the coque shows the detail (2.2: the
+      // resolved choices are no unsaved change — the move is not asked).
       onLinked(nextStep);
     } else {
+      setSubmitting(false);
       // A server refusal (campaign lock, no longer a candidate…): the standard
       // error, and the flow stays here, every choice kept.
       displayErrorSnackbar(result);
     }
   };
+
+  // 2.2 — a choice, a picked candidate or a changed decision is an unsaved
+  // change (the coque asks before discarding it); not while confirming.
+  const dirty =
+    !submitting &&
+    (choice !== null || selectedId !== null || Object.keys(decisionsById).length > 0);
 
   // ---- Step-dependent action bar ----
   let bar;
@@ -238,7 +246,7 @@ export default function NextStepValidateFlow({ nextStep, hasCycle = true, onCrea
     <ResolutionFlow
       steps={FLOW_STEPS}
       activeStep={step}
-      bar={bar}
+      bar={{ ...bar, dirty }}
       testId="next-step-validate-flow"
     >
       {step === STEP.RESOLUTION && (

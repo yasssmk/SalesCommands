@@ -170,6 +170,7 @@ export default function EditNextStepContent({
       onSave={formik.handleSubmit}
       onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
+      dirty={formik.dirty && !formik.isSubmitting}
     >
       <Stack spacing={2.5} data-testid="next-step-edit">
         {/* ---- SECTION 1 — Proposal (as the detail) ---- */}

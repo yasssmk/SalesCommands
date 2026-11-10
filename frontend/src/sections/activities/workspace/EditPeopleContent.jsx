@@ -208,6 +208,7 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
       onSave={formik.handleSubmit}
       onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting || identityMissing}
+      dirty={formik.dirty && !formik.isSubmitting}
     >
       <Stack spacing={2.5}>
         {/* ---- SECTION 1 — Who is this person? ---- */}

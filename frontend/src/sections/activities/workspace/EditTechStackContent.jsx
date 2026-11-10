@@ -222,6 +222,7 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
       onSave={formik.handleSubmit}
       onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
+      dirty={formik.dirty && !formik.isSubmitting}
     >
       <Stack spacing={2.5} data-testid="techstack-edit">
         {/* ---- SECTION 1 — Technology ---- */}

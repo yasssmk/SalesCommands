@@ -33,6 +33,7 @@ import CloseOutlined from "@ant-design/icons/CloseOutlined";
 // project imports
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import StatusPill from "components/chips/StatusPill";
+import ConfirmDialog from "components/dialogs/ConfirmDialog";
 
 // ==============================|| COQUE HEADER ||============================== //
 
@@ -159,6 +160,29 @@ CoquePanel.propTypes = {
   hideClose: PropTypes.bool,
 };
 
+// ==============================|| UNSAVED CHANGES CONFIRMATION (2.2) ||============================== //
+
+// « Source / Notes » 2.2 — the coque's guard asks before discarding a MODIFIED
+// content (WorkspaceDrawerContext.pendingDiscard), with the shared
+// ConfirmDialog (2.1). Rendered by the always-mounted visual coque, so the
+// provider stays state-only.
+function DiscardConfirmation() {
+  const { pendingDiscard, confirmDiscard, cancelDiscard } = useWorkspaceDrawer();
+  return (
+    <ConfirmDialog
+      open={Boolean(pendingDiscard)}
+      title="Discard your changes?"
+      message="What you entered in this panel will be lost."
+      cancelLabel="Keep editing"
+      confirmLabel="Discard"
+      confirmColor="error"
+      confirmTestId="confirm-discard-changes"
+      onCancel={cancelDiscard}
+      onConfirm={confirmDiscard}
+    />
+  );
+}
+
 // ==============================|| WORKSPACE DRAWER (COQUE) ||============================== //
 
 export default function WorkspaceDrawer() {
@@ -180,6 +204,8 @@ export default function WorkspaceDrawer() {
   // backdrop or the cross is unaffected.
   if (isNarrow) {
     return (
+      <>
+      <DiscardConfirmation />
       <Drawer
         anchor="right"
         open={isOpen}
@@ -216,6 +242,7 @@ export default function WorkspaceDrawer() {
         )}
         <Box sx={{ p: 2, overflowY: "auto" }}>{content}</Box>
       </Drawer>
+      </>
     );
   }
 
@@ -234,6 +261,8 @@ export default function WorkspaceDrawer() {
   // the Collapse is clipped by its height:100% wrapper — the earlier bug.)
   const headerOffset = theme.mixins.toolbar.minHeight;
   return (
+    <>
+    <DiscardConfirmation />
     <Box
       sx={{
         position: "sticky",
@@ -253,5 +282,6 @@ export default function WorkspaceDrawer() {
         />
       </Collapse>
     </Box>
+    </>
   );
 }

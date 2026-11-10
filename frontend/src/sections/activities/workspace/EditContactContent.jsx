@@ -179,6 +179,7 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
       onSave={formik.handleSubmit}
       onCancel={() => closeDrawer()}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
+      dirty={formik.dirty && !formik.isSubmitting}
     >
       <Stack spacing={2.5}>
         {/* ---- SECTION 1 — Identity ---- */}

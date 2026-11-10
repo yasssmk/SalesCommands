@@ -90,6 +90,9 @@ export default function OutcomeDrawerContent({ activity, onSaved }) {
       onSave={handleSave}
       onCancel={() => closeDrawer()}
       saveDisabled={saveDisabled}
+      // 2.2 — a picked outcome / callback date is a modification (a save in
+      // progress is not: the close that follows a success is not asked).
+      dirty={(outcome != null || callbackDate != null) && !submitting}
       saveLabel="Complete"
     >
       <Stack spacing={2}>

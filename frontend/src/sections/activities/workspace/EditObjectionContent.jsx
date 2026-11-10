@@ -132,6 +132,7 @@ export default function EditObjectionContent({ objection, accountId, onSaved, on
       onSave={formik.handleSubmit}
       onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
+      dirty={formik.dirty && !formik.isSubmitting}
     >
       <Stack spacing={2.5}>
         {/* ---- SECTION 1 — What's the objection? ---- */}

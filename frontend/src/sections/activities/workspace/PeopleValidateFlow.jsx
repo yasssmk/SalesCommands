@@ -98,10 +98,12 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
   const resolve = async (resolution) => {
     setSubmitting(true);
     const result = await resolvePeopleSignal(signal.id, resolution);
-    setSubmitting(false);
     if (result.success) {
+      // Still « submitting » until the coque moves on (2.2: the resolved
+      // choices are no unsaved change — the move is not asked).
       onResolved(result.data ?? {});
     } else {
+      setSubmitting(false);
       displayErrorSnackbar(result);
     }
   };
@@ -117,6 +119,15 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
       selected.kind === "stakeholder" ? { stakeholder_id: selected.id } : { contact_id: selected.id },
     );
   };
+
+  // 2.2 — a choice, a picked candidate or an edited name / department is an
+  // unsaved change (the coque asks before discarding it); not while resolving.
+  const dirty =
+    !submitting &&
+    (choice !== null ||
+      selectedId !== null ||
+      name !== (signal.full_name || "") ||
+      departmentId !== String(signal.target_department?.id ?? signal.target_department ?? ""));
 
   const bar =
     step === STEP.RESOLUTION
@@ -137,7 +148,7 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
         };
 
   return (
-    <ResolutionFlow steps={FLOW_STEPS} activeStep={step} bar={bar} testId="people-validate-flow">
+    <ResolutionFlow steps={FLOW_STEPS} activeStep={step} bar={{ ...bar, dirty }} testId="people-validate-flow">
       {step === STEP.RESOLUTION && (
         <ResolutionChoiceStep
           index={STEP.RESOLUTION + 1}
