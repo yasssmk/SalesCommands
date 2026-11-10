@@ -1175,9 +1175,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         from django.db import IntegrityError
         from django.utils import timezone
         from app_modules.activities.constants import ActivityStatus
+        from app_modules.activities.services.activity_notes import notes_with_system_line
         from app_modules.campaigns.services.campaign_lifecycle_service import (
             CampaignLifecycleService,
         )
+        from end_users.constants import DEACTIVATION_CANCELLED_NOTE_LINE
 
         cid = user.client_account_id
 
@@ -1192,10 +1194,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             deactivation_deal_activities_to_transfer(user).update(owner=successor)
 
             # 4. Open FREE activities (neither deal nor campaign) -> CANCELLED,
-            #    kept as history (never deleted).
+            #    kept as history (never deleted). The system line is APPENDED
+            #    to their notes, never erasing them (« Source / Notes », 1.4).
             deactivation_free_activities_to_cancel(user).update(
                 status=ActivityStatus.CANCELLED,
-                outcome_notes='Cancelled on owner deactivation',
+                outcome_notes=notes_with_system_line(DEACTIVATION_CANCELLED_NOTE_LINE),
                 updated_at=timezone.now(),
             )
 
@@ -1229,6 +1232,8 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         from app_modules.campaigns.models import CampaignContact, CampaignAccount
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import NON_TERMINAL_STATUSES, ActivityStatus
+        from app_modules.activities.services.activity_notes import notes_with_system_line
+        from end_users.constants import DEACTIVATION_TARGET_REMOVED_NOTE_LINE
 
         targeted = deactivation_targeted_campaign(user)
         if not targeted:
@@ -1247,7 +1252,8 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             client_id=client_id,
         ).update(
             status=ActivityStatus.CANCELLED,
-            outcome_notes='Target removed on owner deactivation',
+            # APPENDED to the notes, never erasing them (« Source / Notes », 1.4).
+            outcome_notes=notes_with_system_line(DEACTIVATION_TARGET_REMOVED_NOTE_LINE),
             updated_at=timezone.now(),
         )
 

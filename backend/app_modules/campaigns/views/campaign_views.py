@@ -1273,9 +1273,13 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         elif scope == 'department':
             qs = qs.filter(contacts__standard_department_id=department_id)
 
+        # The system line is APPENDED to each activity's notes, never
+        # erasing them (sprint « Source / Notes », 1.4) — still one UPDATE.
+        from app_modules.activities.services.activity_notes import notes_with_system_line
+        from app_modules.campaigns.constants import CANCEL_PLANNED_NOTE_LINE
         cancelled_count = qs.update(
             status=ActivityStatus.CANCELLED,
-            outcome_notes='Manually cancelled after terminal response',
+            outcome_notes=notes_with_system_line(CANCEL_PLANNED_NOTE_LINE),
             updated_at=timezone.now(),
         )
 

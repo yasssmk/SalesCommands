@@ -363,6 +363,27 @@ def test_free_activity_cancelled(api, ca, admin, leaver, successor):
     assert act.owner_id == leaver.id  # cancelled, not transferred
 
 
+def test_free_activity_cancellation_appends_its_line_to_the_note(api, ca, admin, leaver, successor):
+    """Sprint « Source / Notes » 1.4 — the system APPENDS a line at the END of
+    the activity's notes, never erasing them: written note → « <note>\\n\\n<line> »,
+    empty note → the line alone."""
+    from end_users.constants import DEACTIVATION_CANCELLED_NOTE_LINE
+    acc = _account(leaver, ca, "Notes Co")
+    written = _activity(leaver, ca, acc, status=ActivityStatus.PLANNED, title="Written")
+    empty = _activity(leaver, ca, acc, status=ActivityStatus.PLANNED, title="Empty")
+    Activity.objects.filter(id=written.id).update(outcome_notes="N")
+
+    _authenticate(api, admin, ca.id)
+    resp = _deactivate(api, leaver, successor, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    written.refresh_from_db()
+    empty.refresh_from_db()
+    assert written.status == empty.status == ActivityStatus.CANCELLED
+    assert written.outcome_notes == f"N\n\n{DEACTIVATION_CANCELLED_NOTE_LINE}"
+    assert empty.outcome_notes == DEACTIVATION_CANCELLED_NOTE_LINE
+
+
 # ============================================================================
 # Campaigns
 # ============================================================================
@@ -455,6 +476,40 @@ def test_targeted_emptied_not_cancelled(api, ca, admin, leaver, successor):
     # The contact's open activity is cancelled but KEPT (never deleted).
     cc_activity.refresh_from_db()
     assert cc_activity.status == ActivityStatus.CANCELLED
+
+
+def test_targeted_removal_appends_its_line_to_the_note(api, ca, admin, leaver, successor):
+    """Sprint « Source / Notes » 1.4 — the TARGETED contacts' cancelled
+    activities get the system line APPENDED to their notes, never erased."""
+    from end_users.constants import DEACTIVATION_TARGET_REMOVED_NOTE_LINE
+    acc = _account(leaver, ca, "Targeted Notes Co")
+    targeted = Campaign.objects.filter(
+        owner=leaver, campaign_type=CampaignType.TARGETED, client_id=ca.id,
+    ).first() or _campaign(leaver, ca, ctype=CampaignType.TARGETED,
+                           cstatus=CampaignStatus.ACTIVE, name="My Targeted")
+    camp_acc = CampaignAccount(campaign=targeted, account=acc)
+    camp_acc.save(user=leaver, client_id=ca.id)
+    contact = Contact(account=acc, first_name="C", last_name="Two")
+    contact.save(user=leaver, client_id=ca.id)
+    cc = CampaignContact(campaign_account=camp_acc, contact=contact,
+                         status=CampaignContactStatus.IN_PROGRESS)
+    cc.save(user=leaver, client_id=ca.id)
+    written = _activity(leaver, ca, acc, status=ActivityStatus.PLANNED, campaign=targeted,
+                        title="Written")
+    empty = _activity(leaver, ca, acc, status=ActivityStatus.PLANNED, campaign=targeted,
+                      title="Empty")
+    Activity.objects.filter(id__in=[written.id, empty.id]).update(campaign_contact=cc)
+    Activity.objects.filter(id=written.id).update(outcome_notes="N")
+
+    _authenticate(api, admin, ca.id)
+    resp = _deactivate(api, leaver, successor, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    written.refresh_from_db()
+    empty.refresh_from_db()
+    assert written.status == empty.status == ActivityStatus.CANCELLED
+    assert written.outcome_notes == f"N\n\n{DEACTIVATION_TARGET_REMOVED_NOTE_LINE}"
+    assert empty.outcome_notes == DEACTIVATION_TARGET_REMOVED_NOTE_LINE
 
 
 # ============================================================================

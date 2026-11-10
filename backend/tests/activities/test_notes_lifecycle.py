@@ -252,3 +252,67 @@ def test_a_status_patch_out_of_completed_keeps_the_note(authed_api_a, account, u
     assert activity.outcome is None
     assert activity.completed_at is None
     assert activity.outcome_notes == NOTE
+
+
+# =============================================================================
+# 1.4 — a system cancellation APPENDS a line at the END of the note, never
+# erasing what is there (PO): empty note → the line alone; written note →
+# « <note>\n\n<line> ». One UPDATE per call. Through the real endpoints.
+# =============================================================================
+
+def _note_rows(*activities):
+    from app_modules.activities.models import Activity
+    return {a.id: Activity.objects.get(id=a.id) for a in activities}
+
+
+def test_cancel_planned_appends_its_line_to_the_note(authed_api_a, account, chain):
+    from app_modules.activities.models import Activity
+    from app_modules.campaigns.constants import CANCEL_PLANNED_NOTE_LINE
+    written = _with_note(chain(1, date=_days(1)))
+    empty = chain(2, date=_days(3))
+    Activity.objects.filter(id=empty.id).update(outcome_notes='')
+    unset = chain(3, date=_days(5))
+    before = _note_rows(written)[written.id].updated_at
+    r = authed_api_a.delete(f'/campaigns/{written.campaign_id}/cancel-planned/',
+                            {'scope': 'account', 'account_id': str(account.id)}, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    rows = _note_rows(written, empty, unset)
+    assert all(a.status == ActivityStatus.CANCELLED for a in rows.values())
+    assert rows[written.id].outcome_notes == f'{NOTE}\n\n{CANCEL_PLANNED_NOTE_LINE}'
+    assert rows[empty.id].outcome_notes == CANCEL_PLANNED_NOTE_LINE
+    assert rows[unset.id].outcome_notes == CANCEL_PLANNED_NOTE_LINE
+    assert rows[written.id].updated_at > before
+
+
+def test_removing_a_target_appends_its_line_to_the_note(authed_api_a, chain):
+    from app_modules.activities.models import Activity
+    from app_modules.campaigns.constants import TARGET_REMOVED_NOTE_LINE
+    done = _with_note(chain(1, ActivityStatus.COMPLETED, _days(-2)))
+    written = _with_note(chain(2, date=_days(1)))
+    on_hold = chain(3, date=_days(4))
+    Activity.objects.filter(id=on_hold.id).update(status=ActivityStatus.ON_HOLD)
+    r = authed_api_a.delete(f'/campaigns/contacts/{written.campaign_contact_id}/')
+    assert r.status_code in (status.HTTP_200_OK, status.HTTP_204_NO_CONTENT), r.content
+    rows = _note_rows(done, written, on_hold)
+    assert rows[written.id].status == rows[on_hold.id].status == ActivityStatus.CANCELLED
+    assert rows[written.id].outcome_notes == f'{NOTE}\n\n{TARGET_REMOVED_NOTE_LINE}'
+    assert rows[on_hold.id].outcome_notes == TARGET_REMOVED_NOTE_LINE
+    # A finished step is not touched.
+    assert rows[done.id].status == ActivityStatus.COMPLETED
+    assert rows[done.id].outcome_notes == NOTE
+
+
+def test_the_system_line_is_one_update_and_a_blank_note_counts_as_empty(account, user_a):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+    from app_modules.activities.models import Activity
+    from app_modules.activities.services.activity_notes import notes_with_system_line
+    written = _with_note(_activity(account, user_a))
+    blank = _activity(account, user_a, notes='   ')
+    unset = _activity(account, user_a)
+    ids = [written.id, blank.id, unset.id]
+    with CaptureQueriesContext(connection) as ctx:
+        Activity.objects.filter(id__in=ids).update(outcome_notes=notes_with_system_line('L'))
+    assert len(ctx.captured_queries) == 1
+    notes = dict(Activity.objects.filter(id__in=ids).values_list('id', 'outcome_notes'))
+    assert notes == {written.id: f'{NOTE}\n\nL', blank.id: 'L', unset.id: 'L'}
