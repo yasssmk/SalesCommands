@@ -141,3 +141,44 @@ describe("CampaignOutcomeModal — no note at closure", () => {
     expect(recordCallNoAnswer.mock.calls[0]).toEqual(["act-1"]);
   });
 });
+
+// ==============================|| « SOURCE / NOTES » 1.5b — AN EMPTY DETAIL STEP IS SKIPPED ||============================== //
+// PO: with no note at closure, the « Successful » group's « Add details » step
+// has nothing left — it is SKIPPED (forward and Back). The groups that still
+// carry something (Callback date, No Answer notice, the Fail options) keep it.
+
+describe("CampaignOutcomeModal — the empty « Add details » step is skipped", () => {
+  const renderModal = () =>
+    render(<CampaignOutcomeModal open activity={modeBActivity} campaignId="camp-1" onClose={() => {}} />);
+
+  it("Successful goes straight to the next-step prompt, then completes with the right payload", async () => {
+    renderModal();
+    fireEvent.click(screen.getByText("Successful"));
+    expect(screen.queryByText("Add details")).toBeNull();
+    expect(screen.getByText("Create a next step?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
+    expect(screen.getByText("Cancel other activities?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm & Complete" }));
+    await waitFor(() => expect(completePlaylistActivity).toHaveBeenCalledTimes(1));
+    const [activityId, campaignId, payload] = completePlaylistActivity.mock.calls[0];
+    expect([activityId, campaignId, payload]).toEqual(["act-1", "camp-1", { outcome: "SUCCESSFUL" }]);
+  });
+
+  it("Back from the scope step never lands on the empty « Add details » step", () => {
+    renderModal();
+    fireEvent.click(screen.getByText("Successful"));
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByText("Add details")).toBeNull();
+    expect(screen.getByText("What was the outcome?")).toBeInTheDocument();
+  });
+
+  it.each(["Callback", "No Answer", "Not Interested / Wrong Contact"])(
+    "%s keeps its « Add details » step",
+    (label) => {
+      renderModal();
+      fireEvent.click(screen.getByText(label));
+      expect(screen.getByText("Add details")).toBeInTheDocument();
+    },
+  );
+});

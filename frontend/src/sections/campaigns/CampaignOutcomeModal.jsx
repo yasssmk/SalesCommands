@@ -96,6 +96,13 @@ const NEXT_STEP_OUTCOMES = new Set(["SUCCESSFUL", "MEETING_SCHEDULED"]);
 const MODE_A_BASE = [STEP.CONTACT, STEP.ACTIVITY, STEP.GROUP, STEP.DETAIL];
 const MODE_B_BASE = [STEP.GROUP, STEP.DETAIL];
 
+// The groups whose « Add details » step carries something (Callback: the date;
+// No Answer: its notice; Fail: the options). Since there is no note at closure
+// (« Source / Notes » 1.5b, PO), the other groups (Successful) have an EMPTY
+// detail step: it is SKIPPED, forward and Back.
+const GROUPS_WITH_DETAIL = new Set(["callback", "no_answer", "fail"]);
+const hasDetailStep = (groupKey) => GROUPS_WITH_DETAIL.has(groupKey);
+
 // ==============================|| OUTCOME GROUPS ||============================== //
 
 const GROUPS = [
@@ -526,8 +533,11 @@ export default function CampaignOutcomeModal({
   const currentOutcome = resolveOutcome(group, failOption);
   const requiresScope = CANCEL_TRIGGER_OUTCOMES.has(currentOutcome);
 
-  // ── Ordered step list (scope appended conditionally at runtime) ──
-  const baseSteps = isModeB ? MODE_B_BASE : MODE_A_BASE;
+  // ── Ordered step list (scope appended conditionally at runtime; the
+  //    detail step dropped for a group that has none — 1.5b) ──
+  const baseSteps = (isModeB ? MODE_B_BASE : MODE_A_BASE).filter(
+    (s) => s !== STEP.DETAIL || !group || hasDetailStep(group),
+  );
 
   // ── Reset on close ──
   const handleClose = useCallback(() => {
@@ -553,8 +563,18 @@ export default function CampaignOutcomeModal({
   // ── Group select → auto-advance to detail ──
   const handleGroupSelect = useCallback((selectedGroup) => {
     setGroup(selectedGroup);
-    setStep(STEP.DETAIL);
-  }, []);
+    if (hasDetailStep(selectedGroup)) {
+      setStep(STEP.DETAIL);
+      return;
+    }
+    // No detail (1.5b): go where the detail step's Next would lead — the
+    // next-step prompt, else the scope step. A group that would complete
+    // right away keeps the detail step (its Complete button submits).
+    const outcome = resolveOutcome(selectedGroup, failOption);
+    if (NEXT_STEP_OUTCOMES.has(outcome)) setStep(STEP.NEXT_STEP);
+    else if (CANCEL_TRIGGER_OUTCOMES.has(outcome)) setStep(STEP.SCOPE);
+    else setStep(STEP.DETAIL);
+  }, [failOption]);
 
   // ── Back navigation ──
   const handleBack = useCallback(() => {
