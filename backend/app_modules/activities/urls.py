@@ -84,6 +84,11 @@ def get_urlpatterns():
         path('<uuid:pk>/record-no-answer/', ActivityViewSet.as_view({
             'post': 'record_no_answer'
         }), name='record-no-answer'),
+
+        # « Source / Notes » — the notes panel's autosave (note only, light)
+        path('<uuid:pk>/notes/', ActivityViewSet.as_view({
+            'post': 'notes'
+        }), name='notes'),
     ]
 
 

@@ -176,6 +176,7 @@ if DEBUG:
         'standard': '500/minute',  # GET endpoints (list/search/filter) - permissif en DEV
         'bulk': '5/minute',       # POST bulk operations - permissif en DEV pour tests
         'ai': '60/minute',       # AI pipeline endpoints (extraction, deal-health)
+        'notes_autosave': '60/minute',  # Notes panel autosave (« Source / Notes »)
     }
 else:
     # Production: Plus restrictif
@@ -190,6 +191,7 @@ else:
         'standard': '300/minute',  #  GET endpoints - évite blocage utilisateurs normaux
         'bulk': '3/minute',       # POST bulk operations - strict pour limiter abuse'
         'ai': '30/minute',       # AI pipeline endpoints (extraction, deal-health)
+        'notes_autosave': '60/minute',  # Notes panel autosave (« Source / Notes »)
     }
 
 

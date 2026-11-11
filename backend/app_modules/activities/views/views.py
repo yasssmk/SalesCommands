@@ -18,7 +18,7 @@ from django.utils import timezone
 from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import Stakeholder
 
-from core.exceptions import StandardizedValidationError
+from core.exceptions import StandardizedPermissionDenied, StandardizedValidationError
 from core.error_messages import CoreErrorMessages, ActivityErrorMessages, CampaignModuleErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
@@ -32,7 +32,11 @@ from core.cache_utils import (
     _is_redis_backend,
 )
 
+from permissions.checks import check_permission
+from permissions.compat import get_auth_ctx
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
+from permissions.scope_filter import apply_role_scope
+from core.throttling import NotesAutosaveThrottle
 from permissions.owner_scope import OwnerScopeMixin
 
 from ..models import Activity
@@ -98,6 +102,16 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     permission_classes = [IsAuthenticated, ScopedPermission]
     module = 'activities'
     
+    # « Source / Notes » — the notes autosave has its OWN throttle scope, which
+    # REPLACES the global per-user throttles on that action (an autosave every
+    # pause would exhaust them). Selected here, not by @action(throttle_classes):
+    # DRF only applies an action's options through a router, and this module
+    # routes its actions by hand (urls.py).
+    def get_throttles(self):
+        if getattr(self, 'action', None) == 'notes':
+            return [NotesAutosaveThrottle()]
+        return super().get_throttles()
+
     # Action policies for custom actions
     action_policies = {
 
@@ -728,6 +742,60 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'data': serializer.data,
         })
     
+    @action(detail=True, methods=['post'], url_path='notes')
+    def notes(self, request, pk=None):
+        """
+        Autosave the activity's notes — the notes panel (sprint « Source /
+        Notes »). POST /activities/{id}/notes/  { "outcome_notes": "<text>" }
+
+        A LIGHT write, one per pause in typing: a single .update() of
+        outcome_notes + updated_at / updated_by — no post_save cascade (cache
+        invalidation, readiness recompute…), no audit_log (PO). Any other key
+        is ignored. Same rules as the PATCH:
+          * tenant scoping — another tenant's activity → 404;
+          * the PATCH's UPDATE permission and scope (ScopedPermission checks an
+            unknown action as a read — normalize_action — so the update rights
+            are checked here, with the same functions: check_permission on
+            'partial_update' + apply_role_scope) → 403;
+          * the CANCELLED lock (is_activity_signals_locked) → SOURCE_LOCKED.
+        Its own throttle scope (notes_autosave) replaces the global ones here
+        (get_throttles). Last write wins (PO, Q8).
+        """
+        from ..services.signals_lock import is_activity_signals_locked
+
+        if 'outcome_notes' not in request.data:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='outcome_notes')
+            )
+        notes = request.data.get('outcome_notes') or ''
+
+        client_id = self.get_client_id()
+        tenant_activities = Activity.objects.filter(client_id=client_id)
+        activity = tenant_activities.filter(pk=pk).first()
+        if activity is None:
+            from django.http import Http404
+            raise Http404("No Activity matches the given query.")
+
+        update_scope = check_permission(request, self.module, 'partial_update')
+        in_scope = apply_role_scope(
+            tenant_activities.filter(pk=pk),
+            module=self.module, scope=update_scope, auth_ctx=get_auth_ctx(request),
+        ).exists()
+        if not in_scope:
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
+
+        if is_activity_signals_locked(activity):
+            raise StandardizedValidationError(ActivityErrorMessages.SOURCE_LOCKED)
+
+        now = timezone.now()
+        tenant_activities.filter(pk=activity.pk).update(
+            outcome_notes=notes, updated_at=now, updated_by=request.user,
+        )
+        return Response({
+            'success': True,
+            'data': {'outcome_notes': notes, 'updated_at': now.isoformat()},
+        })
+
     @action(detail=True, methods=['post'], url_path='record-no-answer')
     @transaction.atomic
     def record_no_answer(self, request, pk=None):
