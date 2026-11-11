@@ -8,11 +8,15 @@
 //   - EditableTextBlock in autosave mode, wired to useNoteAutosave;
 //   - the indicator « Saved · HH:mm » (« Saved · d MMM HH:mm » if not today);
 //   - read-only on a CANCELLED activity (isActivitySignalsLocked) — or once
-//     the server refused the note (the activity became CANCELLED meanwhile).
+//     the server refused the note (the activity became CANCELLED meanwhile);
+//   - N5, optional `onStatusChange(status)`: the autosave status, for the
+//     floating Notes button's dot (back to idle when the panel closes — its
+//     note is flushed then).
 
 'use client';
 
 import PropTypes from 'prop-types';
+import { useEffect, useRef } from 'react';
 import { format, isToday } from 'date-fns';
 
 import Typography from '@mui/material/Typography';
@@ -41,7 +45,7 @@ export function formatNotesSavedAt(savedAt) {
 
 // ==============================|| ACTIVITY NOTES PANEL ||============================== //
 
-export default function ActivityNotesPanel({ activityId }) {
+export default function ActivityNotesPanel({ activityId, onStatusChange }) {
   const { activity, mutateActivity } = useGetActivity(activityId);
   // N4b: the hook's `note` — the server's, never older than our last write.
   const { note, status, savedAt, locked, schedule } = useNoteAutosave({
@@ -51,6 +55,14 @@ export default function ActivityNotesPanel({ activityId }) {
     locked: isActivitySignalsLocked(activity),
     mutateActivity,
   });
+
+  // N5 — report the status (latest callback; idle once closed).
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
+  useEffect(() => {
+    onStatusChangeRef.current?.(status);
+  }, [status]);
+  useEffect(() => () => onStatusChangeRef.current?.(NOTE_AUTOSAVE_STATUS.IDLE), []);
 
   if (!activity) return null;
 
@@ -81,4 +93,6 @@ export default function ActivityNotesPanel({ activityId }) {
 
 ActivityNotesPanel.propTypes = {
   activityId: PropTypes.string.isRequired,
+  /** Optional (N5) — (status) => void: the autosave status. */
+  onStatusChange: PropTypes.func,
 };

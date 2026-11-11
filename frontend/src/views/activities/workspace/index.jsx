@@ -43,6 +43,7 @@ import { getVisibleTabs } from "sections/activities/workspace/ActivityTabs";
 import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
+import ActivityNotesFab from "sections/activities/workspace/ActivityNotesFab";
 import RunAIAnalysisButton from "sections/activities/workspace/RunAIAnalysisButton";
 import ActivitySignalsTab, {
   ACTIVITY_FLAT_TYPES,
@@ -406,6 +407,10 @@ export default function ActivityWorkspacePage() {
             </SignalsHaloBox>
           )}
         </Stack>
+
+      {/* « Source / Notes » N5 — the floating « Notes » button (this page
+          only, every activity type): opens / closes the coque's notes zone. */}
+      <ActivityNotesFab activityId={activity.id} />
 
       {/* Modals (Delete) */}
       {headerProps.modals}
