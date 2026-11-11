@@ -260,6 +260,48 @@ describe("useNoteAutosave — keepalive when the page goes away", () => {
   });
 });
 
+describe("useNoteAutosave — N4 additions", () => {
+  it("the keepalive flush updates the activity's cache locally (no answer will come)", () => {
+    const { result, unmount, mutateActivity } = setup();
+    act(() => result.current.schedule("flushed"));
+    unmount();
+    expect(mutateActivity).toHaveBeenCalledTimes(1);
+    const [updater, options] = mutateActivity.mock.calls[0];
+    expect(options).toEqual({ revalidate: false });
+    expect(updater({ data: { id: ID, outcome_notes: "old" } })).toEqual({
+      data: { id: ID, outcome_notes: "flushed" },
+    });
+  });
+
+  it("after a switch to another activity, the keepalive leaves the new cache alone", () => {
+    const { result, rerender, mutateActivity } = setup();
+    act(() => result.current.schedule("for the first"));
+    rerender({ activityId: OTHER_ID, initialValue: "", mutateActivity });
+    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "for the first");
+    expect(mutateActivity).not.toHaveBeenCalled();
+  });
+
+  it("follows a server note arriving late (nothing pending): equal to it → no save", async () => {
+    const { result, rerender, mutateActivity } = setup({ initialValue: "" });
+    rerender({ activityId: ID, initialValue: "Loaded later", mutateActivity });
+    act(() => result.current.schedule("Loaded later"));
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).not.toHaveBeenCalled();
+    act(() => result.current.schedule(""));
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).toHaveBeenCalledWith(ID, "");
+  });
+
+  it("a server note arriving while a value is pending does not swallow it", async () => {
+    const { result, rerender, mutateActivity } = setup();
+    act(() => result.current.schedule("Mine"));
+    rerender({ activityId: ID, initialValue: "Mine", mutateActivity });
+    rerender({ activityId: ID, initialValue: "Theirs", mutateActivity });
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Mine");
+  });
+});
+
 describe("useNoteAutosave — not an unsaved change (PO)", () => {
   it("never registers in the unsaved-changes guard", async () => {
     const { result } = setup();

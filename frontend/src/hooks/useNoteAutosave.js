@@ -182,11 +182,23 @@ export default function useNoteAutosave({
 
   // The last word when the page goes away: a keepalive request — an axios
   // request would be cancelled with the page.
+  // N4: the activity's cache gets the flushed note too (no answer will come
+  // back) — reopening the panel shows it. Only for the activity the cache
+  // belongs to (not after a switch to another activity).
   const flushKeepalive = useCallback(() => {
     if (ctxRef.current.locked || !isDirty()) return;
     clearTimer();
-    if (saveActivityNotesKeepalive(noteIdRef.current, latestRef.current)) {
-      savedRef.current = latestRef.current;
+    const id = noteIdRef.current;
+    const value = latestRef.current;
+    if (saveActivityNotesKeepalive(id, value)) {
+      savedRef.current = value;
+      if (id === ctxRef.current.activityId) {
+        ctxRef.current.mutateActivity?.(
+          (current) =>
+            current?.data ? { ...current, data: { ...current.data, outcome_notes: value } } : current,
+          { revalidate: false },
+        );
+      }
     }
   }, []);
 
@@ -203,6 +215,16 @@ export default function useNoteAutosave({
   // by keepalive; then start afresh on the server's note.
   const initialRef = useRef(initialValue);
   initialRef.current = initialValue;
+
+  // N4: the server's note arrives or changes (the activity loaded after the
+  // panel mounted, a revalidation): it is what the server holds — as long as
+  // nothing unsaved is pending.
+  useEffect(() => {
+    if (!isDirty() && !savingRef.current) {
+      savedRef.current = initialValue ?? "";
+      latestRef.current = undefined;
+    }
+  }, [initialValue]);
   useEffect(() => {
     noteIdRef.current = activityId;
     latestRef.current = undefined;
