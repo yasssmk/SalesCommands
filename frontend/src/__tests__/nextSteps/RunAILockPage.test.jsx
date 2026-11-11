@@ -160,7 +160,8 @@ describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
 
 // ==============================|| 5.12d (1) — THE TRANSCRIPT ||============================== //
 
-const NOTES_PLACEHOLDER = /Capture key takeaways/;
+// N6: the band's note is READ-ONLY (written in the notes panel).
+const NOTES_PLACEHOLDER = /No notes yet\./;
 const editTranscriptAndSave = async (text) => {
   fireEvent.click(screen.getByText(/We agreed on a security review/));
   fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
@@ -203,36 +204,25 @@ describe("The transcript — locked ONLY on CANCELLED (5.12d (1))", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  // « Source / Notes » 1.5 (PO) — ONE note per activity, filled throughout its
-  // lifecycle: the notes follow the transcript's lock (CANCELLED only), so a
-  // COMPLETED activity's notes are editable and saved.
-  it("COMPLETED: the notes are editable and saved", async () => {
-    vi.mocked(updateActivity).mockResolvedValue({ success: true });
-    mockActivity = dcActivity({ status: "COMPLETED" });
+  // « Source / Notes » N6 (PO) — the ONE note is written in the notes panel
+  // (its own lock: CANCELLED only, ActivityNotesPanel); the band shows it
+  // READ-ONLY on every status (EditableTextBlock's read mode), no Save.
+  it.each(["PLANNED", "COMPLETED", "CANCELLED"])("%s: the band's note is read-only", (status) => {
+    mockActivity = dcActivity({ status, transcript: "", outcome_notes: "Takeaways from the call." });
     render(<ActivityWorkspacePage />);
     openSource();
-    fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Takeaways written after the call." } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
-    expect(updateActivity).toHaveBeenCalledWith("act-1", {
-      outcome_notes: "Takeaways written after the call.",
-    });
+    fireEvent.click(screen.getByText("Takeaways from the call."));
+    // only the transcript may open (PLANNED / COMPLETED): never the note
+    expect(screen.queryByDisplayValue("Takeaways from the call.")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Save/ })).toBeNull();
   });
 
-  it("CANCELLED: the notes are read-only", () => {
-    mockActivity = dcActivity({ status: "CANCELLED" });
-    render(<ActivityWorkspacePage />);
-    openSource();
-    fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
-    expect(screen.queryByRole("textbox")).toBeNull();
-  });
-
-  it("PLANNED: the notes are editable (the rule, unchanged)", () => {
+  it("an empty note reads « No notes yet. », not an invitation to type", () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     openSource();
     fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
-    expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 });
 
@@ -256,13 +246,15 @@ describe("The transcript — locked once analysed (8g-7)", () => {
     expect(screen.getByTestId("transcript-analysed-notice")).toHaveTextContent(/already been analysed/);
   });
 
-  it("analysed: the notes keep their own rule (editable on a PLANNED activity)", () => {
+  // N6: the band's note is read-only anyway — the analysis does not change
+  // that (the note is written in the notes panel, CANCELLED its only lock).
+  it("analysed: the band's note stays read-only", () => {
     mockLastRun = ANALYSED_RUN;
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     openSource();
     fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
-    expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 
   it("not analysed (none or a failed run): editable, no notice", () => {
@@ -312,7 +304,10 @@ describe("The Source band's Run AI — a pill in the band header (TD-302)", () =
 });
 
 // ==============================|| « SOURCE / NOTES » 2.4 — NO NOTE LOST IN THE SOURCE BAND ||============================== //
-// The Source band's notes AND transcript, while edited, are a PAGE source of
+// N6: the note is no longer edited in the band (read-only, written in the
+// notes panel — autosaved, never an unsaved change): these 2.4 protections now
+// hold for the TRANSCRIPT, the band's one edited field.
+// The Source band's transcript, while edited, is a PAGE source of
 // unsaved changes (EditableTextBlock.onDirtyChange → useUnsavedChanges): an
 // internal link asks first (2.3); a drawer opening does not lose them (the
 // page stays mounted — no confirmation). Folding the band no longer destroys
@@ -342,8 +337,9 @@ const renderInCoque = () =>
     { wrapper: WorkspaceCoque },
   );
 
-const typeNote = (text) => {
-  fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
+// N6: the band's edited field is the transcript (empty → its placeholder).
+const typeTranscript = (text) => {
+  fireEvent.click(screen.getByText(/Paste the call transcript/));
   fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
 };
 
@@ -354,46 +350,45 @@ describe("The Source band — no note lost (2.4)", () => {
     vi.mocked(displayErrorSnackbar).mockClear();
   });
 
-  it("folding then unfolding the band keeps the note being typed", async () => {
-    mockActivity = dcActivity();
+  it("folding then unfolding the band keeps the transcript being typed", async () => {
+    mockActivity = dcActivity({ transcript: "" });
     render(<ActivityWorkspacePage />);
     openSource();
-    typeNote("Half a note");
+    typeTranscript("Half a transcript");
     fireEvent.click(screen.getByText("Source"));
     // Let the fold transition end (it used to unmount the body).
     await act(async () => { await new Promise((r) => setTimeout(r, 450)); });
     fireEvent.click(screen.getByText("Source"));
-    expect(screen.getByRole("textbox")).toHaveValue("Half a note");
+    expect(screen.getByRole("textbox")).toHaveValue("Half a transcript");
   });
 
-  it("a note being typed: an internal link asks first", () => {
-    mockActivity = dcActivity();
+  it("the band's note (read-only) never asks: an internal link goes through", () => {
+    mockActivity = dcActivity({ outcome_notes: "A note" });
     renderInCoque();
     openSource();
-    typeNote("Half a note");
+    fireEvent.click(screen.getByText("A note"));
+    fireEvent.click(screen.getByText("Account link"));
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
+  });
+
+  it("a transcript being typed: an internal link asks first", () => {
+    mockActivity = dcActivity({ transcript: "" });
+    renderInCoque();
+    openSource();
+    typeTranscript("A pasted transcript");
     fireEvent.click(screen.getByText("Account link"));
     expect(screen.getByTestId("confirm-dialog")).toHaveTextContent("Discard your changes?");
   });
 
-  it("a transcript being typed is protected too", () => {
+  it("a transcript being typed survives a drawer opening — the page stays, no confirmation", () => {
     mockActivity = dcActivity({ transcript: "" });
     renderInCoque();
     openSource();
-    fireEvent.click(screen.getByText(/Paste the call transcript/));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "A pasted transcript" } });
-    fireEvent.click(screen.getByText("Account link"));
-    expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
-  });
-
-  it("a note being typed survives a drawer opening — the page stays, no confirmation", () => {
-    mockActivity = dcActivity();
-    renderInCoque();
-    openSource();
-    typeNote("Half a note");
+    typeTranscript("Half a transcript");
     fireEvent.click(screen.getByText("open-other"));
     expect(screen.queryByTestId("confirm-dialog")).toBeNull();
     expect(screen.getByTestId("other")).toBeInTheDocument();
-    expect(screen.getAllByRole("textbox")[0]).toHaveValue("Half a note");
+    expect(screen.getByDisplayValue("Half a transcript")).toBeInTheDocument();
   });
 
   it("nothing typed: an internal link does not ask", () => {
@@ -405,11 +400,11 @@ describe("The Source band — no note lost (2.4)", () => {
   });
 
   it("the activity became CANCELLED while typing: Save shows the ORANGE warning, no PATCH", async () => {
-    mockActivity = dcActivity();
+    mockActivity = dcActivity({ transcript: "" });
     const { rerender } = render(<ActivityWorkspacePage />);
     openSource();
-    typeNote("Takeaways");
-    mockActivity = dcActivity({ status: "CANCELLED" });
+    typeTranscript("A pasted transcript");
+    mockActivity = dcActivity({ status: "CANCELLED", transcript: "" });
     rerender(<AphoriqTheme><ActivityWorkspacePage /></AphoriqTheme>);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
     expect(displayWarningSnackbar).toHaveBeenCalledWith(SOURCE_LOCKED_MESSAGE);
@@ -419,10 +414,10 @@ describe("The Source band — no note lost (2.4)", () => {
 
   it("a server refusal stays a red error", async () => {
     vi.mocked(updateActivity).mockResolvedValue({ success: false, status: 400, error: "Refused" });
-    mockActivity = dcActivity();
+    mockActivity = dcActivity({ transcript: "" });
     render(<ActivityWorkspacePage />);
     openSource();
-    typeNote("Takeaways");
+    typeTranscript("A pasted transcript");
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
     expect(displayErrorSnackbar).toHaveBeenCalledWith(expect.objectContaining({ error: "Refused" }));
     expect(displayWarningSnackbar).not.toHaveBeenCalled();

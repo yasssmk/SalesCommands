@@ -131,11 +131,18 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
-  it('on a COMPLETED activity: the notes AND the transcript stay editable', () => {
+  // N6 — the note is written in the notes panel: READ-ONLY in the band on
+  // every status; the transcript keeps its own rule (editable on COMPLETED).
+  it('on a COMPLETED activity: the transcript stays editable, the note is read-only', () => {
     renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
 
-    expect(screen.getByTestId('etb-input-outcome_notes')).not.toBeDisabled();
+    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
     expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
+  });
+
+  it('on a PLANNED activity too, the note is read-only (written in the notes panel)', () => {
+    renderTab({ activity: { ...mockActivity, status: 'PLANNED' } });
+    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
   it('shows the error alert after pipeline error', () => {

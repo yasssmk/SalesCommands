@@ -43,7 +43,11 @@ import { getVisibleTabs } from "sections/activities/workspace/ActivityTabs";
 import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
-import ActivityNotesFab from "sections/activities/workspace/ActivityNotesFab";
+import ActivityNotesFab, {
+  OPEN_NOTES_PILL_LABEL,
+  useActivityNotesPanel,
+} from "sections/activities/workspace/ActivityNotesFab";
+import ClickablePill from "components/chips/ClickablePill";
 import RunAIAnalysisButton from "sections/activities/workspace/RunAIAnalysisButton";
 import ActivitySignalsTab, {
   ACTIVITY_FLAT_TYPES,
@@ -129,6 +133,10 @@ export default function ActivityWorkspacePage() {
   // style; the DC born, the CTA (and the highlight) go. The header counter
   // is unchanged (next steps only).
   const conversionToTake = showsCampaignConversion(activity) ? 1 : 0;
+
+  // « Source / Notes » N5 / N6 — the notes panel: ONE state for the floating
+  // button and the Source band's « Open notes » pill.
+  const notesPanel = useActivityNotesPanel(activityId);
 
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
   const pipelineRunner = usePipelineRunner({
@@ -342,7 +350,12 @@ export default function ActivityWorkspacePage() {
                 component="span"
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
+                sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}
               >
+                {/* N6 — the note is written in the notes panel: the band
+                    shows it read-only, this pill opens the panel (the
+                    pattern of the Next steps band's « + Add next step »). */}
+                <ClickablePill label={OPEN_NOTES_PILL_LABEL} active onClick={notesPanel.open} />
                 <RunAIAnalysisButton
                   activity={activity}
                   pipelineRunner={pipelineRunner}
@@ -410,7 +423,7 @@ export default function ActivityWorkspacePage() {
 
       {/* « Source / Notes » N5 — the floating « Notes » button (this page
           only, every activity type): opens / closes the coque's notes zone. */}
-      <ActivityNotesFab activityId={activity.id} />
+      <ActivityNotesFab panel={notesPanel} />
 
       {/* Modals (Delete) */}
       {headerProps.modals}

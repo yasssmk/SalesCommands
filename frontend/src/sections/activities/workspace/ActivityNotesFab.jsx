@@ -12,11 +12,14 @@
 //     closes it (its note is flushed — useNoteAutosave);
 //   - the Badge dot: a note pending / being saved (primary) or in error
 //     (error).
+// N6 — the panel's state lives in useActivityNotesPanel (the page calls it
+// ONCE): the Source band's « Open notes » pill opens the SAME panel, so the
+// button shows it open and its dot follows it.
 
 'use client';
 
 import PropTypes from 'prop-types';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -34,26 +37,47 @@ import ActivityNotesPanel from 'sections/activities/workspace/ActivityNotesPanel
 
 /** The button's tooltip and accessible name (PO label). */
 export const NOTES_FAB_TOOLTIP = 'Notes';
+/** N6 — the Source band's pill that opens the same panel (PO label). */
+export const OPEN_NOTES_PILL_LABEL = 'Open notes';
 
 const UNSAVED_STATUSES = new Set([NOTE_AUTOSAVE_STATUS.PENDING, NOTE_AUTOSAVE_STATUS.SAVING]);
 
-// ==============================|| ACTIVITY NOTES FAB ||============================== //
+// ==============================|| THE PANEL'S STATE (N6) ||============================== //
 
-export default function ActivityNotesFab({ activityId }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
-  const isNarrow = useMediaQuery(theme.breakpoints.down('lg'));
-  const { isCoqueOpen, isNotesPanelOpen, openNotesPanel, closeNotesPanel } = useWorkspaceDrawer();
-  const [notesStatus, setNotesStatus] = useState(NOTE_AUTOSAVE_STATUS.IDLE);
+/**
+ * The activity's notes panel — ONE state for the page: open, toggle, and its
+ * autosave status (the button's dot). Opening an already open panel keeps it
+ * as is: the same element (type + props) is reconciled, not remounted — its
+ * autosave goes on.
+ */
+export function useActivityNotesPanel(activityId) {
+  const { isNotesPanelOpen, openNotesPanel, closeNotesPanel } = useWorkspaceDrawer();
+  const [status, setStatus] = useState(NOTE_AUTOSAVE_STATUS.IDLE);
 
-  const toggle = () => {
+  const open = useCallback(() => {
+    // setStatus is stable: the coque holds this node as is.
+    openNotesPanel(<ActivityNotesPanel activityId={activityId} onStatusChange={setStatus} />);
+  }, [openNotesPanel, activityId]);
+
+  const toggle = useCallback(() => {
     if (isNotesPanelOpen) {
       closeNotesPanel();
       return;
     }
-    // setNotesStatus is stable: the coque holds this node as is.
-    openNotesPanel(<ActivityNotesPanel activityId={activityId} onStatusChange={setNotesStatus} />);
-  };
+    open();
+  }, [isNotesPanelOpen, closeNotesPanel, open]);
+
+  return { isOpen: isNotesPanelOpen, status, open, toggle };
+}
+
+// ==============================|| ACTIVITY NOTES FAB ||============================== //
+
+export default function ActivityNotesFab({ panel }) {
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+  const isNarrow = useMediaQuery(theme.breakpoints.down('lg'));
+  const { isCoqueOpen } = useWorkspaceDrawer();
+  const { isOpen: isNotesPanelOpen, status: notesStatus, toggle } = panel;
 
   const inError = notesStatus === NOTE_AUTOSAVE_STATUS.ERROR;
   const unsaved = UNSAVED_STATUSES.has(notesStatus);
@@ -95,5 +119,10 @@ export default function ActivityNotesFab({ activityId }) {
 }
 
 ActivityNotesFab.propTypes = {
-  activityId: PropTypes.string.isRequired,
+  /** useActivityNotesPanel(activityId) — the page's one notes panel state. */
+  panel: PropTypes.shape({
+    isOpen: PropTypes.bool.isRequired,
+    status: PropTypes.string.isRequired,
+    toggle: PropTypes.func.isRequired,
+  }).isRequired,
 };

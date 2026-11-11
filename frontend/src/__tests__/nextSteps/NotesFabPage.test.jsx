@@ -7,11 +7,14 @@
 // click closes it; it moves left by the coque's width + margin while the coque
 // is open in PUSH mode; its Badge dot shows while a note is pending (primary)
 // or in error (error).
+// N6 — the Source band: the note READ-ONLY; its header's « Open notes » pill
+// opens the SAME panel (the button shows it open, its dot follows it); a
+// note typed in the panel shows in the band once saved.
 
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { SWRConfig } from "swr";
 import WorkspaceCoque from "../_utils/workspaceCoque";
 import { testTheme } from "../_utils/aphoriqTheme";
@@ -68,7 +71,7 @@ vi.mock("hooks/usePipelineRunner", async (importOriginal) => ({
 vi.mock("contexts/BreadcrumbContext", () => ({ useBreadcrumb: () => ({ setCrumbs: vi.fn() }) }));
 vi.mock("sections/campaigns/CampaignOutcomeModal", () => ({ default: () => null }));
 vi.mock("sections/activities/workspace/ActivityPreparationTab", () => ({ default: () => null }));
-vi.mock("sections/activities/workspace/ActivityNotesTab", () => ({ default: () => null }));
+// N6: the REAL Source band body (ActivityNotesTab) — the note read-only.
 vi.mock("sections/activities/workspace/ActivitySignalsTab", () => ({
   default: () => null,
   ACTIVITY_FLAT_TYPES: ["pain"],
@@ -92,7 +95,7 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
 import ActivityWorkspacePage from "views/activities/workspace";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
-import { NOTES_FAB_TOOLTIP } from "sections/activities/workspace/ActivityNotesFab";
+import { NOTES_FAB_TOOLTIP, OPEN_NOTES_PILL_LABEL } from "sections/activities/workspace/ActivityNotesFab";
 import { clearLocalNoteWrites, NOTES_AUTOSAVE_DELAY_MS } from "hooks/useNoteAutosave";
 
 // ==============================|| HARNESS ||============================== //
@@ -282,5 +285,72 @@ describe("N5 — the Badge dot", () => {
     fireEvent.click(button);
     expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ACT_ID, "Typed then closed", expect.any(Function));
     expect(dot()).toHaveClass("MuiBadge-invisible");
+  });
+});
+
+// ==============================|| N6 — THE SOURCE BAND ||============================== //
+
+const sourceHeader = () => screen.getByText("Source").closest("[aria-expanded]");
+const sourceBody = () => sourceHeader().parentElement;
+const openNotesPill = () => within(sourceHeader()).getByRole("button", { name: OPEN_NOTES_PILL_LABEL });
+
+describe("N6 — the Source band: the note read-only, « Open notes »", () => {
+  it("the band shows the note READ-ONLY", async () => {
+    renderPage();
+    await fab();
+    fireEvent.click(screen.getByText("Source"));
+    const note = within(sourceBody()).getByText("First thoughts");
+    fireEvent.click(note);
+    expect(within(sourceBody()).queryByDisplayValue("First thoughts")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Notes" })).toBeNull();
+  });
+
+  it("« Open notes » sits in the band header (folded band) and opens the SAME panel: the button shows it open", async () => {
+    renderPage();
+    const button = await fab();
+    expect(sourceHeader()).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(openNotesPill());
+    expect(notesZone()).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Notes" })).toHaveValue("First thoughts");
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    // the band header did not toggle
+    expect(sourceHeader()).toHaveAttribute("aria-expanded", "false");
+    // the button closes what the pill opened
+    fireEvent.click(button);
+    expect(notesZone()).not.toBeInTheDocument();
+  });
+
+  it("« Open notes » on an open panel keeps it as is (no remount: the pending note is not flushed)", async () => {
+    renderPage();
+    await fab();
+    fireEvent.click(openNotesPill());
+    await screen.findByRole("textbox", { name: "Notes" });
+    fireEvent.change(notesBox(), { target: { value: "Being typed" } });
+    fireEvent.click(openNotesPill());
+    expect(saveActivityNotesKeepalive).not.toHaveBeenCalled();
+    expect(notesBox()).toHaveValue("Being typed");
+  });
+
+  it("opened by the pill, the button's dot follows the panel", async () => {
+    renderPage();
+    await fab();
+    fireEvent.click(openNotesPill());
+    await screen.findByRole("textbox", { name: "Notes" });
+    fireEvent.change(notesBox(), { target: { value: "Typed via the pill" } });
+    expect(dot()).not.toHaveClass("MuiBadge-invisible");
+  });
+
+  it("a note typed in the panel shows in the band once saved", async () => {
+    renderPage();
+    await fab();
+    fireEvent.click(screen.getByText("Source"));
+    fireEvent.click(openNotesPill());
+    await screen.findByRole("textbox", { name: "Notes" });
+    fireEvent.change(notesBox(), { target: { value: "Decisions taken with the CISO" } });
+    expect(within(sourceBody()).queryByText("Decisions taken with the CISO")).toBeNull();
+    await waitFor(() => expect(saveActivityNotes).toHaveBeenCalledTimes(1), {
+      timeout: NOTES_AUTOSAVE_DELAY_MS + 2000,
+    });
+    expect(await within(sourceBody()).findByText("Decisions taken with the CISO")).toBeInTheDocument();
   });
 });

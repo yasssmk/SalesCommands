@@ -249,11 +249,19 @@ export default function useNoteAutosave({
     if (sent) {
       savedRef.current = value;
       if (id === ctxRef.current.activityId) {
-        ctxRef.current.mutateActivity?.(
-          (current) =>
-            current?.data ? { ...current, data: { ...current.data, outcome_notes: value } } : current,
-          { revalidate: false },
-        );
+        // Best effort: when the whole tree goes (the SWR cache provider
+        // with it), the cache is gone — the keepalive is what matters.
+        try {
+          Promise.resolve(
+            ctxRef.current.mutateActivity?.(
+              (current) =>
+                current?.data ? { ...current, data: { ...current.data, outcome_notes: value } } : current,
+              { revalidate: false },
+            ),
+          ).catch(() => {});
+        } catch {
+          /* the cache is gone */
+        }
       }
     }
   }, []);

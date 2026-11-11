@@ -22,7 +22,6 @@ import { UNSAVED_SCOPE } from 'utils/unsavedChanges';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
 import {
-  isActivitySignalsLocked,
   isTranscriptLocked,
   NOTES_FIELD,
   TRANSCRIPT_FIELD,
@@ -35,6 +34,8 @@ import WarningOutlined from '@ant-design/icons/WarningOutlined';
 // ==============================|| ACTIVITY NOTES TAB ||============================== //
 
 const FAILED_STATUSES = new Set(['PARSE_ERROR', 'LLM_ERROR', 'TIMEOUT']);
+/** N6 — the read-only note's placeholder (it is written in the notes panel). */
+export const NOTES_READ_PLACEHOLDER = 'No notes yet.';
 
 export default function ActivityNotesTab({
   activity,
@@ -52,13 +53,12 @@ export default function ActivityNotesTab({
 
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // « Source / Notes » 2.4 — the notes and the transcript being edited are a
-  // PAGE source of unsaved changes: an internal link asks first (2.3) and
-  // beforeunload is prevented (2.2); a drawer opening keeps them (the page
-  // stays mounted).
-  const [notesDirty, setNotesDirty] = useState(false);
+  // « Source / Notes » 2.4 — the transcript being edited is a PAGE source of
+  // unsaved changes: an internal link asks first (2.3) and beforeunload is
+  // prevented (2.2); a drawer opening keeps it (the page stays mounted).
+  // N6: no longer the note — it is written (and autosaved) in the notes panel.
   const [transcriptDirty, setTranscriptDirty] = useState(false);
-  useUnsavedChanges(notesDirty || transcriptDirty, { scope: UNSAVED_SCOPE.PAGE });
+  useUnsavedChanges(transcriptDirty, { scope: UNSAVED_SCOPE.PAGE });
 
   // "Try again" opens the wizard of the band's Run AI pill (in the Source
   // header, lot 3 / 11 — the page owns its open state) under the same
@@ -143,18 +143,19 @@ export default function ActivityNotesTab({
   return (
     <Box sx={{ p: 0 }}>
       <Stack spacing={3}>
-        {/* Notes section — ONE note per activity, filled throughout its
-            lifecycle (« Source / Notes » 1.5): the lock of the signal bands,
-            CANCELLED only — editable on a COMPLETED activity. */}
+        {/* Notes section — ONE note per activity (« Source / Notes » 1.5),
+            written in the notes panel (N6: the band's « Open notes » pill,
+            the floating Notes button): READ-ONLY here — EditableTextBlock's
+            read mode. It follows the activity's cache, which the panel's
+            autosave updates. */}
         <EditableTextBlock
           label="Notes"
           field={NOTES_FIELD}
           initialValue={outcomeNotes}
           rows={5}
-          placeholder="Capture key takeaways, observations, decisions made during the call..."
+          placeholder={NOTES_READ_PLACEHOLDER}
           onSave={onSave}
-          isLocked={isActivitySignalsLocked(activity)}
-          onDirtyChange={setNotesDirty}
+          isLocked
         />
 
         {/* Transcript section — its own lock (5.12d: CANCELLED, so a
