@@ -31,6 +31,7 @@ import usePipelineRunner from "hooks/usePipelineRunner";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
+  displayWarningSnackbar,
 } from "utils/displayError";
 
 // Section imports
@@ -54,7 +55,11 @@ import {
   hasNextStepsBand,
   showsCampaignConversion,
 } from "utils/nextStepsBand";
-import { isActivitySignalsLocked, SOURCE_LOCKED_FIELDS } from "utils/activitySignalsLock";
+import {
+  isActivitySignalsLocked,
+  SOURCE_LOCKED_FIELDS,
+  SOURCE_LOCKED_MESSAGE,
+} from "utils/activitySignalsLock";
 
 // The Signals band halo reads the COMPLETE validable set (all 3 statuses).
 const HALO_STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
@@ -144,10 +149,15 @@ export default function ActivityWorkspacePage() {
   // band's transcript AND notes follow the signal bands' lock instead
   // (CANCELLED only — 5.12d, « Source / Notes » 1.5).
   const handleSaveField = async (fieldKey, newValue) => {
-    const fieldLocked = SOURCE_LOCKED_FIELDS.includes(fieldKey)
-      ? isActivitySignalsLocked(activity)
-      : isLocked;
-    if (fieldLocked) return false;
+    const sourceField = SOURCE_LOCKED_FIELDS.includes(fieldKey);
+    const fieldLocked = sourceField ? isActivitySignalsLocked(activity) : isLocked;
+    if (fieldLocked) {
+      // 2.4 — never silent: the Source band's lock (the activity became
+      // CANCELLED while the field was edited) is a business rule → the ORANGE
+      // warning; the edit stays open. A server refusal stays red (below).
+      if (sourceField) displayWarningSnackbar(SOURCE_LOCKED_MESSAGE);
+      return false;
+    }
 
     try {
       const result = await updateActivity(activityId, { [fieldKey]: newValue });
@@ -323,6 +333,9 @@ export default function ActivityWorkspacePage() {
             title="Source"
             icon={FileTextOutlined}
             defaultExpanded={false}
+            // 2.4 — folding the band keeps its body mounted: a note being
+            // typed is never destroyed by a fold.
+            disableUnmount
             meta={
               <Box
                 component="span"

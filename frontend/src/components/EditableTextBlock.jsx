@@ -3,7 +3,7 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -31,6 +31,12 @@ import CloseOutlined from '@ant-design/icons/CloseOutlined';
  * Syncs `value` from `initialValue` whenever the parent's value changes
  * AND the user is not currently editing — prevents a stale local state
  * when the activity SWR cache mutates externally.
+ *
+ * Optional `onDirtyChange(dirty)` (« Source / Notes » 2.4): reports the
+ * UNSAVED state — true while editing with a value different from the saved
+ * one, false once saved, cancelled or back to the saved value. A refused Save
+ * stays dirty (the edit stays open). The caller declares it to the unsaved
+ * changes guard (hooks/useUnsavedChanges).
  */
 export default function EditableTextBlock({
   label,
@@ -41,6 +47,7 @@ export default function EditableTextBlock({
   showCharCount = false,
   onSave,
   isLocked = false,
+  onDirtyChange,
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initialValue || '');
@@ -54,6 +61,14 @@ export default function EditableTextBlock({
 
   const original = initialValue || '';
   const hasChanges = value !== original;
+
+  // 2.4 — report the unsaved state to the caller (latest callback, no loop).
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  const dirty = editing && hasChanges;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty);
+  }, [dirty]);
 
   const handleSave = async () => {
     if (!hasChanges) {
@@ -161,4 +176,7 @@ EditableTextBlock.propTypes = {
   showCharCount: PropTypes.bool,
   onSave: PropTypes.func.isRequired,
   isLocked: PropTypes.bool,
+  /** Optional — (dirty: bool) => void: the unsaved state (editing with a
+      changed value), for the unsaved changes guard (2.4). */
+  onDirtyChange: PropTypes.func,
 };

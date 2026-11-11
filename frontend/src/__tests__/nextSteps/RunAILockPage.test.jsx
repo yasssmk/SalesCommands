@@ -29,6 +29,7 @@ vi.mock("next/font/google", () => ({
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "act-1" }),
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/activities/act-1",
 }));
 vi.mock("@mui/x-date-pickers/DatePicker", () => ({ DatePicker: () => <input /> }));
 vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
@@ -78,7 +79,7 @@ vi.mock("components/signals/SignalsHaloBox", () => ({
   default: ({ children, ...rest }) => <div data-testid={rest["data-testid"]}>{children}</div>,
 }));
 vi.mock("utils/displayError", () => ({
-  displaySuccessSnackbar: vi.fn(), displayErrorSnackbar: vi.fn(),
+  displaySuccessSnackbar: vi.fn(), displayErrorSnackbar: vi.fn(), displayWarningSnackbar: vi.fn(),
 }));
 vi.mock("api/signals/signals", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -305,5 +306,123 @@ describe("The Source band's Run AI — a pill in the band header (TD-302)", () =
     render(<ActivityWorkspacePage />);
     const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
     expect(pill).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+// ==============================|| « SOURCE / NOTES » 2.4 — NO NOTE LOST IN THE SOURCE BAND ||============================== //
+// The Source band's notes AND transcript, while edited, are a PAGE source of
+// unsaved changes (EditableTextBlock.onDirtyChange → useUnsavedChanges): an
+// internal link asks first (2.3); a drawer opening does not lose them (the
+// page stays mounted — no confirmation). Folding the band no longer destroys
+// the edit (disableUnmount). A Save refused by the front rule (the activity
+// became CANCELLED meanwhile) is no longer silent: the ORANGE warning; a
+// server refusal stays red. Real page in the real coque.
+
+import WorkspaceCoque from "../_utils/workspaceCoque";
+import UnsavedLinkGuard from "components/drawer/UnsavedLinkGuard";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import { displayErrorSnackbar, displayWarningSnackbar } from "utils/displayError";
+import { SOURCE_LOCKED_MESSAGE } from "utils/activitySignalsLock";
+
+function OpenOther() {
+  const { openDrawer } = useWorkspaceDrawer();
+  return <button onClick={() => openDrawer(<div data-testid="other">other</div>)}>open-other</button>;
+}
+
+const renderInCoque = () =>
+  rtlRender(
+    <>
+      <ActivityWorkspacePage />
+      <OpenOther />
+      <a href="/accounts/acc-1" onClick={(e) => e.preventDefault()}>Account link</a>
+      <UnsavedLinkGuard />
+    </>,
+    { wrapper: WorkspaceCoque },
+  );
+
+const typeNote = (text) => {
+  fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
+};
+
+describe("The Source band — no note lost (2.4)", () => {
+  afterEach(() => {
+    vi.mocked(updateActivity).mockReset();
+    vi.mocked(displayWarningSnackbar).mockClear();
+    vi.mocked(displayErrorSnackbar).mockClear();
+  });
+
+  it("folding then unfolding the band keeps the note being typed", async () => {
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    openSource();
+    typeNote("Half a note");
+    fireEvent.click(screen.getByText("Source"));
+    // Let the fold transition end (it used to unmount the body).
+    await act(async () => { await new Promise((r) => setTimeout(r, 450)); });
+    fireEvent.click(screen.getByText("Source"));
+    expect(screen.getByRole("textbox")).toHaveValue("Half a note");
+  });
+
+  it("a note being typed: an internal link asks first", () => {
+    mockActivity = dcActivity();
+    renderInCoque();
+    openSource();
+    typeNote("Half a note");
+    fireEvent.click(screen.getByText("Account link"));
+    expect(screen.getByTestId("confirm-dialog")).toHaveTextContent("Discard your changes?");
+  });
+
+  it("a transcript being typed is protected too", () => {
+    mockActivity = dcActivity({ transcript: "" });
+    renderInCoque();
+    openSource();
+    fireEvent.click(screen.getByText(/Paste the call transcript/));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "A pasted transcript" } });
+    fireEvent.click(screen.getByText("Account link"));
+    expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+  });
+
+  it("a note being typed survives a drawer opening — the page stays, no confirmation", () => {
+    mockActivity = dcActivity();
+    renderInCoque();
+    openSource();
+    typeNote("Half a note");
+    fireEvent.click(screen.getByText("open-other"));
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
+    expect(screen.getByTestId("other")).toBeInTheDocument();
+    expect(screen.getAllByRole("textbox")[0]).toHaveValue("Half a note");
+  });
+
+  it("nothing typed: an internal link does not ask", () => {
+    mockActivity = dcActivity();
+    renderInCoque();
+    openSource();
+    fireEvent.click(screen.getByText("Account link"));
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
+  });
+
+  it("the activity became CANCELLED while typing: Save shows the ORANGE warning, no PATCH", async () => {
+    mockActivity = dcActivity();
+    const { rerender } = render(<ActivityWorkspacePage />);
+    openSource();
+    typeNote("Takeaways");
+    mockActivity = dcActivity({ status: "CANCELLED" });
+    rerender(<AphoriqTheme><ActivityWorkspacePage /></AphoriqTheme>);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
+    expect(displayWarningSnackbar).toHaveBeenCalledWith(SOURCE_LOCKED_MESSAGE);
+    expect(updateActivity).not.toHaveBeenCalled();
+    expect(displayErrorSnackbar).not.toHaveBeenCalled();
+  });
+
+  it("a server refusal stays a red error", async () => {
+    vi.mocked(updateActivity).mockResolvedValue({ success: false, status: 400, error: "Refused" });
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    openSource();
+    typeNote("Takeaways");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
+    expect(displayErrorSnackbar).toHaveBeenCalledWith(expect.objectContaining({ error: "Refused" }));
+    expect(displayWarningSnackbar).not.toHaveBeenCalled();
   });
 });

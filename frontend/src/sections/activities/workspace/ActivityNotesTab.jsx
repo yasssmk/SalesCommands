@@ -17,6 +17,8 @@ import Typography from '@mui/material/Typography';
 // project imports
 import EditableTextBlock from 'components/EditableTextBlock';
 import InfoNotice from 'components/display/InfoNotice';
+import useUnsavedChanges from 'hooks/useUnsavedChanges';
+import { UNSAVED_SCOPE } from 'utils/unsavedChanges';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
 import {
@@ -48,6 +50,14 @@ export default function ActivityNotesTab({
   const { state: pipelineState, result: pipelineResult, error: pipelineError, reset: resetPipeline } = pipelineRunner;
 
   const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // « Source / Notes » 2.4 — the notes and the transcript being edited are a
+  // PAGE source of unsaved changes: an internal link asks first (2.3) and
+  // beforeunload is prevented (2.2); a drawer opening keeps them (the page
+  // stays mounted).
+  const [notesDirty, setNotesDirty] = useState(false);
+  const [transcriptDirty, setTranscriptDirty] = useState(false);
+  useUnsavedChanges(notesDirty || transcriptDirty, { scope: UNSAVED_SCOPE.PAGE });
 
   // "Try again" opens the wizard of the band's Run AI pill (in the Source
   // header, lot 3 / 11 — the page owns its open state) under the same
@@ -143,6 +153,7 @@ export default function ActivityNotesTab({
           placeholder="Capture key takeaways, observations, decisions made during the call..."
           onSave={onSave}
           isLocked={isActivitySignalsLocked(activity)}
+          onDirtyChange={setNotesDirty}
         />
 
         {/* Transcript section — its own lock (5.12d: CANCELLED, so a
@@ -157,6 +168,7 @@ export default function ActivityNotesTab({
           showCharCount
           onSave={onSave}
           isLocked={isTranscriptLocked(activity, lastRun)}
+          onDirtyChange={setTranscriptDirty}
         />
         {lastRun && (
           <InfoNotice data-testid="transcript-analysed-notice">

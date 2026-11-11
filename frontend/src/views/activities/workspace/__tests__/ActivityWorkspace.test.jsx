@@ -300,6 +300,15 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     expect(screen.getByText("Preparation")).toBeInTheDocument();
   });
 
+  // « Source / Notes » 2.4 — the Source band keeps its body MOUNTED while
+  // folded (disableUnmount: a note being typed survives a fold): « closed »
+  // = its header aria-expanded false and its body inside a hidden Collapse.
+  const expectSourceClosed = () => {
+    const header = screen.getByText("Source").closest("[aria-expanded]");
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByTestId("body-source").closest(".MuiCollapse-hidden")).not.toBeNull();
+  };
+
   it("NOT analysed (no lastRun): Preparation open; Source/Signals/Next step closed", () => {
     setupRouter();
     setActivityType("CALL", IN_DC);
@@ -307,7 +316,7 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     renderPage();
 
     expect(screen.getByTestId("body-preparation")).toBeInTheDocument();
-    expect(screen.queryByTestId("body-source")).not.toBeInTheDocument();
+    expectSourceClosed();
     expect(screen.queryByTestId("body-signals")).not.toBeInTheDocument();
     expect(screen.queryByTestId("body-next-steps")).not.toBeInTheDocument();
   });
@@ -321,7 +330,7 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     expect(screen.getByTestId("body-signals")).toBeInTheDocument();
     expect(screen.getByTestId("body-next-steps")).toBeInTheDocument();
     expect(screen.queryByTestId("body-preparation")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("body-source")).not.toBeInTheDocument();
+    expectSourceClosed();
   });
 
   // --- Signals band halo (SIG-HALO) ---

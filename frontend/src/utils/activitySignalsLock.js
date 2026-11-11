@@ -29,6 +29,13 @@ export const NOTES_FIELD = "outcome_notes";
 // The Source band's fields that follow this lock (not the page lock).
 export const SOURCE_LOCKED_FIELDS = [TRANSCRIPT_FIELD, NOTES_FIELD];
 
+// « Source / Notes » 2.4 — the message of a Save refused by this lock (the
+// activity became CANCELLED while the field was being edited): a business
+// rule, shown as a WARNING (orange), never silent. MIRROR of the server's
+// ActivityErrorMessages.SOURCE_LOCKED (backend core/error_messages.py).
+export const SOURCE_LOCKED_MESSAGE =
+  "This activity is cancelled: its notes and transcript can no longer be changed.";
+
 // 8g-7 (TD-25, PO) — no re-run of an analysis: once an analysis SUCCEEDED,
 // the transcript is the analysed one and is locked. « Analysed » = `lastRun`
 // (the last SUCCESS|PARTIAL run of api/aiPipelines/lastRun.js, THE source of
