@@ -12,6 +12,14 @@
 //
 // Fully themed via aphoriQ (surface / border) + iconSizes; width = the single
 // theme.aphoriQ.drawer.width token. No hardcoded hex/px.
+//
+// « Source / Notes » notes panel, N3 — the coque is a column of TWO zones
+// (CoqueZones, both modes): TOP = the injected content, its header and its own
+// scroll (unchanged); BOTTOM = the notes panel (NOTES_ZONE_HEIGHT of the
+// coque, no resize), its own « Notes » header with its own ×, its own scroll.
+// Notes alone → the bottom zone alone, over the whole coque. Each zone reuses
+// the coque's CoqueHeader and its scroll pattern (flex child, min-height 0,
+// overflow-y auto).
 
 "use client";
 
@@ -35,9 +43,20 @@ import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import StatusPill from "components/chips/StatusPill";
 import ConfirmDialog from "components/dialogs/ConfirmDialog";
 
+// ==============================|| CONSTANTS ||============================== //
+
+/** N3 — the notes zone's share of the coque's height (PO: ≈ 40 %, no resize). */
+export const NOTES_ZONE_HEIGHT = "40%";
+/** N3 — the notes zone's header title (PO label). */
+export const NOTES_PANEL_TITLE = "Notes";
+/** N3 — the accessible name of the notes zone's own cross. */
+export const CLOSE_NOTES_LABEL = "Close notes";
+
 // ==============================|| COQUE HEADER ||============================== //
 
-function CoqueHeader({ onClose, title, status, statusMap, hideClose }) {
+// `closeLabel` (N3, optional): the cross's accessible name — the notes zone
+// has its own cross beside the top one's « Close drawer ».
+function CoqueHeader({ onClose, title, status, statusMap, hideClose, closeLabel = "Close drawer" }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   return (
@@ -77,7 +96,7 @@ function CoqueHeader({ onClose, title, status, statusMap, hideClose }) {
         {/* hideClose: the injected content renders its own close (a legacy
             in-content header) — omit the coque's own cross. */}
         {!hideClose && (
-          <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+          <IconButton size="small" onClick={onClose} aria-label={closeLabel}>
             <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
           </IconButton>
         )}
@@ -92,6 +111,78 @@ CoqueHeader.propTypes = {
   status: PropTypes.string,
   statusMap: PropTypes.object,
   hideClose: PropTypes.bool,
+  closeLabel: PropTypes.string,
+};
+
+// ==============================|| COQUE ZONES (N3) ||============================== //
+
+// The coque's column, in BOTH modes: the top zone (content) above the notes
+// zone. Each zone = [header] + its own scrolling body — the coque's scroll
+// pattern (a flex child with min-height:0 so its overflow actually scrolls,
+// the header staying pinned).
+function CoqueZones({ top, notesNode, onCloseNotes }) {
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+  const hasTop = top.content != null;
+  const hasNotes = notesNode != null;
+  // Skip the top header entirely when there's nothing to show in it (cross
+  // suppressed AND no title) — the injected content owns its own header then.
+  const showTopHeader = !top.hideClose || Boolean(top.title);
+  return (
+    <>
+      {hasTop && (
+        <Box
+          data-testid="coque-top-zone"
+          sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
+        >
+          {showTopHeader && (
+            <CoqueHeader
+              onClose={top.onClose}
+              title={top.title}
+              status={top.status}
+              statusMap={top.statusMap}
+              hideClose={top.hideClose}
+            />
+          )}
+          <Box sx={{ p: 2, overflowY: "auto", flex: 1, minHeight: 0 }}>{top.content}</Box>
+        </Box>
+      )}
+      {hasNotes && (
+        <Box
+          data-testid="coque-notes-zone"
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            // Below a content: a fixed share of the coque (no resize). Alone:
+            // the whole coque.
+            flex: hasTop ? `0 0 ${NOTES_ZONE_HEIGHT}` : 1,
+            ...(hasTop && {
+              borderTopStyle: "solid",
+              borderTopWidth: aq.border.width.hairline,
+              borderTopColor: aq.border.color,
+            }),
+          }}
+        >
+          <CoqueHeader onClose={onCloseNotes} title={NOTES_PANEL_TITLE} closeLabel={CLOSE_NOTES_LABEL} />
+          <Box sx={{ p: 2, overflowY: "auto", flex: 1, minHeight: 0 }}>{notesNode}</Box>
+        </Box>
+      )}
+    </>
+  );
+}
+
+CoqueZones.propTypes = {
+  top: PropTypes.shape({
+    content: PropTypes.node,
+    onClose: PropTypes.func.isRequired,
+    title: PropTypes.string,
+    status: PropTypes.string,
+    statusMap: PropTypes.object,
+    hideClose: PropTypes.bool,
+  }).isRequired,
+  notesNode: PropTypes.node,
+  onCloseNotes: PropTypes.func.isRequired,
 };
 
 // ==============================|| PUSH PANEL (large) ||============================== //
@@ -99,12 +190,9 @@ CoqueHeader.propTypes = {
 // The push coque body. Extracted so its aphoriQ token reads happen only when it
 // actually MOUNTS — the Collapse below mounts it (via unmountOnExit) solely when
 // the drawer is open, so a closed coque never touches theme.aphoriQ.
-function CoquePanel({ content, onClose, title, status, statusMap, hideClose }) {
+function CoquePanel({ top, notesNode, onCloseNotes }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
-  // Skip the header row entirely when there's nothing to show in it (cross
-  // suppressed AND no title) — the injected content owns its own header then.
-  const showHeader = !hideClose || Boolean(title);
   // Sticky offset = the height of the FIXED app-bar above the content
   // (theme.mixins.toolbar.minHeight — the same token the layout's Toolbar spacer
   // reserves). The breadcrumb below it is in normal flow (it scrolls away), so it
@@ -133,31 +221,20 @@ function CoquePanel({ content, onClose, title, status, statusMap, hideClose }) {
         // height wrapper and can't move. This panel only bounds its own height to
         // the viewport so a long drawer scrolls INTERNALLY (its body, below).
         maxHeight: `calc(100vh - ${headerOffset}px - ${theme.spacing(3)})`,
+        // N3 — with the notes zone the coque takes that whole height, so the
+        // zones' shares resolve against it.
+        ...(notesNode != null && { height: `calc(100vh - ${headerOffset}px - ${theme.spacing(3)})` }),
       }}
     >
-      {showHeader && (
-        <CoqueHeader
-          onClose={onClose}
-          title={title}
-          status={status}
-          statusMap={statusMap}
-          hideClose={hideClose}
-        />
-      )}
-      {/* min-height:0 lets this flex child shrink below its content so the
-          internal overflow actually scrolls (header stays pinned). */}
-      <Box sx={{ p: 2, overflowY: "auto", flex: 1, minHeight: 0 }}>{content}</Box>
+      <CoqueZones top={top} notesNode={notesNode} onCloseNotes={onCloseNotes} />
     </Box>
   );
 }
 
 CoquePanel.propTypes = {
-  content: PropTypes.node,
-  onClose: PropTypes.func.isRequired,
-  title: PropTypes.string,
-  status: PropTypes.string,
-  statusMap: PropTypes.object,
-  hideClose: PropTypes.bool,
+  top: CoqueZones.propTypes.top,
+  notesNode: PropTypes.node,
+  onCloseNotes: PropTypes.func.isRequired,
 };
 
 // ==============================|| UNSAVED CHANGES CONFIRMATION (2.2) ||============================== //
@@ -189,7 +266,12 @@ export default function WorkspaceDrawer() {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const isNarrow = useMediaQuery(theme.breakpoints.down("lg"));
-  const { isOpen, content, title, status, statusMap, hideClose, closeDrawer } = useWorkspaceDrawer();
+  const {
+    isCoqueOpen, content, title, status, statusMap, hideClose, closeDrawer,
+    notesPanel, closeNotesPanel, closeCoque,
+  } = useWorkspaceDrawer();
+  const top = { content, onClose: closeDrawer, title, status, statusMap, hideClose };
+  const notesNode = notesPanel?.node ?? null;
 
   // ---- Narrow: OVERLAY (temporary Drawer + backdrop) ----
   // The temporary MUI Drawer slides in/out natively via theme.transitions when
@@ -208,12 +290,13 @@ export default function WorkspaceDrawer() {
       <DiscardConfirmation />
       <Drawer
         anchor="right"
-        open={isOpen}
+        open={isCoqueOpen}
         variant="temporary"
-        onClose={closeDrawer}
+        // N3: the backdrop closes the WHOLE coque (the top's guard applies).
+        onClose={closeCoque}
         disableEnforceFocus
         PaperProps={
-          isOpen
+          isCoqueOpen
             ? {
                 sx: {
                   width: { xs: "100%", sm: aq.drawer.width },
@@ -226,21 +309,14 @@ export default function WorkspaceDrawer() {
                   borderRadius: `${aq.radius.lg}px`,
                   m: 1.5,
                   height: `calc(100% - ${theme.spacing(3)})`,
+                  // N3: the two zones share the paper's column — MUI's
+                  // Drawer paper is already a flex column.
                 },
               }
             : undefined
         }
       >
-        {(!hideClose || Boolean(title)) && (
-          <CoqueHeader
-            onClose={closeDrawer}
-            title={title}
-            status={status}
-            statusMap={statusMap}
-            hideClose={hideClose}
-          />
-        )}
-        <Box sx={{ p: 2, overflowY: "auto" }}>{content}</Box>
+        <CoqueZones top={top} notesNode={notesNode} onCloseNotes={closeNotesPanel} />
       </Drawer>
       </>
     );
@@ -271,15 +347,8 @@ export default function WorkspaceDrawer() {
         flexShrink: 0,
       }}
     >
-      <Collapse orientation="horizontal" in={isOpen} unmountOnExit>
-        <CoquePanel
-          content={content}
-          onClose={closeDrawer}
-          title={title}
-          status={status}
-          statusMap={statusMap}
-          hideClose={hideClose}
-        />
+      <Collapse orientation="horizontal" in={isCoqueOpen} unmountOnExit>
+        <CoquePanel top={top} notesNode={notesNode} onCloseNotes={closeNotesPanel} />
       </Collapse>
     </Box>
     </>

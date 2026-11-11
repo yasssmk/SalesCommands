@@ -23,6 +23,15 @@
 // pathname effect runs after the navigation): the internal LINKS are
 // intercepted before it by components/drawer/UnsavedLinkGuard (2.3), through
 // guardUnsaved (scope: any source).
+//
+// « Source / Notes » notes panel, N3 — the coque has TWO zones: the TOP one
+// holds the content above (openDrawer / closeDrawer, unchanged), the BOTTOM
+// one the activity's notes panel (`notesPanel` = { node }: openNotesPanel /
+// closeNotesPanel). The coque is visible while either is open
+// (isCoqueOpen). Replacing or closing the top never touches the notes; a
+// route change or the menu opening closes BOTH (the note is flushed when its
+// panel unmounts — useNoteAutosave, N2). The note is never an unsaved change:
+// the 2.2 guard only asks for the top's modified content.
 
 "use client";
 
@@ -46,7 +55,13 @@ import { UNSAVED_SCOPE } from "utils/unsavedChanges";
 
 const WorkspaceDrawerContext = createContext({
   isOpen: false,
+  isCoqueOpen: false,
   content: null,
+  notesPanel: null,
+  isNotesPanelOpen: false,
+  openNotesPanel: () => {},
+  closeNotesPanel: () => {},
+  closeCoque: () => {},
   title: null,
   status: null,
   statusMap: null,
@@ -81,7 +96,12 @@ export function WorkspaceDrawerProvider({ children }) {
   // Optional: when true the coque suppresses its own close cross (the injected
   // content renders its own — e.g. the Objective detail's in-header ×).
   const [hideClose, setHideClose] = useState(false);
+  // The TOP zone is open while it holds a content.
   const isOpen = content != null;
+  // N3 — the BOTTOM zone: the notes panel ({ node } | null).
+  const [notesPanel, setNotesPanel] = useState(null);
+  const isNotesPanelOpen = notesPanel != null;
+  const isCoqueOpen = isOpen || isNotesPanelOpen;
 
   // ---- Unsaved changes registry (2.2) — id → scope. A ref: the guard reads
   //      it at the moment of the action; sources register synchronously at
@@ -143,9 +163,30 @@ export function WorkspaceDrawerProvider({ children }) {
     [guard, handlerDrawerOpen],
   );
 
+  // The TOP zone only: the notes panel stays.
   const closeDrawer = useCallback(() => {
     guard(resetContent);
   }, [guard, resetContent]);
+
+  // N3 — the notes panel (bottom zone). Never guarded: it replaces nothing,
+  // and the note saves itself.
+  const openNotesPanel = useCallback(
+    (node) => {
+      setNotesPanel(node == null ? null : { node });
+      // Exclusivity: the coque appearing collapses the left menu.
+      handlerDrawerOpen(false);
+    },
+    [handlerDrawerOpen],
+  );
+  const closeNotesPanel = useCallback(() => setNotesPanel(null), []);
+
+  // BOTH zones — unguarded (a navigation that already happened).
+  const resetCoque = useCallback(() => {
+    resetContent();
+    setNotesPanel(null);
+  }, [resetContent]);
+  // BOTH zones, guarded like the top's own close (the overlay's backdrop).
+  const closeCoque = useCallback(() => guard(resetCoque), [guard, resetCoque]);
 
   const confirmDiscard = useCallback(() => {
     const pending = pendingDiscard;
@@ -187,10 +228,11 @@ export function WorkspaceDrawerProvider({ children }) {
     if (prevPathname.current !== pathname) {
       prevPathname.current = pathname;
       // The navigation already happened (it cannot be blocked here — 2.3
-      // intercepts the internal links before it): close without asking.
-      resetContent();
+      // intercepts the internal links before it): close without asking —
+      // BOTH zones (N3).
+      resetCoque();
     }
-  }, [pathname, resetContent]);
+  }, [pathname, resetCoque]);
 
   // Reverse exclusivity: the hamburger lives in the shell (outside this
   // provider), so we OBSERVE the menu singleton instead of wiring the toggle.
@@ -200,20 +242,23 @@ export function WorkspaceDrawerProvider({ children }) {
   // editing » re-folds the menu, « Discard » closes the drawer.
   const prevMenuOpen = useRef(menuOpen);
   useEffect(() => {
-    if (menuOpen && !prevMenuOpen.current && isOpen) {
-      guard(resetContent, () => handlerDrawerOpen(false));
+    // N3: the menu closes the WHOLE coque (both zones).
+    if (menuOpen && !prevMenuOpen.current && isCoqueOpen) {
+      guard(resetCoque, () => handlerDrawerOpen(false));
     }
     prevMenuOpen.current = menuOpen;
-  }, [menuOpen, isOpen, guard, resetContent, handlerDrawerOpen]);
+  }, [menuOpen, isCoqueOpen, guard, resetCoque, handlerDrawerOpen]);
 
   const value = useMemo(
     () => ({
       isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer,
+      isCoqueOpen, notesPanel, isNotesPanelOpen, openNotesPanel, closeNotesPanel, closeCoque,
       registerUnsaved, releaseUnsaved, hasUnsaved, guardUnsaved,
       pendingDiscard, confirmDiscard, cancelDiscard,
     }),
     [
       isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer,
+      isCoqueOpen, notesPanel, isNotesPanelOpen, openNotesPanel, closeNotesPanel, closeCoque,
       registerUnsaved, releaseUnsaved, hasUnsaved, guardUnsaved,
       pendingDiscard, confirmDiscard, cancelDiscard,
     ],
