@@ -92,6 +92,27 @@ describe("saveActivityNotesKeepalive", () => {
     expect(JSON.parse(init.body)).toEqual({ outcome_notes: "Last words" });
   });
 
+  it("onDone gets the answer: success with the data, or a failure", async () => {
+    const onDone = vi.fn();
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, data: { outcome_notes: "x", updated_at: "T" } }),
+    });
+    saveActivityNotesKeepalive(ACTIVITY_ID, "x", onDone);
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(onDone).toHaveBeenCalledWith({ success: true, data: { outcome_notes: "x", updated_at: "T" } });
+
+    fetchSpy.mockResolvedValueOnce({ ok: false, status: 400 });
+    saveActivityNotesKeepalive(ACTIVITY_ID, "x", onDone);
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalledTimes(2));
+    expect(onDone).toHaveBeenLastCalledWith({ success: false, status: 400 });
+
+    fetchSpy.mockRejectedValueOnce(new Error("offline"));
+    saveActivityNotesKeepalive(ACTIVITY_ID, "x", onDone);
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalledTimes(3));
+    expect(onDone).toHaveBeenLastCalledWith({ success: false, status: 0 });
+  });
+
   it("never throws (fire-and-forget)", () => {
     fetchSpy.mockImplementation(() => {
       throw new Error("boom");

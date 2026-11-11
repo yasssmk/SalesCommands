@@ -60,6 +60,7 @@ export default function EditableTextBlock({
   autosave = false,
   onValueChange,
   indicator,
+  ariaLabel,
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initialValue || '');
@@ -155,7 +156,7 @@ export default function EditableTextBlock({
             value={value}
             onChange={(e) => handleAutosaveChange(e.target.value)}
             placeholder={placeholder}
-            inputProps={{ 'aria-label': label || field }}
+            inputProps={{ 'aria-label': ariaLabel || label || field }}
           />
         )
       ) : /* Edit / Display */
@@ -241,4 +242,6 @@ EditableTextBlock.propTypes = {
   onValueChange: PropTypes.func,
   /** Optional (N4) — a slot on the label row (the save indicator). */
   indicator: PropTypes.node,
+  /** Optional (N4b) — the text box's accessible name (autosave; default: the label). */
+  ariaLabel: PropTypes.string,
 };

@@ -923,12 +923,16 @@ export async function saveActivityNotes(activityId, notes) {
  * authenticates by JWT, never by session — proven by
  * backend/tests/activities/test_notes_autosave_csrf.py). Fire-and-forget:
  * never throws, the answer cannot be shown.
+ * N4b — optional `onDone(result)`: the answer, when the page is still there
+ * to get it ({ success: true, data: { outcome_notes, updated_at } } or
+ * { success: false, status }) — the confirmation of the write.
  *
  * @param {string} activityId - UUID of the activity
  * @param {string} notes - The whole note
+ * @param {Function} [onDone] - (result) => void
  * @returns {boolean} whether the request was sent
  */
-export function saveActivityNotesKeepalive(activityId, notes) {
+export function saveActivityNotesKeepalive(activityId, notes, onDone) {
   if (!activityId || !isValidUUID(activityId) || typeof fetch !== "function") {
     return false;
   }
@@ -939,7 +943,16 @@ export function saveActivityNotesKeepalive(activityId, notes) {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ outcome_notes: notes ?? "" }),
-    }).catch(() => {});
+    })
+      .then(async (response) => {
+        if (!response?.ok) {
+          onDone?.({ success: false, status: response?.status ?? 0 });
+          return;
+        }
+        const body = await response.json();
+        onDone?.({ success: true, data: body?.data ?? body });
+      })
+      .catch(() => onDone?.({ success: false, status: 0 }));
     return true;
   } catch {
     return false;

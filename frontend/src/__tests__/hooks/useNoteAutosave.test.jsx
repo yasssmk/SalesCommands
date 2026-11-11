@@ -32,6 +32,8 @@ vi.mock("contexts/WorkspaceDrawerContext", () => ({
 }));
 
 import useNoteAutosave, {
+  clearLocalNoteWrites,
+  resolveServerNote,
   NOTES_AUTOSAVE_DELAY_MS,
   NOTES_AUTOSAVE_RETRY_MS,
   NOTE_AUTOSAVE_STATUS,
@@ -71,6 +73,7 @@ const advance = async (ms) => {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  clearLocalNoteWrites();
   saveActivityNotes.mockImplementation(async (_id, notes) => ok(notes));
 });
 
@@ -231,7 +234,7 @@ describe("useNoteAutosave — keepalive when the page goes away", () => {
     act(() => result.current.schedule("unsaved"));
     unmount();
     expect(saveActivityNotesKeepalive).toHaveBeenCalledTimes(1);
-    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "unsaved");
+    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "unsaved", expect.any(Function));
     await advance(NOTES_AUTOSAVE_DELAY_MS);
     expect(saveActivityNotes).not.toHaveBeenCalled();
   });
@@ -248,14 +251,14 @@ describe("useNoteAutosave — keepalive when the page goes away", () => {
     const { result } = setup();
     act(() => result.current.schedule("closing the tab"));
     window.dispatchEvent(new Event("beforeunload"));
-    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "closing the tab");
+    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "closing the tab", expect.any(Function));
   });
 
   it("another activity: the previous one's unsaved value goes to the previous id", () => {
     const { result, rerender, mutateActivity } = setup();
     act(() => result.current.schedule("for the first"));
     rerender({ activityId: OTHER_ID, initialValue: "", mutateActivity });
-    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "for the first");
+    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "for the first", expect.any(Function));
     expect(result.current.status).toBe(NOTE_AUTOSAVE_STATUS.IDLE);
   });
 });
@@ -277,7 +280,7 @@ describe("useNoteAutosave — N4 additions", () => {
     const { result, rerender, mutateActivity } = setup();
     act(() => result.current.schedule("for the first"));
     rerender({ activityId: OTHER_ID, initialValue: "", mutateActivity });
-    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "for the first");
+    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "for the first", expect.any(Function));
     expect(mutateActivity).not.toHaveBeenCalled();
   });
 
@@ -299,6 +302,105 @@ describe("useNoteAutosave — N4 additions", () => {
     rerender({ activityId: ID, initialValue: "Theirs", mutateActivity });
     await advance(NOTES_AUTOSAVE_DELAY_MS);
     expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Mine");
+  });
+});
+
+describe("useNoteAutosave — never older than the last local write (N4b)", () => {
+  const T = "2026-11-11T10:15:00Z";
+  const BEFORE = "2026-11-11T10:14:59Z";
+  const AFTER = "2026-11-11T10:16:00Z";
+
+  it("no local write → the server's note", () => {
+    expect(resolveServerNote(ID, "Server", BEFORE)).toBe("Server");
+  });
+
+  it("a confirmed write at T: an OLDER server note is refused, a newer one accepted", async () => {
+    const { result, rerender, mutateActivity } = setup();
+    act(() => result.current.schedule("Mine"));
+    await advance(NOTES_AUTOSAVE_DELAY_MS); // confirmed with updated_at = T
+    rerender({ activityId: ID, initialValue: "Server note", serverUpdatedAt: BEFORE, mutateActivity });
+    expect(result.current.note).toBe("Mine");
+    rerender({ activityId: ID, initialValue: "Another session's", serverUpdatedAt: AFTER, mutateActivity });
+    expect(result.current.note).toBe("Another session's");
+  });
+
+  it("an UNCONFIRMED keepalive: a remount on the stale note shows the local one", () => {
+    const first = setup();
+    act(() => first.result.current.schedule("Flushed"));
+    first.unmount();
+    const { result } = renderHook((p) => useNoteAutosave(p), {
+      initialProps: { activityId: ID, initialValue: "Server note", serverUpdatedAt: AFTER, mutateActivity: vi.fn() },
+    });
+    expect(result.current.note).toBe("Flushed");
+  });
+
+  it("the stale note is not the saved reference: the next keystroke sends local + new", async () => {
+    const first = setup();
+    act(() => first.result.current.schedule("Flushed"));
+    first.unmount();
+    const { result } = renderHook((p) => useNoteAutosave(p), {
+      initialProps: { activityId: ID, initialValue: "Server note", mutateActivity: vi.fn() },
+    });
+    act(() => result.current.schedule("Flushed")); // unchanged: nothing to send
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).not.toHaveBeenCalled();
+    act(() => result.current.schedule("Flushed + new"));
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Flushed + new");
+  });
+
+  it("the keepalive's answer confirms the write: then the server's clock decides", () => {
+    saveActivityNotesKeepalive.mockImplementationOnce((_id, notes, onDone) => {
+      onDone({ success: true, data: { outcome_notes: notes, updated_at: T } });
+      return true;
+    });
+    const first = setup();
+    act(() => first.result.current.schedule("Flushed"));
+    first.unmount();
+    expect(resolveServerNote(ID, "Server note", BEFORE)).toBe("Flushed");
+    expect(resolveServerNote(ID, "Another session's", AFTER)).toBe("Another session's");
+  });
+
+  it("a server note at EXACTLY the confirmed time is accepted (« at least »)", () => {
+    saveActivityNotesKeepalive.mockImplementationOnce((_id, notes, onDone) => {
+      onDone({ success: true, data: { outcome_notes: notes, updated_at: T } });
+      return true;
+    });
+    const first = setup();
+    act(() => first.result.current.schedule("Flushed"));
+    first.unmount();
+    expect(resolveServerNote(ID, "Same instant, other session", T)).toBe("Same instant, other session");
+  });
+
+  it("an OLDER write's late confirmation does not override a newer write", async () => {
+    let confirmFirst;
+    saveActivityNotesKeepalive.mockImplementationOnce((_id, _notes, onDone) => {
+      confirmFirst = onDone;
+      return true;
+    });
+    const first = setup();
+    act(() => first.result.current.schedule("A"));
+    first.unmount(); // keepalive A, not answered yet
+    const pending = deferred();
+    saveActivityNotes.mockImplementationOnce(() => pending.promise);
+    const { result } = renderHook((p) => useNoteAutosave(p), {
+      initialProps: { activityId: ID, initialValue: "A", mutateActivity: vi.fn() },
+    });
+    act(() => result.current.schedule("A then B"));
+    await advance(NOTES_AUTOSAVE_DELAY_MS); // save B in flight
+    confirmFirst({ success: true, data: { outcome_notes: "A", updated_at: T } });
+    expect(resolveServerNote(ID, "Old", BEFORE)).toBe("A then B");
+  });
+
+  it("a failed keepalive stays unconfirmed: the local value is kept", () => {
+    saveActivityNotesKeepalive.mockImplementationOnce((_id, _notes, onDone) => {
+      onDone({ success: false, status: 0 });
+      return true;
+    });
+    const first = setup();
+    act(() => first.result.current.schedule("Flushed"));
+    first.unmount();
+    expect(resolveServerNote(ID, "Another session's", AFTER)).toBe("Flushed");
   });
 });
 

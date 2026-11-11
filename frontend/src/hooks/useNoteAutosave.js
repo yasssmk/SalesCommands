@@ -5,8 +5,8 @@
 // autosave pattern in the codebase): every other field saves on an explicit
 // Save (EditableTextBlock).
 //
-//   const { status, savedAt, locked, schedule, flush, retry } =
-//     useNoteAutosave({ activityId, initialValue, locked, mutateActivity });
+//   const { note, status, savedAt, locked, schedule, flush, retry } =
+//     useNoteAutosave({ activityId, initialValue, serverUpdatedAt, locked, mutateActivity });
 //
 //   - initialValue: the note the server holds (activity.outcome_notes) — a
 //     value equal to it is not saved;
@@ -28,6 +28,14 @@
 // false })) — no refetch at every pause.
 // The note does NOT register in useUnsavedChanges (PO): it is never « lost »,
 // so no confirmation — the guard's navigations flush it instead.
+//
+// N4b — ONE rule: a server note OLDER than the last local write of the same
+// activity is never accepted. Every send (keepalive included) records that
+// write (LOCAL_NOTE_WRITES — module level: it outlives the panel, closed then
+// reopened); its confirmation carries the server's updated_at. A server note
+// is accepted only if its updated_at is at least that one (the same clock —
+// the server's); while the write is unconfirmed, the local value stays.
+// `note` = the note to show (the server's, or the local one it lags behind).
 
 "use client";
 
@@ -58,9 +66,46 @@ export const NOTE_AUTOSAVE_STATUS = {
 
 const isSourceLocked = (result) => result?.error === SOURCE_LOCKED_MESSAGE;
 
+// N4b — activityId → { value, updatedAt } : the last local write (updatedAt =
+// the server's answer; null while unconfirmed).
+const LOCAL_NOTE_WRITES = new Map();
+
+/** Tests only: forget the local writes. */
+export function clearLocalNoteWrites() {
+  LOCAL_NOTE_WRITES.clear();
+}
+
+const recordWrite = (id, value) => LOCAL_NOTE_WRITES.set(id, { value, updatedAt: null });
+
+const confirmWrite = (id, value, updatedAt) => {
+  // Superseded by a later write meanwhile: that one decides.
+  if (LOCAL_NOTE_WRITES.get(id)?.value === value) {
+    LOCAL_NOTE_WRITES.set(id, { value, updatedAt: updatedAt ?? null });
+  }
+};
+
+const toTime = (iso) => {
+  const t = Date.parse(iso ?? "");
+  return Number.isNaN(t) ? null : t;
+};
+
+/** THE rule: the note to trust, given the server's note and its updated_at. */
+export function resolveServerNote(id, serverNote, serverUpdatedAt) {
+  const server = serverNote ?? "";
+  const write = LOCAL_NOTE_WRITES.get(id);
+  if (!write || write.value === server) return server;
+  const confirmedAt = toTime(write.updatedAt);
+  const serverAt = toTime(serverUpdatedAt);
+  if (confirmedAt != null && serverAt != null && serverAt >= confirmedAt) {
+    return server; // newer than our write (e.g. another session): last write wins
+  }
+  return write.value;
+}
+
 export default function useNoteAutosave({
   activityId,
   initialValue = "",
+  serverUpdatedAt,
   locked = false,
   mutateActivity,
   delayMs = NOTES_AUTOSAVE_DELAY_MS,
@@ -69,10 +114,14 @@ export default function useNoteAutosave({
   const [status, setStatus] = useState(NOTE_AUTOSAVE_STATUS.IDLE);
   const [savedAt, setSavedAt] = useState(null);
   const [serverLocked, setServerLocked] = useState(false);
+  // N4b — the note to show: the server's, unless older than our last write.
+  const [note, setNote] = useState(() =>
+    resolveServerNote(activityId, initialValue, serverUpdatedAt),
+  );
 
   // Refs: read by the timers, unmount and beforeunload (always fresh).
   const latestRef = useRef(undefined); // the value typed last (undefined: none)
-  const savedRef = useRef(initialValue ?? ""); // the value the server holds
+  const savedRef = useRef(note); // the value the server holds
   const noteIdRef = useRef(activityId); // the activity the typed value belongs to
   const timerRef = useRef(null);
   const savingRef = useRef(false);
@@ -103,6 +152,7 @@ export default function useNoteAutosave({
 
     const value = latestRef.current;
     savingRef.current = true;
+    recordWrite(id, value);
     setIfMounted(() => setStatus(NOTE_AUTOSAVE_STATUS.SAVING));
 
     let result;
@@ -118,6 +168,7 @@ export default function useNoteAutosave({
     if (result?.success) {
       savedRef.current = value;
       failingRef.current = false;
+      confirmWrite(id, value, result.data?.updated_at);
       const updatedAt = result.data?.updated_at ?? new Date().toISOString();
       mutate?.(
         (current) =>
@@ -130,6 +181,7 @@ export default function useNoteAutosave({
         { revalidate: false },
       );
       if (!mountedRef.current) return;
+      setNote(value);
       setSavedAt(updatedAt);
       if (isDirty()) {
         // Typed during the save: save that too, now.
@@ -190,7 +242,11 @@ export default function useNoteAutosave({
     clearTimer();
     const id = noteIdRef.current;
     const value = latestRef.current;
-    if (saveActivityNotesKeepalive(id, value)) {
+    recordWrite(id, value);
+    const sent = saveActivityNotesKeepalive(id, value, (result) => {
+      if (result?.success) confirmWrite(id, value, result.data?.updated_at);
+    });
+    if (sent) {
       savedRef.current = value;
       if (id === ctxRef.current.activityId) {
         ctxRef.current.mutateActivity?.(
@@ -219,16 +275,23 @@ export default function useNoteAutosave({
   // N4: the server's note arrives or changes (the activity loaded after the
   // panel mounted, a revalidation): it is what the server holds — as long as
   // nothing unsaved is pending.
+  // N4b: through THE rule — never older than our last write.
+  const serverAtRef = useRef(serverUpdatedAt);
+  serverAtRef.current = serverUpdatedAt;
   useEffect(() => {
     if (!isDirty() && !savingRef.current) {
-      savedRef.current = initialValue ?? "";
+      const trusted = resolveServerNote(noteIdRef.current, initialValue, serverUpdatedAt);
+      savedRef.current = trusted;
       latestRef.current = undefined;
+      setNote(trusted);
     }
-  }, [initialValue]);
+  }, [initialValue, serverUpdatedAt]);
   useEffect(() => {
     noteIdRef.current = activityId;
     latestRef.current = undefined;
-    savedRef.current = initialRef.current ?? "";
+    const trusted = resolveServerNote(activityId, initialRef.current, serverAtRef.current);
+    savedRef.current = trusted;
+    setNote(trusted);
     failingRef.current = false;
     setServerLocked(false);
     setSavedAt(null);
@@ -240,6 +303,7 @@ export default function useNoteAutosave({
   }, [activityId, flushKeepalive]);
 
   return {
+    note,
     status,
     savedAt,
     locked: locked || serverLocked,

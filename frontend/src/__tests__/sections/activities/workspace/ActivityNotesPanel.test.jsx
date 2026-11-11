@@ -47,7 +47,7 @@ vi.mock("utils/displayError", () => ({
 import WorkspaceCoque from "../../../_utils/workspaceCoque";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import ActivityNotesPanel, { formatNotesSavedAt } from "sections/activities/workspace/ActivityNotesPanel";
-import { NOTES_AUTOSAVE_DELAY_MS } from "hooks/useNoteAutosave";
+import { NOTES_AUTOSAVE_DELAY_MS, clearLocalNoteWrites } from "hooks/useNoteAutosave";
 import { SOURCE_LOCKED_MESSAGE } from "utils/activitySignalsLock";
 
 // ==============================|| HARNESS ||============================== //
@@ -94,13 +94,14 @@ async function openNotes() {
   await advance(0); // SWR resolves the activity
 }
 
-const notesBox = () => screen.queryByRole("textbox", { name: "outcome_notes" });
+const notesBox = () => screen.queryByRole("textbox", { name: "Notes" });
 const type = (text) => fireEvent.change(notesBox(), { target: { value: text } });
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.clearAllMocks();
+  clearLocalNoteWrites();
   server.activity = { id: ID, status: "PLANNED", outcome_notes: "First thoughts" };
   saveActivityNotes.mockImplementation(async (_id, notes) => {
     server.activity = { ...server.activity, outcome_notes: notes };
@@ -158,7 +159,7 @@ describe("notes panel — autosave in the coque", () => {
     type("Typed just before closing");
     fireEvent.click(screen.getByText("close-notes"));
     expect(saveActivityNotesKeepalive).toHaveBeenCalledTimes(1);
-    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "Typed just before closing");
+    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "Typed just before closing", expect.any(Function));
     await advance(NOTES_AUTOSAVE_DELAY_MS);
     expect(saveActivityNotes).not.toHaveBeenCalled();
     await openNotes();
@@ -175,6 +176,53 @@ describe("notes panel — autosave in the coque", () => {
     await advance(NOTES_AUTOSAVE_DELAY_MS);
     expect(saveActivityNotes).toHaveBeenCalledWith(ID, "While another drawer opens");
     expect(screen.getByTestId("notes-saved-indicator")).toBeInTheDocument();
+  });
+});
+
+describe("notes panel — never older than the last local write (N4b)", () => {
+  it("the field's accessible name is « Notes »", async () => {
+    renderWorkspace();
+    await openNotes();
+    expect(screen.getByRole("textbox", { name: "Notes" })).toBeInTheDocument();
+  });
+
+  it("closed with a pending note, reopened on a STALE server answer → the local text stays, nothing is lost", async () => {
+    // The keepalive has not reached the server yet: the server still holds
+    // (and answers) the OLD note.
+    saveActivityNotesKeepalive.mockImplementation(() => true);
+    renderWorkspace();
+    await openNotes();
+    type("Typed before closing");
+    fireEvent.click(screen.getByText("close-notes"));
+    expect(saveActivityNotesKeepalive).toHaveBeenCalledWith(ID, "Typed before closing", expect.any(Function));
+    expect(server.activity.outcome_notes).toBe("First thoughts");
+
+    await openNotes();
+    await advance(NOTES_AUTOSAVE_DELAY_MS); // the refetch answers the stale note
+    expect(notesBox()).toHaveValue("Typed before closing");
+
+    type("Typed before closing, and more");
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).toHaveBeenCalledTimes(1);
+    expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Typed before closing, and more");
+  });
+});
+
+describe("notes panel — last write wins against a NEWER server note (N4b)", () => {
+  it("after our confirmed save, another session's newer note is shown on reopening", async () => {
+    renderWorkspace();
+    await openNotes();
+    type("Mine");
+    await advance(NOTES_AUTOSAVE_DELAY_MS); // confirmed at NOW
+    fireEvent.click(screen.getByText("close-notes"));
+    server.activity = {
+      ...server.activity,
+      outcome_notes: "Another session's",
+      updated_at: new Date(NOW.getTime() + 60_000).toISOString(),
+    };
+    await openNotes();
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(notesBox()).toHaveValue("Another session's");
   });
 });
 

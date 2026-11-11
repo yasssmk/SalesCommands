@@ -18,6 +18,7 @@ import { format, isToday } from 'date-fns';
 import Typography from '@mui/material/Typography';
 
 import EditableTextBlock from 'components/EditableTextBlock';
+import { NOTES_PANEL_TITLE } from 'components/WorkspaceDrawer';
 import { useGetActivity } from 'api/accounts/activities';
 import useNoteAutosave, { NOTE_AUTOSAVE_STATUS } from 'hooks/useNoteAutosave';
 import { isActivitySignalsLocked, NOTES_FIELD } from 'utils/activitySignalsLock';
@@ -42,10 +43,11 @@ export function formatNotesSavedAt(savedAt) {
 
 export default function ActivityNotesPanel({ activityId }) {
   const { activity, mutateActivity } = useGetActivity(activityId);
-  const serverNote = activity?.outcome_notes ?? '';
-  const { status, savedAt, locked, schedule } = useNoteAutosave({
+  // N4b: the hook's `note` — the server's, never older than our last write.
+  const { note, status, savedAt, locked, schedule } = useNoteAutosave({
     activityId,
-    initialValue: serverNote,
+    initialValue: activity?.outcome_notes ?? '',
+    serverUpdatedAt: activity?.updated_at,
     locked: isActivitySignalsLocked(activity),
     mutateActivity,
   });
@@ -63,7 +65,7 @@ export default function ActivityNotesPanel({ activityId }) {
     <EditableTextBlock
       label=""
       field={NOTES_FIELD}
-      initialValue={serverNote}
+      initialValue={note}
       rows={NOTES_PANEL_ROWS}
       placeholder={NOTES_PANEL_PLACEHOLDER}
       // Autosave: no explicit save (useNoteAutosave does it).
@@ -72,6 +74,7 @@ export default function ActivityNotesPanel({ activityId }) {
       autosave
       onValueChange={schedule}
       indicator={indicator}
+      ariaLabel={NOTES_PANEL_TITLE}
     />
   );
 }
