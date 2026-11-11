@@ -154,10 +154,8 @@ export default function RunAIAnalysisButton({
       {/* Run AI Wizard (2-step) */}
       <RunAIWizard
         open={wizardOpen}
-        activityId={activityId}
         transcript={transcript}
         outcomeNotes={outcomeNotes}
-        lastRun={lastRun}
         runsByPipeline={runsByPipeline}
         onCancel={handleCancelWizard}
         onConfirm={handleConfirmWizard}

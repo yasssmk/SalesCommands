@@ -3,11 +3,10 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 
 // material-ui
-import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
@@ -36,23 +35,8 @@ const QUALIFICATION_TYPES_LABEL = QUALIFICATION_SIGNAL_TYPES.map(getSignalTypeLa
 
 const MIN_TRANSCRIPT_LENGTH = 50;
 const NOTES_SEPARATOR = '\n\n---\nSDR Notes:\n';
-const HASH_DEBOUNCE_MS = 300;
 
 // ==============================|| HELPERS ||============================== //
-
-async function computeContentHash(activityId, content) {
-  if (!activityId || !content) return null;
-  try {
-    const text = `${activityId}::${content}`;
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  } catch {
-    return null;
-  }
-}
 
 function formatTimeAgo(isoDate) {
   if (!isoDate) return '';
@@ -169,44 +153,19 @@ StepObjectives.propTypes = {
 
 // ==============================|| STEP 2 — CURATION ||============================== //
 
+// « Source / Notes » 3.1 — no hash-based « Analysis already performed » alert
+// any more: the « already analysed » state is the SERVER's (step 1 reads
+// runsByPipeline), and the server never re-runs an analysed pipeline (1.6).
 function StepCuration({
-  activityId,
   curatedText,
   setCuratedText,
   includeNotes,
   setIncludeNotes,
   hasNotes,
-  lastRun,
   buildFinalContent,
   onBack,
   onConfirm,
 }) {
-  const [dupWarning, setDupWarning] = useState(false);
-  const hashDebounceRef = useRef(null);
-
-  useEffect(() => {
-    if (!lastRun?.input_hash || !activityId) {
-      setDupWarning(false);
-      return;
-    }
-
-    if (hashDebounceRef.current) {
-      clearTimeout(hashDebounceRef.current);
-    }
-
-    hashDebounceRef.current = setTimeout(async () => {
-      const finalContent = buildFinalContent(curatedText, includeNotes);
-      const hash = await computeContentHash(activityId, finalContent);
-      setDupWarning(hash !== null && hash === lastRun.input_hash);
-    }, HASH_DEBOUNCE_MS);
-
-    return () => {
-      if (hashDebounceRef.current) {
-        clearTimeout(hashDebounceRef.current);
-      }
-    };
-  }, [curatedText, includeNotes, activityId, lastRun?.input_hash, buildFinalContent]);
-
   const trimmedLength = curatedText.trim().length;
   const isTooShort = trimmedLength > 0 && trimmedLength < MIN_TRANSCRIPT_LENGTH;
   const isEmpty = trimmedLength === 0;
@@ -218,15 +177,6 @@ function StepCuration({
     }
   };
 
-  const dupAlertMessage = (() => {
-    if (!dupWarning || !lastRun) return null;
-    let msg = 'Analysis already performed';
-    if (lastRun.last_run_at) {
-      msg += ` · ${formatTimeAgo(lastRun.last_run_at)}`;
-    }
-    return msg;
-  })();
-
   return (
     <Box sx={{ p: 2.5 }}>
       <Stack spacing={2.5}>
@@ -235,10 +185,6 @@ function StepCuration({
           (confidential names, third parties, NDA details, etc.).
           Your original transcript stays untouched.
         </InfoNotice>
-
-        {dupWarning && dupAlertMessage && (
-          <Alert severity="warning">{dupAlertMessage}</Alert>
-        )}
 
         <TextField
           multiline
@@ -304,13 +250,11 @@ function StepCuration({
 }
 
 StepCuration.propTypes = {
-  activityId: PropTypes.string,
   curatedText: PropTypes.string.isRequired,
   setCuratedText: PropTypes.func.isRequired,
   includeNotes: PropTypes.bool.isRequired,
   setIncludeNotes: PropTypes.func.isRequired,
   hasNotes: PropTypes.bool.isRequired,
-  lastRun: PropTypes.object,
   buildFinalContent: PropTypes.func.isRequired,
   onBack: PropTypes.func.isRequired,
   onConfirm: PropTypes.func.isRequired,
@@ -324,10 +268,8 @@ export const DEFAULT_OBJECTIVES = { qualification: true, nextSteps: true };
 
 export default function RunAIWizard({
   open,
-  activityId,
   transcript,
   outcomeNotes,
-  lastRun,
   runsByPipeline,
   onCancel,
   onConfirm,
@@ -337,9 +279,10 @@ export default function RunAIWizard({
   const [qualificationChecked, setQualificationChecked] = useState(defaultObjectives.qualification);
   const [nextStepsChecked, setNextStepsChecked] = useState(defaultObjectives.nextSteps);
   const [curatedText, setCuratedText] = useState('');
-  const [includeNotes, setIncludeNotes] = useState(false);
-
   const hasNotes = Boolean(outcomeNotes?.trim());
+  // 3.1 (PO, Q5) — the activity's notes are sent with the transcript by
+  // default when there are some (the rep can still uncheck them).
+  const [includeNotes, setIncludeNotes] = useState(hasNotes);
 
   useEffect(() => {
     if (open) {
@@ -347,9 +290,9 @@ export default function RunAIWizard({
       setQualificationChecked(defaultObjectives.qualification);
       setNextStepsChecked(defaultObjectives.nextSteps);
       setCuratedText(transcript || '');
-      setIncludeNotes(false);
+      setIncludeNotes(hasNotes);
     }
-  }, [open, transcript, defaultObjectives.qualification, defaultObjectives.nextSteps]);
+  }, [open, transcript, hasNotes, defaultObjectives.qualification, defaultObjectives.nextSteps]);
 
   const buildFinalContent = useCallback(
     (text, withNotes) => {
@@ -362,10 +305,12 @@ export default function RunAIWizard({
     [hasNotes, outcomeNotes],
   );
 
+  // 3.1 — a pipeline already analysed (the SERVER state of step 1,
+  // runsByPipeline — its checkbox shows checked and disabled) is NOT sent.
   const handleConfirm = (finalContent) => {
     onConfirm(finalContent, {
-      qualification: qualificationChecked,
-      nextSteps: nextStepsChecked,
+      qualification: qualificationChecked && !runsByPipeline?.TRANSCRIPT_SIGNALS,
+      nextSteps: nextStepsChecked && !runsByPipeline?.NEXT_STEPS,
     });
   };
 
@@ -427,13 +372,11 @@ export default function RunAIWizard({
 
         {step === 2 && (
           <StepCuration
-            activityId={activityId}
             curatedText={curatedText}
             setCuratedText={setCuratedText}
             includeNotes={includeNotes}
             setIncludeNotes={setIncludeNotes}
             hasNotes={hasNotes}
-            lastRun={lastRun}
             buildFinalContent={buildFinalContent}
             onBack={() => setStep(1)}
             onConfirm={handleConfirm}
@@ -448,17 +391,8 @@ export default function RunAIWizard({
 
 RunAIWizard.propTypes = {
   open: PropTypes.bool.isRequired,
-  activityId: PropTypes.string,
   transcript: PropTypes.string,
   outcomeNotes: PropTypes.string,
-  lastRun: PropTypes.shape({
-    last_run_at: PropTypes.string,
-    last_run_by: PropTypes.shape({
-      id: PropTypes.string,
-      full_name: PropTypes.string,
-    }),
-    input_hash: PropTypes.string,
-  }),
   runsByPipeline: PropTypes.shape({
     TRANSCRIPT_SIGNALS: PropTypes.object,
     NEXT_STEPS: PropTypes.object,
