@@ -11,6 +11,7 @@ import { useAuth } from "hooks/useAuth";
 import { api } from "utils/axiosClient";
 import { tenantKey, revalidateMetricSurfaces, matchKey } from "api/_swr";
 import { isValidUUID, sanitizeObject } from "utils/validators";
+import { authConfig } from "../../config/auth";
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -144,6 +145,7 @@ export const ACTIVITY_OUTCOME_COLORS = {
 const endpoints = {
   activities: "/module-activities/",
   activityDetail: (id) => `/module-activities/${id}/`,
+  activityNotes: (id) => `/module-activities/${id}/notes/`,
   myActivities: "/module-activities/my-activities/",
   byAccount: "/module-activities/by-account/",
   byStep: "/module-activities/by-step/",
@@ -882,6 +884,66 @@ export async function createActivityWithEntities(payload) {
     status: result.status || 0,
     response: result.response || null,
   };
+}
+
+/**
+ * SAVE ACTIVITY NOTES — the notes panel's AUTOSAVE (« Source / Notes », N2).
+ *
+ * POST /module-activities/{id}/notes/ — the light note-only write (N1): no
+ * cascade revalidation here (it fires at every pause in typing); the caller
+ * updates its own cache locally (useNoteAutosave).
+ *
+ * @param {string} activityId - UUID of the activity
+ * @param {string} notes - The whole note
+ * @returns {Promise<Object>} {success, data?: {outcome_notes, updated_at}, error?, status?}
+ */
+export async function saveActivityNotes(activityId, notes) {
+  if (!activityId || !isValidUUID(activityId)) {
+    return { success: false, error: "Invalid activity ID format", status: 400 };
+  }
+  const result = await api.post(endpoints.activityNotes(activityId), {
+    outcome_notes: notes ?? "",
+  });
+  if (result.success) {
+    return { success: true, data: result.data?.data || result.data };
+  }
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null,
+  };
+}
+
+/**
+ * SAVE ACTIVITY NOTES — KEEPALIVE variant, for the last flush when the page
+ * goes away (unmount, beforeunload): a request axios cannot make survive.
+ * `fetch(..., { keepalive: true, credentials: "include" })` — the HttpOnly
+ * access_token cookie authenticates it; no CSRF token is needed (the API
+ * authenticates by JWT, never by session — proven by
+ * backend/tests/activities/test_notes_autosave_csrf.py). Fire-and-forget:
+ * never throws, the answer cannot be shown.
+ *
+ * @param {string} activityId - UUID of the activity
+ * @param {string} notes - The whole note
+ * @returns {boolean} whether the request was sent
+ */
+export function saveActivityNotesKeepalive(activityId, notes) {
+  if (!activityId || !isValidUUID(activityId) || typeof fetch !== "function") {
+    return false;
+  }
+  try {
+    fetch(`${authConfig.API_BASE_URL}${endpoints.activityNotes(activityId)}`, {
+      method: "POST",
+      keepalive: true,
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome_notes: notes ?? "" }),
+    }).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
