@@ -22,6 +22,8 @@ const mockRun = vi.fn();
 let mockPipelineState = "idle";
 // 8g-7: the last successful run (null = not analysed yet) — per test.
 let mockLastRun = null;
+// 3.2: the per-pipeline successful runs (the server state) — per test.
+let mockRunsByPipeline = {};
 
 vi.mock("next/font/google", () => ({
   Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
@@ -50,7 +52,7 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
 }));
 vi.mock("api/aiPipelines/lastRun", () => ({
   useGetLastExtractionRun: () => ({
-    lastRun: mockLastRun, latestRun: null, runsByPipeline: {}, mutateLastRun: vi.fn(),
+    lastRun: mockLastRun, latestRun: null, runsByPipeline: mockRunsByPipeline, mutateLastRun: vi.fn(),
   }),
 }));
 vi.mock("api/signals/signalCounts", () => ({
@@ -115,7 +117,7 @@ const sourceRunAI = () => {
 };
 const bandRunAI = () => within(screen.getByTestId("next-steps-extraction")).getByRole("button", { name: "Run AI Analysis" });
 
-afterEach(() => { cleanup(); mockLastRun = null; });
+afterEach(() => { cleanup(); mockLastRun = null; mockRunsByPipeline = {}; });
 
 describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
   it("COMPLETED: the Source's Run AI is available", () => {
@@ -424,5 +426,48 @@ describe("The Source band — no note lost (2.4)", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
     expect(displayErrorSnackbar).toHaveBeenCalledWith(expect.objectContaining({ error: "Refused" }));
     expect(displayWarningSnackbar).not.toHaveBeenCalled();
+  });
+});
+
+// ==============================|| « SOURCE / NOTES » 3.2 — EVERYTHING ANALYSED ||============================== //
+// ONE predicate (canRunAIAnalysis) for the Source band's pill and the Next
+// steps band's: disabled once everything AVAILABLE is analysed.
+
+const DONE = { last_run_at: "2026-11-01T10:00:00Z", created_signals_count: 1 };
+
+describe("Run AI — everything available already analysed (3.2)", () => {
+  it("qualification + next steps analysed (DC): the Source pill is disabled", () => {
+    mockLastRun = DONE;
+    mockRunsByPipeline = { TRANSCRIPT_SIGNALS: DONE, NEXT_STEPS: DONE };
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
+    expect(pill).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("qualification analysed, next steps still available (DC): both pills active", () => {
+    mockLastRun = DONE;
+    mockRunsByPipeline = { TRANSCRIPT_SIGNALS: DONE, NEXT_STEPS: null };
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }))
+      .not.toHaveAttribute("aria-disabled");
+    expect(bandRunAI()).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("qualification analysed, no next steps possible (no DC, no campaign): the Source pill is disabled", () => {
+    mockLastRun = DONE;
+    mockRunsByPipeline = { TRANSCRIPT_SIGNALS: DONE, NEXT_STEPS: null };
+    mockActivity = dcActivity({ status: "COMPLETED", decision_cycle: null });
+    render(<ActivityWorkspacePage />);
+    expect(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }))
+      .toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("nothing analysed: the Source pill is active", () => {
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }))
+      .not.toHaveAttribute("aria-disabled");
   });
 });

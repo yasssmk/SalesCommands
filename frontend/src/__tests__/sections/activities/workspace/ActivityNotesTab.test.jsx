@@ -233,6 +233,23 @@ describe('ActivityNotesTab', () => {
     expect(onOpenWizard).toHaveBeenCalledTimes(1);
   });
 
+  // « Source / Notes » 3.2 — the same predicate: everything available already
+  // analysed (qualification + next steps on a DC activity) → no wizard.
+  it('"Try again" does nothing when everything available is already analysed', async () => {
+    const onOpenWizard = vi.fn();
+    const run = { last_run_at: '2026-11-01T10:00:00Z' };
+    renderTab({
+      onOpenWizard,
+      activity: { ...mockActivity, decision_cycle: 'dc-1' },
+      runsByPipeline: { TRANSCRIPT_SIGNALS: run, NEXT_STEPS: run },
+      pipelineRunner: makePipelineRunner({ state: PIPELINE_STATE.ERROR, error: 'Network error' }),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try again'));
+    });
+    expect(onOpenWizard).not.toHaveBeenCalled();
+  });
+
   it('"Try again" does nothing when the AI action is unavailable (CANCELLED)', async () => {
     const onOpenWizard = vi.fn();
     renderTab({

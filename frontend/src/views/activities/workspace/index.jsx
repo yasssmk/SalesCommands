@@ -359,6 +359,7 @@ export default function ActivityWorkspacePage() {
               pipelineRunner={pipelineRunner}
               lastRun={lastRun}
               latestRun={latestRun}
+              runsByPipeline={runsByPipeline}
               onOpenWizard={() => setSourceWizardOpen(true)}
             />
           </CollapsibleStrip>

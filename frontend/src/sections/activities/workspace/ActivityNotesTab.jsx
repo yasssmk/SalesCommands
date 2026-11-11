@@ -42,6 +42,7 @@ export default function ActivityNotesTab({
   pipelineRunner,
   lastRun,
   latestRun,
+  runsByPipeline,
   onOpenWizard,
 }) {
   const transcript = activity?.transcript ?? '';
@@ -61,9 +62,9 @@ export default function ActivityNotesTab({
 
   // "Try again" opens the wizard of the band's Run AI pill (in the Source
   // header, lot 3 / 11 — the page owns its open state) under the same
-  // predicate as the pill.
+  // predicate as the pill (3.2: runsByPipeline included).
   const handleOpenWizard = () => {
-    if (canRunAIAnalysis(activity, pipelineState)) {
+    if (canRunAIAnalysis(activity, pipelineState, runsByPipeline)) {
       onOpenWizard?.();
     }
   };
@@ -239,6 +240,8 @@ ActivityNotesTab.propTypes = {
   }).isRequired,
   lastRun: PropTypes.object,
   latestRun: PropTypes.object,
+  /** The per-pipeline successful runs (server state) — the Run AI predicate. */
+  runsByPipeline: PropTypes.object,
   /** Opens the wizard of the Source band's Run AI pill ("Try again"). */
   onOpenWizard: PropTypes.func,
 };
