@@ -1539,10 +1539,29 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
 
 #### Suite de la surface Activity (ordre PO, clôture Cycle de vie des contacts)
 1. ✅ **Sprint « Cycle de vie des contacts »** — LIVRÉ (fiche ci-dessus).
-2. **Sprint Source / Notes** — à AUDITER au cadrage (fiche dans « Nouveaux sprints »).
+2. ✅ **Sprint Source / Notes** — LIVRÉ (fiche ci-dessous).
 3. **Chantier prep call** — **TD-46**, **TD-47**, **TD-49**, **TD-219**, TechStack « discontinued » (**TD-314**) (fiche « Sprint Prep call — précisions PO »).
 4. **Passe UI finale Activity** — **avant la Surface DC**, pour un visuel validé (fiche dans « Nouveaux sprints »).
 5. **Surface DC** (fiche « Sprint Workspace / DC »).
+
+### Sprint « Source / Notes » ✅ LIVRÉ (chantier UX Activity — EN COURS) — une seule note par activité, protection contre la perte de saisie, panneau de notes en enregistrement automatique (branche `feat/source-notes`, `5e1fefa`→`f702cbe`, 21 commits, **✅ MERGÉ, PR #171**, merge `1b42aad`)
+- **Objectif** : fiabiliser la prise de notes de la page Activity (pendant et après un call / meeting) et le cycle de l'analyse IA.
+- **Décisions PO verrouillées** :
+  - **Une seule note par activité** (`outcome_notes`), **modifiable tout au long du cycle de vie** (PLANNED / ON_HOLD / COMPLETED), **verrouillée sur CANCELLED** (front + serveur, un seul prédicat).
+  - **Pas de note à la clôture** (complete, cancel, Log result / no-answer de campagne) ; reopen et changement de statut n'effacent plus la note.
+  - **Annulations système = une ligne AJOUTÉE** en fin de note, jamais d'effacement.
+  - **Une seule analyse par pipeline** : un pipeline déjà analysé n'est jamais relancé ; déduplication par hash supprimée.
+  - **Enregistrement automatique de la note** (endpoint dédié, sans audit ; la note n'entre pas dans la garde « modifications non enregistrées »).
+  - **« Dernier enregistrement gagnant »** assumé entre sessions.
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin — page ou endpoint réel — d'abord, puis VERT, non-vacuité par mutation, régression ; STOP + validation PO) :
+  - **Une seule note par activité** : `outcome_notes` = la note unique de l'activité, modifiable tout au long de son cycle de vie, verrouillée sur CANCELLED (transcript idem côté serveur) ; plus de saisie de note à la clôture ; reopen et changement de statut n'effacent plus la note ; les annulations système ajoutent une ligne en fin de note ; `CampaignOutcomeModal` : l'étape vide « Add details » est sautée (Successful).
+  - **Une seule analyse par pipeline** : un pipeline déjà analysé n'est jamais relancé (règle serveur) ; « tout est déjà fait » → message INFO standard (remplace le 409 ALREADY_EXTRACTED) ; déduplication par hash supprimée ; wizard Run AI aligné sur l'état serveur, « Include my notes » cochée par défaut, pill grisée quand tout est analysé.
+  - **Protection contre la perte de saisie** : `ConfirmDialog` partagée (utilisée par l'en-tête Activity) ; garde « modifications non enregistrées » centrale dans la coque + beforeunload + liens internes interceptés ; bande Source : repli sans perte, refus métier en orange.
+  - **Panneau de notes** : endpoint dédié `POST /module-activities/{id}/notes/` (écriture légère, mêmes permissions / verrou que le PATCH, limite propre `notes_autosave` 60/min) ; enregistrement automatique (≈ 2 s, envoi keepalive à la fermeture / navigation, jamais de note périmée affichée, y compris après rechargement), indicateur « Saved · HH:mm » ; coque à deux zones (contenu en haut, notes en bas), icône flottante « Notes », pill « Open notes », note en lecture dans la bande Source.
+- **Migration** : `module_activities/0025` (`0025_activity_notes_lifecycle` — libellé « Notes » + help_text, sans SQL).
+- **Validation (régression finale)** : **pytest** `tests/activities` + `tests/signals` + `tests/decision_cycles` + `tests/ai_pipelines` + `tests/campaigns` = **2406 / 2410**, **4 échecs de référence** (`test_create_requires_rigidity` — **TD-247** ; `test_callback_date_reschedule` ×3 — **TD-293**), **0 erreur** ; `tests/integration` identique à main ; **vitest 234 fichiers / 2148 tests verts**, code de sortie 0, aucune erreur.
+- **Dette** : **RESOLVED** (archivée) **TD-289** (obsolète, décision PO : une seule analyse par pipeline) ; **MAJ** **TD-120** (partielle : `ConfirmDialog` livrée ; restent `PainCard.jsx:81` et `AlertActivityCancel` → leurs surfaces), **TD-11** (archive : le rejeu 409 n'existe plus), **TD-111** (description corrigée : `Activity.transcript` est persisté), **TD-223**, **TD-225** (plus de champ note dans les modales) ; **NOUVEAUX** **TD-315** (throttling T1 → T8) et **TD-316** (sécurité des `@action`, chantier G1) — tous deux **bloquants pour la mise en production**.
+- **Prochain jalon** : le **chantier prep call** (confirmé PO).
 
 ---
 
@@ -1632,6 +1651,9 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
 - **Checklist infra** (NOUVEAU — absente de la roadmap, ajoutée ici) : pooling
   DB Supabase, dimensionnement des workers web. À vérifier/durcir avant la
   montée en charge multi-tenant.
+- **Prérequis de mise en production** (NOUVEAU 2026-11, clôture Source / Notes) :
+  **`DEBUG=False`** (défaut `True` aujourd'hui), **throttling** (**TD-315**),
+  **sécurité des `@action` personnalisées** (**TD-316**, chantier G1), **Redis**.
 - **Sprint test** (NOUVEAU 2026-08-21) — smoke PO de bout en bout de TOUTE la
   chaîne visible, **sur un environnement AVEC Redis**. Voir la fiche « Sprint
   test » dans « Nouveaux sprints ». DERNIER avant déploiement.
@@ -2102,6 +2124,8 @@ possibles) :
 - **Objectif, critère de succès et sujets plus orientés VENTE** : l'**approche du meeting**, le **résultat à obtenir pour avancer le deal**, les **métriques importantes pour le prospect si elles sont connues**.
 - **Dans le sprint, pas en fine-tuning** (décision PO).
 - **Lien** : **TD-219** (Objective « how is success measured », nécessaire au prep call / email).
+- **Position (clôture Source / Notes)** : **prochain jalon** (confirmé PO).
+- **Ajouts (clôture Source / Notes)** : **Regenerate** du brief **ignore le verrou de l'activité** (possible sur COMPLETED / CANCELLED) ; le brief pourrait **lire les notes des calls précédents** ; **visibilité de la bande Préparation pendant le call** (voir « Passe UI finale Activity »).
 - **Ajouts (clôture Cycle de vie des contacts)** : **TD-46** (brief multi-contact), **TD-47** (boucle visé / réalisé), **TD-49** (`Activity.primary_contact`), **TD-219** (la section « How is success measured? » existe ; l'IA n'émet ni `success_criteria` ni `notes`, `target_date` seulement depuis le prompt v2) ; **TechStack** : portée + « discontinued » (passé = *no longer used*, futur = sortie planifiée) — **TD-314**.
 
 #### Sprint Surface Campaign (NOUVEAU 2026-10 — décision PO, clôture Next steps)
@@ -2119,6 +2143,7 @@ possibles) :
 - **Socle déjà posé, DORMANT** : type de pipeline **`NEXT_STEPS_ADVICE`** (`ai_pipelines/constants.py:100`, migration `module_ai_pipelines/0006`) — aucun pipeline ne le produit ; champ **`NextStepSignal.advice_rationale`** (migration `module_signals/0047`) — exposé par le serializer, **jamais affiché** (`EditNextStepContent.jsx:15`).
 
 #### Sprint Source / Notes (NOUVEAU 2026-11 — décision PO, clôture Cycle de vie des contacts)
+- **Statut** : ✅ **LIVRÉ** (PR #171, merge `1b42aad`) — fiche dans « Sprints livrés ».
 - **Position** : **prochain jalon**, avant le chantier prep call (étape 2 de la « Suite de la surface Activity (ordre PO, clôture Cycle de vie des contacts) »).
 - **Usage** : la section sert **PENDANT le call** (prise de notes) ou **juste après** (coller le transcript).
 - **Besoin PO** : **lire le plan de prep call ET prendre des notes en même temps** → repenser l'emplacement de Notes / Source (drawer ?).
@@ -2127,6 +2152,14 @@ possibles) :
 #### Passe UI finale Activity (NOUVEAU 2026-11 — décision PO, clôture Cycle de vie des contacts)
 - **Position** : après le chantier prep call, **AVANT la Surface DC** (pour un visuel validé).
 - **Contenu** : pills d'action dans les en-têtes de bande ; section « Decision cycle » trop chargée et nom du cycle peu visible ; zones cliquables (`InlineEditableValue`) mal distinguées du fond ; messages rouges (**TD-272**) ; libellé Run AI (**TD-301**) ; barre d'actions (**TD-240**).
+- **Démarrage (clôture Source / Notes)** : commencer la passe par une **MAQUETTE** de la disposition « pendant le call », **validée par le PO**.
+- **Points soulevés au smoke Source / Notes — SANS décision** (le PO tranchera à cette passe) :
+  - **trois accès à la même note** : icône flottante, pill « Open notes », note en lecture dans la bande Source ;
+  - l'**icône flottante** se retrouve **au milieu de l'écran, par-dessus les bandes**, quand la coque est ouverte, et **fait doublon** quand les notes sont déjà ouvertes ;
+  - le **panneau de notes seul** occupe **toute la hauteur de la coque** (beaucoup de vide) ;
+  - la **bande Préparation est repliée** une fois l'activité analysée → le prep call n'est **pas visible pendant la prise de notes** (lien avec le chantier prep call) ;
+  - la **disposition de la bande Source** est à repenser (PO) ;
+  - **écrans < 1266 px** : la coque **recouvre la page** (prep call masqué).
 
 #### Sprint test (NOUVEAU 2026-08-21 — PRÉ-LAUNCH, DERNIER avant déploiement)
 - **Position** : après la phase fonctionnelle, **avant le déploiement** (voir
