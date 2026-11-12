@@ -66,21 +66,82 @@ export const NOTE_AUTOSAVE_STATUS = {
 
 const isSourceLocked = (result) => result?.error === SOURCE_LOCKED_MESSAGE;
 
-// N4b — activityId → { value, updatedAt } : the last local write (updatedAt =
-// the server's answer; null while unconfirmed).
-const LOCAL_NOTE_WRITES = new Map();
+// N4b — activityId → { value, updatedAt, writtenAt } : the last local write
+// (updatedAt = the server's answer; null while unconfirmed).
+// N6b — it must outlive a full RELOAD too (a keepalive sent at beforeunload,
+// the reloaded page reading the old note before the server processed it):
+// mirrored in sessionStorage (per tab), one key per activity — the pattern of
+// SignalsViewToggle (prefix + id, try/catch, silent when unavailable). An
+// entry lives NOTES_LOCAL_WRITE_TTL_MS (local clock, from the write): past
+// it, the server's note applies again. The memory map is its cache.
+export const NOTES_LOCAL_WRITE_TTL_MS = 5 * 60 * 1000;
+export const NOTES_LOCAL_WRITE_STORAGE_PREFIX = "salescommands:note-write:";
 
-/** Tests only: forget the local writes. */
-export function clearLocalNoteWrites() {
-  LOCAL_NOTE_WRITES.clear();
+const LOCAL_NOTE_WRITES = new Map();
+const storageKey = (id) => `${NOTES_LOCAL_WRITE_STORAGE_PREFIX}${id}`;
+
+function storeWrite(id, write) {
+  try {
+    sessionStorage.setItem(storageKey(id), JSON.stringify(write));
+  } catch {
+    // sessionStorage unavailable — the memory map still holds it
+  }
 }
 
-const recordWrite = (id, value) => LOCAL_NOTE_WRITES.set(id, { value, updatedAt: null });
+function dropWrite(id) {
+  LOCAL_NOTE_WRITES.delete(id);
+  try {
+    sessionStorage.removeItem(storageKey(id));
+  } catch {
+    // sessionStorage unavailable — silent
+  }
+}
+
+function readWrite(id) {
+  let write = LOCAL_NOTE_WRITES.get(id);
+  if (!write) {
+    try {
+      const raw = sessionStorage.getItem(storageKey(id));
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed.value === "string") write = parsed;
+    } catch {
+      write = undefined; // unavailable or unreadable: no local write known
+    }
+  }
+  if (!write) return undefined;
+  if (!(Date.now() - (write.writtenAt ?? 0) < NOTES_LOCAL_WRITE_TTL_MS)) {
+    dropWrite(id); // expired: the server's note applies
+    return undefined;
+  }
+  LOCAL_NOTE_WRITES.set(id, write);
+  return write;
+}
+
+/** Tests only: forget the local writes (memory and this tab's storage). */
+export function clearLocalNoteWrites() {
+  LOCAL_NOTE_WRITES.clear();
+  try {
+    Object.keys(sessionStorage)
+      .filter((key) => key.startsWith(NOTES_LOCAL_WRITE_STORAGE_PREFIX))
+      .forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    // sessionStorage unavailable — silent
+  }
+}
+
+const recordWrite = (id, value) => {
+  const write = { value, updatedAt: null, writtenAt: Date.now() };
+  LOCAL_NOTE_WRITES.set(id, write);
+  storeWrite(id, write);
+};
 
 const confirmWrite = (id, value, updatedAt) => {
+  const current = readWrite(id);
   // Superseded by a later write meanwhile: that one decides.
-  if (LOCAL_NOTE_WRITES.get(id)?.value === value) {
-    LOCAL_NOTE_WRITES.set(id, { value, updatedAt: updatedAt ?? null });
+  if (current?.value === value) {
+    const write = { ...current, updatedAt: updatedAt ?? null };
+    LOCAL_NOTE_WRITES.set(id, write);
+    storeWrite(id, write);
   }
 };
 
@@ -92,7 +153,7 @@ const toTime = (iso) => {
 /** THE rule: the note to trust, given the server's note and its updated_at. */
 export function resolveServerNote(id, serverNote, serverUpdatedAt) {
   const server = serverNote ?? "";
-  const write = LOCAL_NOTE_WRITES.get(id);
+  const write = readWrite(id);
   if (!write || write.value === server) return server;
   const confirmedAt = toTime(write.updatedAt);
   const serverAt = toTime(serverUpdatedAt);

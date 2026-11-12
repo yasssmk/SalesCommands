@@ -80,8 +80,6 @@ export default function ActivityNotesPanel({ activityId, onStatusChange }) {
       initialValue={note}
       rows={NOTES_PANEL_ROWS}
       placeholder={NOTES_PANEL_PLACEHOLDER}
-      // Autosave: no explicit save (useNoteAutosave does it).
-      onSave={() => true}
       isLocked={locked}
       autosave
       onValueChange={schedule}

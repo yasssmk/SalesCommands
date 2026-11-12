@@ -47,7 +47,7 @@ vi.mock("utils/displayError", () => ({
 import WorkspaceCoque from "../../../_utils/workspaceCoque";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import ActivityNotesPanel, { formatNotesSavedAt } from "sections/activities/workspace/ActivityNotesPanel";
-import { NOTES_AUTOSAVE_DELAY_MS, clearLocalNoteWrites } from "hooks/useNoteAutosave";
+import { NOTES_AUTOSAVE_DELAY_MS, NOTES_LOCAL_WRITE_STORAGE_PREFIX, clearLocalNoteWrites } from "hooks/useNoteAutosave";
 import { SOURCE_LOCKED_MESSAGE } from "utils/activitySignalsLock";
 
 // ==============================|| HARNESS ||============================== //
@@ -205,6 +205,23 @@ describe("notes panel — never older than the last local write (N4b)", () => {
     await advance(NOTES_AUTOSAVE_DELAY_MS);
     expect(saveActivityNotes).toHaveBeenCalledTimes(1);
     expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Typed before closing, and more");
+  });
+});
+
+describe("notes panel — after a full RELOAD (N6b)", () => {
+  it("a write left by the previous page load (this tab's storage) beats a STALE server answer", async () => {
+    // What the page wrote at beforeunload, as the reloaded page finds it:
+    // nothing in memory, the entry in sessionStorage.
+    sessionStorage.setItem(
+      `${NOTES_LOCAL_WRITE_STORAGE_PREFIX}${ID}`,
+      JSON.stringify({ value: "Typed before the reload", updatedAt: null, writtenAt: Date.now() }),
+    );
+    renderWorkspace();
+    await openNotes();
+    expect(notesBox()).toHaveValue("Typed before the reload");
+    type("Typed before the reload, and after");
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Typed before the reload, and after");
   });
 });
 

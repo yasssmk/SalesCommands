@@ -18,7 +18,7 @@ vi.mock('components/MainCard', () => ({
 
 vi.mock('components/EditableTextBlock', () => ({
   default: ({ label, field, initialValue, onSave, isLocked, placeholder, showCharCount }) => (
-    <div data-testid={`editable-text-block-${field}`}>
+    <div data-testid={`editable-text-block-${field}`} data-has-onsave={String(Boolean(onSave))}>
       <span data-testid={`etb-label-${field}`}>{label}</span>
       <textarea
         data-testid={`etb-input-${field}`}
@@ -138,6 +138,13 @@ describe('ActivityNotesTab', () => {
 
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
     expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
+  });
+
+  // N6b — onSave is optional: the read-only note gets none; the transcript keeps it.
+  it('the read-only note is given no onSave; the transcript keeps its own', () => {
+    renderTab();
+    expect(screen.getByTestId('editable-text-block-outcome_notes')).toHaveAttribute('data-has-onsave', 'false');
+    expect(screen.getByTestId('editable-text-block-transcript')).toHaveAttribute('data-has-onsave', 'true');
   });
 
   it('on a PLANNED activity too, the note is read-only (written in the notes panel)', () => {

@@ -104,6 +104,10 @@ export default function EditableTextBlock({
       setEditing(false);
       return;
     }
+    if (!onSave) {
+      setEditing(false);
+      return;
+    }
     setSaving(true);
     const success = await onSave(field, value);
     setSaving(false);
@@ -231,7 +235,9 @@ EditableTextBlock.propTypes = {
   rows: PropTypes.number,
   placeholder: PropTypes.string,
   showCharCount: PropTypes.bool,
-  onSave: PropTypes.func.isRequired,
+  /** Save (field, value) => Promise<bool> — optional (N6b): a read-only or
+      autosave block has no Save. */
+  onSave: PropTypes.func,
   isLocked: PropTypes.bool,
   /** Optional — (dirty: bool) => void: the unsaved state (editing with a
       changed value), for the unsaved changes guard (2.4). */

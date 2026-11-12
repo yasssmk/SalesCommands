@@ -7,7 +7,8 @@
 // Without `autosave` the block is unchanged (its own tests + the regression).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import PropTypes from "prop-types";
 
 import EditableTextBlock from "components/EditableTextBlock";
 
@@ -69,6 +70,27 @@ describe("EditableTextBlock — autosave mode", () => {
     rerender(block({ initialValue: "Mine" }));
     rerender(block({ initialValue: "Server v3" }));
     expect(screen.getByRole("textbox")).toHaveValue("Server v3");
+  });
+});
+
+describe("EditableTextBlock — onSave is optional (N6b)", () => {
+  it("read-only without onSave: renders, no crash", () => {
+    render(<EditableTextBlock label="Notes" field="outcome_notes" initialValue="Read me" isLocked />);
+    expect(screen.getByText("Read me")).toBeInTheDocument();
+  });
+
+  it("editable without onSave: Save just leaves the edit, no crash", async () => {
+    render(<EditableTextBlock label="Notes" field="outcome_notes" initialValue="v1" />);
+    fireEvent.click(screen.getByText("v1"));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "v2" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("onSave is no longer a required prop", () => {
+    expect(EditableTextBlock.propTypes.onSave).toBe(PropTypes.func);
   });
 });
 

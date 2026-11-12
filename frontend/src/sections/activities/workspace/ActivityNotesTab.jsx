@@ -154,7 +154,6 @@ export default function ActivityNotesTab({
           initialValue={outcomeNotes}
           rows={5}
           placeholder={NOTES_READ_PLACEHOLDER}
-          onSave={onSave}
           isLocked
         />
 

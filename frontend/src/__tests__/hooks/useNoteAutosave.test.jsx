@@ -32,6 +32,8 @@ vi.mock("contexts/WorkspaceDrawerContext", () => ({
 }));
 
 import useNoteAutosave, {
+  NOTES_LOCAL_WRITE_STORAGE_PREFIX,
+  NOTES_LOCAL_WRITE_TTL_MS,
   clearLocalNoteWrites,
   resolveServerNote,
   NOTES_AUTOSAVE_DELAY_MS,
@@ -401,6 +403,101 @@ describe("useNoteAutosave — never older than the last local write (N4b)", () =
     act(() => first.result.current.schedule("Flushed"));
     first.unmount();
     expect(resolveServerNote(ID, "Another session's", AFTER)).toBe("Flushed");
+  });
+});
+
+describe("useNoteAutosave — the local write outlives a RELOAD (N6b)", () => {
+  const AFTER = "2026-11-11T10:16:00Z";
+  const key = (id) => `${NOTES_LOCAL_WRITE_STORAGE_PREFIX}${id}`;
+
+  // A keepalive at beforeunload, never answered (the page went away).
+  const flushAndLeave = (value) => {
+    const view = setup();
+    act(() => view.result.current.schedule(value));
+    view.unmount();
+  };
+
+  // A full reload: the module starts afresh (empty memory), this tab's
+  // sessionStorage is kept.
+  const reloadModule = async () => {
+    vi.resetModules();
+    return import("hooks/useNoteAutosave");
+  };
+
+  it("written → reload → a STALE server note: the local text stays", async () => {
+    flushAndLeave("Flushed at unload");
+    expect(sessionStorage.getItem(key(ID))).not.toBeNull();
+    const fresh = await reloadModule();
+    expect(fresh.resolveServerNote(ID, "Server note", AFTER)).toBe("Flushed at unload");
+  });
+
+  it("…and the reloaded hook shows it and treats it as the reference", async () => {
+    flushAndLeave("Flushed at unload");
+    const fresh = await reloadModule();
+    const { result } = renderHook((p) => fresh.default(p), {
+      initialProps: { activityId: ID, initialValue: "Server note", serverUpdatedAt: AFTER, mutateActivity: vi.fn() },
+    });
+    expect(result.current.note).toBe("Flushed at unload");
+    act(() => result.current.schedule("Flushed at unload, then more"));
+    await advance(NOTES_AUTOSAVE_DELAY_MS);
+    expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Flushed at unload, then more");
+  });
+
+  it("a CONFIRMED write keeps its confirmation across the reload: a newer server note wins", async () => {
+    saveActivityNotesKeepalive.mockImplementationOnce((_id, notes, onDone) => {
+      onDone({ success: true, data: { outcome_notes: notes, updated_at: "2026-11-11T10:15:00Z" } });
+      return true;
+    });
+    flushAndLeave("Flushed and confirmed");
+    const fresh = await reloadModule();
+    expect(fresh.resolveServerNote(ID, "Server note", "2026-11-11T10:14:00Z")).toBe("Flushed and confirmed");
+    expect(fresh.resolveServerNote(ID, "Another session's", AFTER)).toBe("Another session's");
+  });
+
+  it("an EXPIRED entry: the server's note applies, and the entry goes", async () => {
+    flushAndLeave("Flushed long ago");
+    vi.setSystemTime(Date.now() + NOTES_LOCAL_WRITE_TTL_MS + 1);
+    const fresh = await reloadModule();
+    expect(fresh.resolveServerNote(ID, "Server note", AFTER)).toBe("Server note");
+    expect(sessionStorage.getItem(key(ID))).toBeNull();
+  });
+
+  it("just before the TTL, the entry still holds", async () => {
+    flushAndLeave("Flushed recently");
+    vi.setSystemTime(Date.now() + NOTES_LOCAL_WRITE_TTL_MS - 1000);
+    const fresh = await reloadModule();
+    expect(fresh.resolveServerNote(ID, "Server note", AFTER)).toBe("Flushed recently");
+  });
+
+  it("the TTL is short: 5 minutes", () => {
+    expect(NOTES_LOCAL_WRITE_TTL_MS).toBe(5 * 60 * 1000);
+  });
+
+  it("a storage that THROWS: no crash — the memory still protects this page", async () => {
+    const boom = () => {
+      throw new Error("SecurityError: storage disabled");
+    };
+    const spies = ["getItem", "setItem", "removeItem"].map((m) =>
+      vi.spyOn(Storage.prototype, m).mockImplementation(boom),
+    );
+    try {
+      const { result, unmount } = setup();
+      act(() => result.current.schedule("Typed without storage"));
+      await advance(NOTES_AUTOSAVE_DELAY_MS);
+      expect(saveActivityNotes).toHaveBeenCalledWith(ID, "Typed without storage");
+      act(() => result.current.schedule("Then flushed"));
+      expect(() => unmount()).not.toThrow();
+      expect(resolveServerNote(ID, "Server note", AFTER)).toBe("Then flushed");
+      expect(() => clearLocalNoteWrites()).not.toThrow();
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+  });
+
+  it("an unreadable entry (not JSON) is ignored", async () => {
+    sessionStorage.setItem(key(ID), "{not json");
+    const fresh = await reloadModule();
+    expect(fresh.resolveServerNote(ID, "Server note", AFTER)).toBe("Server note");
   });
 });
 
