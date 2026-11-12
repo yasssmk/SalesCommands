@@ -3,7 +3,7 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -31,6 +31,21 @@ import CloseOutlined from '@ant-design/icons/CloseOutlined';
  * Syncs `value` from `initialValue` whenever the parent's value changes
  * AND the user is not currently editing — prevents a stale local state
  * when the activity SWR cache mutates externally.
+ *
+ * Optional `onDirtyChange(dirty)` (« Source / Notes » 2.4): reports the
+ * UNSAVED state — true while editing with a value different from the saved
+ * one, false once saved, cancelled or back to the saved value. A refused Save
+ * stays dirty (the edit stays open). The caller declares it to the unsaved
+ * changes guard (hooks/useUnsavedChanges).
+ *
+ * Optional AUTOSAVE mode (« Source / Notes » notes panel, N4) — `autosave`:
+ *   - always in edit (no click-to-edit, no Save / Cancel): every change goes
+ *     to `onValueChange(value)` — the caller saves (useNoteAutosave);
+ *   - `isLocked` → read-only: the text as typed, not editable;
+ *   - syncs from `initialValue` as long as the text matches the LAST value
+ *     received (nothing typed since) — instead of « while not editing »;
+ *   - `indicator`: a slot on the label row (e.g. « Saved · 10:15 »).
+ * Without `autosave`, the block is unchanged.
  */
 export default function EditableTextBlock({
   label,
@@ -41,22 +56,55 @@ export default function EditableTextBlock({
   showCharCount = false,
   onSave,
   isLocked = false,
+  onDirtyChange,
+  autosave = false,
+  onValueChange,
+  indicator,
+  ariaLabel,
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initialValue || '');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!editing) {
+    if (!editing && !autosave) {
       setValue(initialValue || '');
     }
-  }, [initialValue, editing]);
+  }, [initialValue, editing, autosave]);
+
+  // Autosave: follow the server's value while nothing was typed since the
+  // last one received (the typed text is never overwritten).
+  const syncedRef = useRef(initialValue || '');
+  useEffect(() => {
+    if (!autosave) return;
+    const next = initialValue || '';
+    const previous = syncedRef.current;
+    syncedRef.current = next;
+    setValue((current) => (current === previous ? next : current));
+  }, [initialValue, autosave]);
+
+  const handleAutosaveChange = (next) => {
+    setValue(next);
+    onValueChange?.(next);
+  };
 
   const original = initialValue || '';
   const hasChanges = value !== original;
 
+  // 2.4 — report the unsaved state to the caller (latest callback, no loop).
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  const dirty = editing && hasChanges;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty);
+  }, [dirty]);
+
   const handleSave = async () => {
     if (!hasChanges) {
+      setEditing(false);
+      return;
+    }
+    if (!onSave) {
       setEditing(false);
       return;
     }
@@ -77,18 +125,46 @@ export default function EditableTextBlock({
     <Box>
       {/* Label row */}
       <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mb: 1 }}>
-        <Typography variant="subtitle2" fontWeight={600}>
-          {label}
-        </Typography>
+        {label && (
+          <Typography variant="subtitle2" fontWeight={600}>
+            {label}
+          </Typography>
+        )}
         {showCharCount && (
           <Typography variant="caption" color="text.secondary">
             {value?.length ?? 0} characters
           </Typography>
         )}
+        {indicator && <Box sx={{ ml: 'auto' }}>{indicator}</Box>}
       </Stack>
 
-      {/* Edit / Display */}
-      {editing ? (
+      {/* Autosave (N4): always editable, or read-only when locked */}
+      {autosave ? (
+        isLocked ? (
+          <Box sx={{ p: 2, borderRadius: 1, bgcolor: 'action.hover', minHeight: 60 }}>
+            {value ? (
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                {value}
+              </Typography>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                {placeholder}
+              </Typography>
+            )}
+          </Box>
+        ) : (
+          <TextField
+            fullWidth
+            multiline
+            minRows={rows}
+            value={value}
+            onChange={(e) => handleAutosaveChange(e.target.value)}
+            placeholder={placeholder}
+            inputProps={{ 'aria-label': ariaLabel || label || field }}
+          />
+        )
+      ) : /* Edit / Display */
+      editing ? (
         <Stack spacing={1}>
           <TextField
             fullWidth
@@ -159,6 +235,19 @@ EditableTextBlock.propTypes = {
   rows: PropTypes.number,
   placeholder: PropTypes.string,
   showCharCount: PropTypes.bool,
-  onSave: PropTypes.func.isRequired,
+  /** Save (field, value) => Promise<bool> — optional (N6b): a read-only or
+      autosave block has no Save. */
+  onSave: PropTypes.func,
   isLocked: PropTypes.bool,
+  /** Optional — (dirty: bool) => void: the unsaved state (editing with a
+      changed value), for the unsaved changes guard (2.4). */
+  onDirtyChange: PropTypes.func,
+  /** Optional (N4) — autosave mode: always in edit, no Save / Cancel. */
+  autosave: PropTypes.bool,
+  /** Optional (N4) — (value: string) => void, every change (autosave). */
+  onValueChange: PropTypes.func,
+  /** Optional (N4) — a slot on the label row (the save indicator). */
+  indicator: PropTypes.node,
+  /** Optional (N4b) — the text box's accessible name (autosave; default: the label). */
+  ariaLabel: PropTypes.string,
 };

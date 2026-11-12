@@ -18,7 +18,7 @@ from django.utils import timezone
 from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import Stakeholder
 
-from core.exceptions import StandardizedValidationError
+from core.exceptions import StandardizedPermissionDenied, StandardizedValidationError
 from core.error_messages import CoreErrorMessages, ActivityErrorMessages, CampaignModuleErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.apps_shared_methods import BaseAPIView
@@ -32,7 +32,11 @@ from core.cache_utils import (
     _is_redis_backend,
 )
 
+from permissions.checks import check_permission
+from permissions.compat import get_auth_ctx
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
+from permissions.scope_filter import apply_role_scope
+from core.throttling import NotesAutosaveThrottle
 from permissions.owner_scope import OwnerScopeMixin
 
 from ..models import Activity
@@ -98,6 +102,16 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     permission_classes = [IsAuthenticated, ScopedPermission]
     module = 'activities'
     
+    # « Source / Notes » — the notes autosave has its OWN throttle scope, which
+    # REPLACES the global per-user throttles on that action (an autosave every
+    # pause would exhaust them). Selected here, not by @action(throttle_classes):
+    # DRF only applies an action's options through a router, and this module
+    # routes its actions by hand (urls.py).
+    def get_throttles(self):
+        if getattr(self, 'action', None) == 'notes':
+            return [NotesAutosaveThrottle()]
+        return super().get_throttles()
+
     # Action policies for custom actions
     action_policies = {
 
@@ -607,11 +621,16 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         Body:
             - outcome (optional): ActivityOutcome choice
-            - outcome_notes (optional): Outcome notes
-        
+            - callback_date (optional, campaign activity)
+
+        The activity's notes (outcome_notes) are never written here: they are
+        filled throughout the lifecycle (PATCH), never at closure (sprint
+        « Source / Notes »). A note key still sent is ignored, as any
+        unknown key.
+
         Behavior:
             - If not completed: completes the activity with outcome
-            - If already completed: updates outcome and outcome_notes only
+            - If already completed: updates the outcome only
             - If cancelled: returns error
         
         Note: Cycle-level close (WON/LOST/ON_HOLD) is handled by
@@ -649,8 +668,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                     )
         
         outcome = request.data.get('outcome')
-        outcome_notes = request.data.get('outcome_notes') or request.data.get('notes')
-        
+
         # Validate outcome if provided
         if outcome and outcome not in ActivityOutcome.values:
             raise StandardizedValidationError(
@@ -668,9 +686,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             
             if outcome is not None:
                 activity.outcome = outcome
-            if outcome_notes is not None:
-                activity.outcome_notes = outcome_notes
-            
+
             activity.save(user=request.user)
             
             audit_log(
@@ -694,12 +710,11 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 )
                 exec_service.process_result(activity, {
                     'outcome': outcome,
-                    'outcome_notes': outcome_notes,
                     'callback_date': request.data.get('callback_date'),
                 })
             else:
                 # Standalone activity — complete directly
-                activity.complete(outcome=outcome, notes=outcome_notes, user=request.user)
+                activity.complete(outcome=outcome, user=request.user)
 
             audit_log(
                 event='activity_complete_success',
@@ -727,6 +742,60 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'data': serializer.data,
         })
     
+    @action(detail=True, methods=['post'], url_path='notes')
+    def notes(self, request, pk=None):
+        """
+        Autosave the activity's notes — the notes panel (sprint « Source /
+        Notes »). POST /activities/{id}/notes/  { "outcome_notes": "<text>" }
+
+        A LIGHT write, one per pause in typing: a single .update() of
+        outcome_notes + updated_at / updated_by — no post_save cascade (cache
+        invalidation, readiness recompute…), no audit_log (PO). Any other key
+        is ignored. Same rules as the PATCH:
+          * tenant scoping — another tenant's activity → 404;
+          * the PATCH's UPDATE permission and scope (ScopedPermission checks an
+            unknown action as a read — normalize_action — so the update rights
+            are checked here, with the same functions: check_permission on
+            'partial_update' + apply_role_scope) → 403;
+          * the CANCELLED lock (is_activity_signals_locked) → SOURCE_LOCKED.
+        Its own throttle scope (notes_autosave) replaces the global ones here
+        (get_throttles). Last write wins (PO, Q8).
+        """
+        from ..services.signals_lock import is_activity_signals_locked
+
+        if 'outcome_notes' not in request.data:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='outcome_notes')
+            )
+        notes = request.data.get('outcome_notes') or ''
+
+        client_id = self.get_client_id()
+        tenant_activities = Activity.objects.filter(client_id=client_id)
+        activity = tenant_activities.filter(pk=pk).first()
+        if activity is None:
+            from django.http import Http404
+            raise Http404("No Activity matches the given query.")
+
+        update_scope = check_permission(request, self.module, 'partial_update')
+        in_scope = apply_role_scope(
+            tenant_activities.filter(pk=pk),
+            module=self.module, scope=update_scope, auth_ctx=get_auth_ctx(request),
+        ).exists()
+        if not in_scope:
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
+
+        if is_activity_signals_locked(activity):
+            raise StandardizedValidationError(ActivityErrorMessages.SOURCE_LOCKED)
+
+        now = timezone.now()
+        tenant_activities.filter(pk=activity.pk).update(
+            outcome_notes=notes, updated_at=now, updated_by=request.user,
+        )
+        return Response({
+            'success': True,
+            'data': {'outcome_notes': notes, 'updated_at': now.isoformat()},
+        })
+
     @action(detail=True, methods=['post'], url_path='record-no-answer')
     @transaction.atomic
     def record_no_answer(self, request, pk=None):
@@ -776,7 +845,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         if activity.no_answer_count >= max_attempts:
             # Threshold reached — delegate to CampaignExecutionService so
             # _persist_next_activity_schedule() and chain cascade are triggered.
-            outcome_notes = request.data.get('outcome_notes')
+            # No note at closure (sprint « Source / Notes »).
             from app_modules.campaigns.services.campaign_execution_service import CampaignExecutionService
             exec_service = CampaignExecutionService(
                 user=request.user,
@@ -784,7 +853,6 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             )
             exec_service.process_result(activity, {
                 'outcome': ActivityOutcome.NO_ANSWER,
-                'outcome_notes': outcome_notes,
             })
             logger.info("activity_call_no_answer_exhausted", extra={
                 **ctx,
@@ -831,7 +899,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         POST /activities/{id}/reopen/
         
         Behavior:
-            - Clears outcome, outcome_notes, and completed_at
+            - Clears outcome and completed_at; KEEPS the notes (outcome_notes)
             - Sets status back to PLANNED
             - Only works on COMPLETED or CANCELLED activities
         """
@@ -863,10 +931,11 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         old_status = activity.status
         
-        # Clear outcome fields and reopen as PLANNED
+        # Clear the result and reopen as PLANNED. The activity's notes
+        # (outcome_notes) are KEPT: filled throughout the lifecycle, never
+        # cleared (sprint « Source / Notes »).
         activity.status = ActivityStatus.PLANNED
         activity.outcome = None
-        activity.outcome_notes = None
         activity.completed_at = None
         
         activity.save(user=request.user)
@@ -910,9 +979,10 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         Cancel activity.
         
         POST /activities/{id}/cancel/
-        
-        Body:
-            - notes (optional): Cancellation reason
+
+        No body: there is no cancellation reason, and the activity's notes
+        (outcome_notes) are never touched (sprint « Source / Notes »). A note
+        key still sent is ignored, as any unknown key.
         """
         ctx = ctx_from_request(request)
         activity = self.get_object()
@@ -933,8 +1003,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 ActivityErrorMessages.ALREADY_CANCELLED
             )
         
-        notes = request.data.get('notes')
-        activity.cancel(notes=notes, user=request.user)
+        activity.cancel(user=request.user)
         
         # Audit log
         audit_log(

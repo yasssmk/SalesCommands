@@ -402,11 +402,13 @@ class CampaignExecutionService:
             activity: Activity instance linked to a campaign
             result_data: dict {
                 'outcome': str,
-                'outcome_notes': str,
                 'callback_date': date (optional),
                 'callback_time': str HH:MM (optional),
                 'next_activity_type': str (optional),
             }
+
+        No note at closure (sprint « Source / Notes »): the activity's notes
+        (outcome_notes) are filled throughout its lifecycle, never here.
 
         Returns:
             dict: {activity, campaign_contact, campaign_account, next_activity}
@@ -419,13 +421,12 @@ class CampaignExecutionService:
             )
 
         outcome = result_data.get('outcome')
-        outcome_notes = result_data.get('outcome_notes')
 
         campaign_contact = activity.campaign_contact
         campaign_account = activity.campaign_account
         next_activity = None
 
-        activity.complete(outcome=outcome, notes=outcome_notes, user=self.user)
+        activity.complete(outcome=outcome, user=self.user)
 
         # Only persist next step's date when there is no callback pending.
         # Callback outcomes pause the sequence — the next step date will be

@@ -14,7 +14,7 @@ vi.mock('api/aiPipelines/activityExtraction', () => ({
     FAILED: 'FAILED',
   },
   EXTRACTION_OUTCOME_CODES: {
-    ALREADY_EXTRACTED: 'ALREADY_EXTRACTED',
+    ANALYSIS_ALREADY_DONE: 'ANALYSIS_ALREADY_DONE',
     IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
     TIMEOUT_PENDING: 'TIMEOUT_PENDING',
     POLL_FAILED: 'POLL_FAILED',
@@ -137,27 +137,29 @@ describe('usePipelineRunner', () => {
     expect(result.current.error).toContain('taking longer than expected');
   });
 
-  it('handles ALREADY_EXTRACTED as success', async () => {
+  // « Source / Notes » 1.6 — everything requested already analysed: the
+  // server's standard refusal (400, ANALYSIS_ALREADY_DONE) is INFORMATION,
+  // not an error; the page refreshes its « analysed » state (onSuccess).
+  it('handles ANALYSIS_ALREADY_DONE as information, not an error', async () => {
     const onSuccess = vi.fn();
-    const data = {
-      qualification_run: { created_signals_count: 2 },
-      next_steps_run: { created_signals_count: 1 },
-    };
+    const onError = vi.fn();
     mockRunExtraction.mockResolvedValue({
       success: false,
-      code: 'ALREADY_EXTRACTED',
-      data,
+      code: 'ANALYSIS_ALREADY_DONE',
+      error: 'This activity has already been analysed.',
+      status: 400,
     });
 
-    const { result } = renderHook(() => usePipelineRunner({ onSuccess }));
+    const { result } = renderHook(() => usePipelineRunner({ onSuccess, onError }));
 
     await act(async () => {
       result.current.run('act-1', 'transcript');
     });
 
-    expect(result.current.state).toBe(PIPELINE_STATE.SUCCESS);
-    expect(result.current.result).toEqual(data);
-    expect(onSuccess).toHaveBeenCalledWith(data);
+    expect(result.current.state).toBe(PIPELINE_STATE.INFO);
+    expect(result.current.error).toBe('This activity has already been analysed.');
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it('handles thrown exception', async () => {

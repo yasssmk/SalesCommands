@@ -159,13 +159,11 @@ POLLING_INTERVAL_SECONDS     = 5
 
 AI_PIPELINE_TIER                         = TIER_T4_EXTERNAL_PIPELINE
 AI_PIPELINE_IDEMPOTENCY_STRATEGY         = IDEMPOTENCY_STRATEGY_DETERMINISTIC
-AI_PIPELINE_BACKEND_DB_DEDUP_REQUIRED    = True
 
-# AIPipelineRun statuses that count as "already extracted" for the
-# layer-2 DB dedup check. Anything else (PARSE_ERROR, LLM_ERROR,
-# TIMEOUT) is treated as "no successful prior extraction" -- we
-# allow a fresh retry in that case.
-AI_PIPELINE_DEDUP_RUN_STATUSES           = ('SUCCESS', 'PARTIAL')
+# The former layer-2 DB dedup (by transcript hash, behind a toggle) is gone:
+# « Source / Notes » 1.6 (PO) made it a business RULE — ONE analysis per
+# pipeline, whatever the transcript. Its statuses (SUCCESS / PARTIAL) live
+# in ONE place: app_modules/ai_pipelines/services/analysis_state.py.
 
 
 # ============================================================================

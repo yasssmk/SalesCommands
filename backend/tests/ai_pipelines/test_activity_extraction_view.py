@@ -6,7 +6,8 @@ Tests for the unified ActivityExtractionView endpoint:
 Coverage:
   - Happy path: both pipelines succeed, unified response.
   - TD-8 resolution: prior Qualif run does NOT block NextSteps extraction.
-  - Both already extracted → 409 with cached payload.
+  - Both already analysed → the standard refusal (400, ANALYSIS_ALREADY_DONE —
+    « Source / Notes » 1.6, it replaced the former 409 ALREADY_EXTRACTED).
   - Qualif PARTIAL + NextSteps SUCCESS → global PARTIAL.
   - Qualif KO + NextSteps OK → global PARTIAL.
   - Qualif OK + NextSteps KO → global PARTIAL.
@@ -22,9 +23,11 @@ from unittest.mock import patch
 import pytest
 
 from app_modules.ai_pipelines.constants import (
+    ANALYSIS_ALREADY_DONE_CODE,
     AIPipelineStatus,
     AIPipelineType,
 )
+from core.error_messages import AIPipelineErrorMessages
 from app_modules.ai_pipelines.models import AIPipelineRun
 
 from .conftest import (
@@ -355,9 +358,10 @@ class TestTD8Resolution:
 
 @pytest.mark.django_db
 class TestBothAlreadyExtracted:
-    """When both pipelines have prior successful runs → 409 with full payload."""
+    """When both pipelines have prior successful runs → the standard refusal
+    (« Source / Notes » 1.6 — replaces the former 409 with the cached payload)."""
 
-    def test_both_already_extracted_returns_409_with_cached_payload(
+    def test_both_already_analysed_returns_the_standard_refusal(
         self, authed_api_a, activity, user_a, client_account_a,
         patch_active_provider,
     ):
@@ -396,12 +400,10 @@ class TestBothAlreadyExtracted:
                 format='json',
             )
 
-        assert resp.status_code == 409
+        assert resp.status_code == 400
         body = resp.json()
-        assert body['code'] == 'ALREADY_EXTRACTED'
-        assert body['data']['status'] == 'SUCCESS'
-        assert body['data']['qualification_run']['from_cache'] is True
-        assert body['data']['next_steps_run']['from_cache'] is True
+        assert body['code'] == ANALYSIS_ALREADY_DONE_CODE
+        assert body['error'] == str(AIPipelineErrorMessages.ANALYSIS_ALREADY_DONE)
 
 
 # =============================================================================
@@ -561,8 +563,8 @@ class TestDedupIntra:
                 format='json',
             )
 
-        assert resp2.status_code == 409
-        assert resp2.json()['code'] == 'ALREADY_EXTRACTED'
+        assert resp2.status_code == 400
+        assert resp2.json()['code'] == ANALYSIS_ALREADY_DONE_CODE
 
 
 # =============================================================================
@@ -988,7 +990,8 @@ class TestAlreadyExtractedSinglePipeline:
     but it read `.id` on both runs. With one pipeline skipped (campaign
     activity -> next steps skipped by the DC-only guard, or the rep only
     asked for one pipeline) the other run is None. A re-run must answer
-    409 ALREADY_EXTRACTED with the skipped pipeline's run null.
+    the standard refusal (« Source / Notes » 1.6: 400 ANALYSIS_ALREADY_DONE,
+    it replaced the former 409 ALREADY_EXTRACTED), never a 500.
     """
 
     def _post(self, authed_api_a, activity, *, qualif, nextsteps):
@@ -1004,7 +1007,7 @@ class TestAlreadyExtractedSinglePipeline:
                 format='json',
             )
 
-    def test_campaign_activity_rerun_returns_409(
+    def test_campaign_activity_rerun_is_refused(
         self, authed_api_a, activity_without_cycle, patch_active_provider,
         fake_provider,
     ):
@@ -1019,14 +1022,10 @@ class TestAlreadyExtractedSinglePipeline:
 
         second = self._post(authed_api_a, activity, qualif=True, nextsteps=True)
 
-        assert second.status_code == 409
-        body = second.json()
-        assert body['code'] == 'ALREADY_EXTRACTED'
-        assert body['data']['qualification_run']['from_cache'] is True
-        assert body['data']['next_steps_run'] is None
-        assert body['data']['next_step_signals'] == []
+        assert second.status_code == 400
+        assert second.json()['code'] == ANALYSIS_ALREADY_DONE_CODE
 
-    def test_next_steps_only_rerun_returns_409(
+    def test_next_steps_only_rerun_is_refused(
         self, authed_api_a, activity, patch_active_provider, fake_provider,
     ):
         fake_provider.replies = {'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY}
@@ -1036,11 +1035,8 @@ class TestAlreadyExtractedSinglePipeline:
 
         second = self._post(authed_api_a, activity, qualif=False, nextsteps=True)
 
-        assert second.status_code == 409
-        body = second.json()
-        assert body['code'] == 'ALREADY_EXTRACTED'
-        assert body['data']['next_steps_run']['from_cache'] is True
-        assert body['data']['qualification_run'] is None
+        assert second.status_code == 400
+        assert second.json()['code'] == ANALYSIS_ALREADY_DONE_CODE
 
 
 # =============================================================================

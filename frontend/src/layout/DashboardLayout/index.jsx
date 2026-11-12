@@ -17,6 +17,7 @@ import HorizontalBar from './Drawer/HorizontalBar';
 import Loader from 'components/Loader';
 import BreadcrumbBar from 'components/BreadcrumbBar';
 import WorkspaceDrawer from 'components/WorkspaceDrawer';
+import UnsavedLinkGuard from 'components/drawer/UnsavedLinkGuard';
 import { BreadcrumbProvider } from 'contexts/BreadcrumbContext';
 import { WorkspaceDrawerProvider } from 'contexts/WorkspaceDrawerContext';
 // import AddCustomer from 'sections/apps/customer/AddCustomer';
@@ -100,6 +101,10 @@ export default function DashboardLayout({ children }) {
               {children}
             </Box>
             <WorkspaceDrawer />
+            {/* « Source / Notes » 2.3 — the internal links guard, mounted ONCE
+                beside the coque: while a source is modified, an internal
+                link asks first (the coque's ConfirmDialog). */}
+            <UnsavedLinkGuard />
           </Box>
 
           <Footer />

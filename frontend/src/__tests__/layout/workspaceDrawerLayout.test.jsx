@@ -130,3 +130,38 @@ describe("Workspace drawer coque at the layout level (L2)", () => {
     expect(document.querySelector(".MuiBackdrop-root")).not.toBeNull();
   });
 });
+
+// ==============================|| « SOURCE / NOTES » 2.3 — THE LINKS GUARD AT THE LAYOUT ||============================== //
+// The internal links guard (UnsavedLinkGuard) is mounted ONCE by the layout,
+// beside the coque: on any page, a modified source makes an internal link ask
+// first (the coque's ConfirmDialog).
+
+import { useState as useStateForGuard } from "react";
+import useUnsavedChanges from "hooks/useUnsavedChanges";
+import { UNSAVED_SCOPE } from "utils/unsavedChanges";
+
+function PageWithNotes() {
+  const [value, setValue] = useStateForGuard("");
+  useUnsavedChanges(value !== "", { scope: UNSAVED_SCOPE.PAGE });
+  return (
+    <div>
+      <input aria-label="notes" value={value} onChange={(e) => setValue(e.target.value)} />
+      <a href="/accounts/acc-1" onClick={(e) => e.preventDefault()}>Account</a>
+    </div>
+  );
+}
+
+describe("The internal links guard is mounted by the layout (2.3)", () => {
+  it("a modified page field makes an internal link ask first", () => {
+    render(
+      <AphoriqTheme>
+        <DashboardLayout>
+          <PageWithNotes />
+        </DashboardLayout>
+      </AphoriqTheme>,
+    );
+    fireEvent.change(screen.getByLabelText("notes"), { target: { value: "draft" } });
+    fireEvent.click(screen.getByText("Account"));
+    expect(screen.getByTestId("confirm-dialog")).toHaveTextContent("Discard your changes?");
+  });
+});

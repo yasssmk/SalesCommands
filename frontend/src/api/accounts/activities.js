@@ -11,6 +11,7 @@ import { useAuth } from "hooks/useAuth";
 import { api } from "utils/axiosClient";
 import { tenantKey, revalidateMetricSurfaces, matchKey } from "api/_swr";
 import { isValidUUID, sanitizeObject } from "utils/validators";
+import { authConfig } from "../../config/auth";
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -144,6 +145,7 @@ export const ACTIVITY_OUTCOME_COLORS = {
 const endpoints = {
   activities: "/module-activities/",
   activityDetail: (id) => `/module-activities/${id}/`,
+  activityNotes: (id) => `/module-activities/${id}/notes/`,
   myActivities: "/module-activities/my-activities/",
   byAccount: "/module-activities/by-account/",
   byStep: "/module-activities/by-step/",
@@ -885,6 +887,79 @@ export async function createActivityWithEntities(payload) {
 }
 
 /**
+ * SAVE ACTIVITY NOTES — the notes panel's AUTOSAVE (« Source / Notes », N2).
+ *
+ * POST /module-activities/{id}/notes/ — the light note-only write (N1): no
+ * cascade revalidation here (it fires at every pause in typing); the caller
+ * updates its own cache locally (useNoteAutosave).
+ *
+ * @param {string} activityId - UUID of the activity
+ * @param {string} notes - The whole note
+ * @returns {Promise<Object>} {success, data?: {outcome_notes, updated_at}, error?, status?}
+ */
+export async function saveActivityNotes(activityId, notes) {
+  if (!activityId || !isValidUUID(activityId)) {
+    return { success: false, error: "Invalid activity ID format", status: 400 };
+  }
+  const result = await api.post(endpoints.activityNotes(activityId), {
+    outcome_notes: notes ?? "",
+  });
+  if (result.success) {
+    return { success: true, data: result.data?.data || result.data };
+  }
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null,
+  };
+}
+
+/**
+ * SAVE ACTIVITY NOTES — KEEPALIVE variant, for the last flush when the page
+ * goes away (unmount, beforeunload): a request axios cannot make survive.
+ * `fetch(..., { keepalive: true, credentials: "include" })` — the HttpOnly
+ * access_token cookie authenticates it; no CSRF token is needed (the API
+ * authenticates by JWT, never by session — proven by
+ * backend/tests/activities/test_notes_autosave_csrf.py). Fire-and-forget:
+ * never throws, the answer cannot be shown.
+ * N4b — optional `onDone(result)`: the answer, when the page is still there
+ * to get it ({ success: true, data: { outcome_notes, updated_at } } or
+ * { success: false, status }) — the confirmation of the write.
+ *
+ * @param {string} activityId - UUID of the activity
+ * @param {string} notes - The whole note
+ * @param {Function} [onDone] - (result) => void
+ * @returns {boolean} whether the request was sent
+ */
+export function saveActivityNotesKeepalive(activityId, notes, onDone) {
+  if (!activityId || !isValidUUID(activityId) || typeof fetch !== "function") {
+    return false;
+  }
+  try {
+    fetch(`${authConfig.API_BASE_URL}${endpoints.activityNotes(activityId)}`, {
+      method: "POST",
+      keepalive: true,
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome_notes: notes ?? "" }),
+    })
+      .then(async (response) => {
+        if (!response?.ok) {
+          onDone?.({ success: false, status: response?.status ?? 0 });
+          return;
+        }
+        const body = await response.json();
+        onDone?.({ success: true, data: body?.data ?? body });
+      })
+      .catch(() => onDone?.({ success: false, status: 0 }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * UPDATE ACTIVITY
  *
  * @param {string} activityId - UUID of the activity
@@ -980,8 +1055,11 @@ export async function deleteActivity(activityId) {
 /**
  * COMPLETE ACTIVITY
  *
+ * No note at closure (« Source / Notes » 1.5): the activity's notes
+ * (outcome_notes) are written through updateActivity only.
+ *
  * @param {string} activityId - UUID of the activity
- * @param {Object} payload - {outcome, outcome_notes}
+ * @param {Object} payload - {outcome, callback_date?}
  * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
  */
 export async function completeActivity(activityId, payload = {}) {
@@ -993,9 +1071,7 @@ export async function completeActivity(activityId, payload = {}) {
     };
   }
 
-  const sanitized = sanitizeObject(payload, ["outcome_notes"]);
-
-  const result = await api.post(endpoints.complete(activityId), sanitized);
+  const result = await api.post(endpoints.complete(activityId), payload);
 
   if (result.success) {
     revalidateMetricSurfaces([
@@ -1021,11 +1097,13 @@ export async function completeActivity(activityId, payload = {}) {
 /**
  * CANCEL ACTIVITY
  *
+ * No cancellation reason, and the activity's notes are never written at
+ * closure (« Source / Notes » 1.5): the POST carries no body.
+ *
  * @param {string} activityId - UUID of the activity
- * @param {Object} payload - {notes}
  * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
  */
-export async function cancelActivity(activityId, payload = {}) {
+export async function cancelActivity(activityId) {
   if (!activityId || !isValidUUID(activityId)) {
     return {
       success: false,
@@ -1034,7 +1112,7 @@ export async function cancelActivity(activityId, payload = {}) {
     };
   }
 
-  const result = await api.post(endpoints.cancel(activityId), payload);
+  const result = await api.post(endpoints.cancel(activityId), {});
 
   if (result.success) {
     revalidateMetricSurfaces([
@@ -1061,7 +1139,7 @@ export async function cancelActivity(activityId, payload = {}) {
  * REOPEN ACTIVITY
  *
  * Reopens a completed or cancelled activity.
- * Clears outcome, outcome_notes, and completed_at.
+ * Clears outcome and completed_at; KEEPS the activity's notes (outcome_notes).
  *
  * @param {string} activityId - UUID of the activity
  * @param {Object} payload - {status?: 'PLANNED' | 'IN_PROGRESS'} - defaults to 'PLANNED'

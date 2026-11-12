@@ -10,7 +10,10 @@ Called by:
   * SignalManager.validate / reject / reopen — the central point behind the
     signal lifecycle endpoints (base_views validate_signal / reject_signal /
     reopen_signal), the People resolve and the next-step materialisation;
-  * the AI analysis endpoint (activity_extraction_view).
+  * the AI analysis endpoint (activity_extraction_view);
+  * ActivityUpdateSerializer — the notes and the transcript of the Source
+    band follow the same lock (sprint « Source / Notes », 1.1): editable on a
+    PLANNED / ON_HOLD / COMPLETED activity, locked on a CANCELLED one.
 """
 
 from core.error_messages import ActivityErrorMessages
@@ -21,7 +24,13 @@ from ..constants import ActivityStatus
 ACTIVITY_SIGNALS_LOCKED_STATUSES = frozenset({ActivityStatus.CANCELLED})
 
 
+def is_activity_signals_locked(activity):
+    """THE predicate: `activity` (may be None) is locked (mirror of the front
+    isActivitySignalsLocked)."""
+    return activity is not None and activity.status in ACTIVITY_SIGNALS_LOCKED_STATUSES
+
+
 def check_activity_signals_unlocked(activity):
     """The standard refusal when `activity` (may be None) locks its signals."""
-    if activity is not None and activity.status in ACTIVITY_SIGNALS_LOCKED_STATUSES:
+    if is_activity_signals_locked(activity):
         raise StandardizedValidationError(ActivityErrorMessages.SIGNALS_LOCKED)

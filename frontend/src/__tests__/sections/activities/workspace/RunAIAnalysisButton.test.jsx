@@ -80,3 +80,52 @@ describe("RunAIAnalysisButton — the shared pill (TD-302)", () => {
     expect(screen.queryByText(/Polling for result/)).toBeNull();
   });
 });
+
+// ==============================|| « SOURCE / NOTES » 3.2 — EVERYTHING ANALYSED ||============================== //
+// The pill is DISABLED once everything AVAILABLE is analysed: the
+// qualification done AND the next steps done or unavailable (no decision
+// cycle, no successful campaign outcome — hasSuggestedNextSteps). ONE
+// predicate, canRunAIAnalysis(activity, pipelineState, runsByPipeline).
+
+import { canRunAIAnalysis } from "sections/activities/workspace/RunAIAnalysisButton";
+
+const RUN = { last_run_at: "2026-11-01T10:00:00Z" };
+const DC_ACTIVITY = { ...ACTIVITY, decision_cycle: "dc-1" };
+const ANALYSED_TOOLTIP = "Already analysed: an analysis is never re-run";
+
+describe("RunAIAnalysisButton — everything available already analysed (3.2)", () => {
+  it("qualification AND next steps analysed: disabled, with its tooltip", async () => {
+    renderPill({ activity: DC_ACTIVITY, runsByPipeline: { TRANSCRIPT_SIGNALS: RUN, NEXT_STEPS: RUN } });
+    expect(isDisabled(pill())).toBe(true);
+    fireEvent.mouseOver(pill().parentElement);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(ANALYSED_TOOLTIP);
+  });
+
+  it("qualification analysed, next steps UNAVAILABLE (no cycle): disabled", () => {
+    renderPill({ activity: ACTIVITY, runsByPipeline: { TRANSCRIPT_SIGNALS: RUN, NEXT_STEPS: null } });
+    expect(isDisabled(pill())).toBe(true);
+  });
+
+  it("qualification analysed, next steps still AVAILABLE: active", () => {
+    renderPill({ activity: DC_ACTIVITY, runsByPipeline: { TRANSCRIPT_SIGNALS: RUN, NEXT_STEPS: null } });
+    expect(isDisabled(pill())).toBe(false);
+  });
+
+  it("next steps analysed, qualification not: active", () => {
+    renderPill({ activity: DC_ACTIVITY, runsByPipeline: { TRANSCRIPT_SIGNALS: null, NEXT_STEPS: RUN } });
+    expect(isDisabled(pill())).toBe(false);
+  });
+
+  it("nothing analysed: active", () => {
+    renderPill({ activity: DC_ACTIVITY });
+    expect(isDisabled(pill())).toBe(false);
+  });
+
+  it("the predicate itself: one rule for every entry point", () => {
+    const all = { TRANSCRIPT_SIGNALS: RUN, NEXT_STEPS: RUN };
+    expect(canRunAIAnalysis(DC_ACTIVITY, PIPELINE_STATE.IDLE, all)).toBe(false);
+    expect(canRunAIAnalysis(DC_ACTIVITY, PIPELINE_STATE.IDLE, { TRANSCRIPT_SIGNALS: RUN })).toBe(true);
+    expect(canRunAIAnalysis(ACTIVITY, PIPELINE_STATE.IDLE, { TRANSCRIPT_SIGNALS: RUN })).toBe(false);
+    expect(canRunAIAnalysis({ ...DC_ACTIVITY, status: "CANCELLED" }, PIPELINE_STATE.IDLE, {})).toBe(false);
+  });
+});

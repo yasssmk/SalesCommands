@@ -775,13 +775,13 @@ _BYPASS_REDIS = (
 )
 
 
-def _post(api, activity):
+def _post(api, activity, **flags):
     with ExitStack() as stack:
         for target in _BYPASS_REDIS:
             stack.enter_context(patch(target, return_value=None))
         return api.post(
             _URL,
-            {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
+            {'activity_id': str(activity.id), 'transcript': TRANSCRIPT, **flags},
             format='json',
         )
 
@@ -792,16 +792,19 @@ class TestEndpointPeopleKey:
         self, authed_api_a, activity, decision_cycle,  # noqa: F811
         fake_provider, patch_active_provider,
     ):
-        # DC context so BOTH pipelines run: the replay then takes the
-        # "both cached" path (409 ALREADY_EXTRACTED, cached payload).
+        # DC context so BOTH pipelines can run. « Source / Notes » 1.6: the
+        # cached qualification payload is served on the MIXED path — the
+        # qualification already analysed (skipped, from its run) while the
+        # next steps run (the former 409 cached replay is gone).
         from app_modules.activities.models import Activity
         Activity.objects.filter(id=activity.id).update(decision_cycle=decision_cycle)
         activity.refresh_from_db()
         fake_provider.replies = {
             'people': json.dumps({'signals': [_person(full_name='Marc Dubois')]}),
+            'next_steps': '{"signals": []}',
         }
 
-        fresh = _post(authed_api_a, activity)
+        fresh = _post(authed_api_a, activity, run_next_steps=False)
         assert fresh.status_code == 200, fresh.content
         data = fresh.json()['data']
         assert data['qualification_run']['from_cache'] is False
@@ -810,9 +813,10 @@ class TestEndpointPeopleKey:
         assert person['role'] == PeopleRole.ECONOMIC_BUYER
 
         cached = _post(authed_api_a, activity)
-        assert cached.status_code == 409, cached.content
+        assert cached.status_code == 200, cached.content
         data = cached.json()['data']
         assert data['qualification_run']['from_cache'] is True
+        assert data['next_steps_run']['from_cache'] is False
         [person] = data['qualification_signals']['people']
         assert person['full_name'] == 'Marc Dubois'
 

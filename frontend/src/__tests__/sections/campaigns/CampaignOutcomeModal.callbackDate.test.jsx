@@ -107,3 +107,78 @@ describe("CampaignOutcomeModal — callback date is sent in local time", () => {
     expect(payload.callback_date).not.toBe("2026-07-25");
   });
 });
+
+// ==============================|| « SOURCE / NOTES » 1.5 — NO NOTE AT CLOSURE ||============================== //
+// PO: the activity's notes are filled throughout its lifecycle (Source band),
+// never at closure — the campaign outcome steps carry no note field, and
+// neither the completion nor the no-answer call sends one.
+
+import { recordCallNoAnswer } from "api/campaigns/campaigns";
+
+describe("CampaignOutcomeModal — no note at closure", () => {
+  it("the detail step has no note field, and the completion sends none", async () => {
+    render(
+      <CampaignOutcomeModal open activity={modeBActivity} campaignId="camp-1" onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByText("Callback"));
+    expect(screen.queryByLabelText(/notes/i)).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.click(screen.getByTestId("pick-callback-26"));
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
+    await waitFor(() => expect(completePlaylistActivity).toHaveBeenCalledTimes(1));
+    const [, , payload] = completePlaylistActivity.mock.calls[0];
+    expect(payload).not.toHaveProperty("outcome_notes");
+  });
+
+  it("a no-answer on a call records the attempt without a note", async () => {
+    render(
+      <CampaignOutcomeModal open activity={modeBActivity} campaignId="camp-1" onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByText("No Answer"));
+    expect(screen.queryByLabelText(/notes/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
+    await waitFor(() => expect(recordCallNoAnswer).toHaveBeenCalledTimes(1));
+    expect(recordCallNoAnswer.mock.calls[0]).toEqual(["act-1"]);
+  });
+});
+
+// ==============================|| « SOURCE / NOTES » 1.5b — AN EMPTY DETAIL STEP IS SKIPPED ||============================== //
+// PO: with no note at closure, the « Successful » group's « Add details » step
+// has nothing left — it is SKIPPED (forward and Back). The groups that still
+// carry something (Callback date, No Answer notice, the Fail options) keep it.
+
+describe("CampaignOutcomeModal — the empty « Add details » step is skipped", () => {
+  const renderModal = () =>
+    render(<CampaignOutcomeModal open activity={modeBActivity} campaignId="camp-1" onClose={() => {}} />);
+
+  it("Successful goes straight to the next-step prompt, then completes with the right payload", async () => {
+    renderModal();
+    fireEvent.click(screen.getByText("Successful"));
+    expect(screen.queryByText("Add details")).toBeNull();
+    expect(screen.getByText("Create a next step?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
+    expect(screen.getByText("Cancel other activities?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm & Complete" }));
+    await waitFor(() => expect(completePlaylistActivity).toHaveBeenCalledTimes(1));
+    const [activityId, campaignId, payload] = completePlaylistActivity.mock.calls[0];
+    expect([activityId, campaignId, payload]).toEqual(["act-1", "camp-1", { outcome: "SUCCESSFUL" }]);
+  });
+
+  it("Back from the scope step never lands on the empty « Add details » step", () => {
+    renderModal();
+    fireEvent.click(screen.getByText("Successful"));
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByText("Add details")).toBeNull();
+    expect(screen.getByText("What was the outcome?")).toBeInTheDocument();
+  });
+
+  it.each(["Callback", "No Answer", "Not Interested / Wrong Contact"])(
+    "%s keeps its « Add details » step",
+    (label) => {
+      renderModal();
+      fireEvent.click(screen.getByText(label));
+      expect(screen.getByText("Add details")).toBeInTheDocument();
+    },
+  );
+});

@@ -1116,7 +1116,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                                                   CALLBACK_REQUESTED | NO_RESPONSE
             - response_date:   date  (optional) — required when response is MEETING_BOOKED
                                                   or CALLBACK_REQUESTED (YYYY-MM-DD)
-            - notes:           str   (optional)
+        No note at closure (sprint « Source / Notes »): the activity's notes
+        are never written here; a note key still sent is ignored.
         Delegates entirely to CampaignExecutionService.process_result():
         updates activity outcome, CampaignAccount state, and cancels downstream
         sequence activities when the outcome is terminal.
@@ -1130,7 +1131,6 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         response = request.data.get('response')
         response_date = request.data.get('response_date')
         callback_time = request.data.get('callback_time')
-        notes = request.data.get('notes', '')
 
         if not activity_id:
             raise StandardizedValidationError(
@@ -1170,7 +1170,6 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         )
         service.process_result(activity, {
             'outcome': outcome,
-            'outcome_notes': notes or None,
             'callback_date': response_date if response == 'CALLBACK_REQUESTED' else None,
             'callback_time': callback_time if response == 'CALLBACK_REQUESTED' else None,
         })
@@ -1274,9 +1273,13 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         elif scope == 'department':
             qs = qs.filter(contacts__standard_department_id=department_id)
 
+        # The system line is APPENDED to each activity's notes, never
+        # erasing them (sprint « Source / Notes », 1.4) — still one UPDATE.
+        from app_modules.activities.services.activity_notes import notes_with_system_line
+        from app_modules.campaigns.constants import CANCEL_PLANNED_NOTE_LINE
         cancelled_count = qs.update(
             status=ActivityStatus.CANCELLED,
-            outcome_notes='Manually cancelled after terminal response',
+            outcome_notes=notes_with_system_line(CANCEL_PLANNED_NOTE_LINE),
             updated_at=timezone.now(),
         )
 

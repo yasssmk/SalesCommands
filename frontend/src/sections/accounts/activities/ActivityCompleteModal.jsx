@@ -23,7 +23,6 @@ import MenuItem from '@mui/material/MenuItem';
 import Modal from '@mui/material/Modal';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import FormHelperText from '@mui/material/FormHelperText';
 
@@ -47,12 +46,11 @@ import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 
 // Simplified: completion only requires outcome selection
 // No next step reason removed — handled at cycle level
+// No note at closure (« Source / Notes » 1.5, PO): the activity's notes are
+// filled throughout its lifecycle in the Source band, never here.
 const validationSchema = Yup.object({
   outcome: Yup.string()
     .required('Please select an outcome'),
-  outcome_notes: Yup.string()
-    .max(2000, 'Notes must be at most 2000 characters')
-    .nullable()
 });
 // ==============================|| ACTIVITY COMPLETE MODAL ||============================== //
 
@@ -73,11 +71,10 @@ export default function ActivityCompleteModal({
   const theme = useTheme();
   const [submitting, setSubmitting] = useState(false);
 
-  // Formik setup — simplified: only outcome + notes
+  // Formik setup — simplified: the outcome only
   const formik = useFormik({
     initialValues: {
       outcome: '',
-      outcome_notes: ''
     },
     validationSchema,
     enableReinitialize: false,
@@ -88,7 +85,6 @@ export default function ActivityCompleteModal({
       try {
         const payload = {
           outcome: values.outcome,
-          outcome_notes: values.outcome_notes?.trim() || null
         };
 
         const result = await completeActivity(activity.id, payload);
@@ -193,27 +189,7 @@ export default function ActivityCompleteModal({
                   )}
                 </Stack>
               </Grid>
-              
-              {/* Notes */}
-              <Grid item xs={12}>
-                <Stack spacing={1}>
-                  <InputLabel htmlFor="outcome_notes">Notes</InputLabel>
-                  <TextField
-                    id="outcome_notes"
-                    name="outcome_notes"
-                    fullWidth
-                    multiline
-                    rows={3}
-                    placeholder="Add notes about the outcome..."
-                    value={values.outcome_notes}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    error={Boolean(touched.outcome_notes && errors.outcome_notes)}
-                    helperText={touched.outcome_notes && errors.outcome_notes}
-                  />
-                </Stack>
-              </Grid>            
-              
+
             </Grid>
           </Box>
           

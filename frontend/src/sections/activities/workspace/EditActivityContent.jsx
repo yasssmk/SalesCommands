@@ -979,6 +979,7 @@ function ActivityForm({
           ? !formik.isValid || formik.isSubmitting || conversionNeedsCycle
           : !formik.isValid || !formik.dirty || formik.isSubmitting
       }
+      dirty={formik.dirty && !formik.isSubmitting}
     >
       <Stack spacing={2.5} data-testid={isCreate ? "activity-create" : undefined}>
         {/* ---- SECTION 1 — Decision cycle (8d-1, PO): its OWN section, FIRST

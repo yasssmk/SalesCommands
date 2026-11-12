@@ -109,3 +109,8 @@ SCHEDULED_DATE_ACTIVITY_TYPES = frozenset({
 # (the label alone heads the criterion when there is no objective).
 NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR = '\n\n'
 NEXT_STEP_SUCCESS_CRITERION_LABEL = 'Success criterion: '
+
+# Activity notes (sprint « Source / Notes », 1.4): a system line is APPENDED
+# at the END of the notes, after this separator — "<note>" + SEPARATOR +
+# "<line>"; an empty note becomes the line alone (services/activity_notes.py).
+NOTES_SYSTEM_LINE_SEPARATOR = '\n\n'

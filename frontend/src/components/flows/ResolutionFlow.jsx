@@ -49,6 +49,7 @@ export default function ResolutionFlow({ steps, activeStep, bar, testId, childre
         saveLabel={bar.saveLabel}
         cancelLabel="Back"
         saveDisabled={bar.saveDisabled}
+        dirty={Boolean(bar.dirty)}
       >
         {children}
       </DrawerContentLayout>
@@ -69,6 +70,9 @@ ResolutionFlow.propTypes = {
     onCancel: PropTypes.func.isRequired,
     saveLabel: PropTypes.node.isRequired,
     saveDisabled: PropTypes.bool,
+    /** Optional — the caller's state holds UNSAVED choices: the coque asks
+        before replacing / closing the drawer (« Source / Notes » 2.2). */
+    dirty: PropTypes.bool,
   }).isRequired,
   /** data-testid of the flow root. */
   testId: PropTypes.string,

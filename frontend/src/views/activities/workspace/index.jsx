@@ -31,6 +31,7 @@ import usePipelineRunner from "hooks/usePipelineRunner";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
+  displayWarningSnackbar,
 } from "utils/displayError";
 
 // Section imports
@@ -42,6 +43,11 @@ import { getVisibleTabs } from "sections/activities/workspace/ActivityTabs";
 import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
+import ActivityNotesFab, {
+  OPEN_NOTES_PILL_LABEL,
+  useActivityNotesPanel,
+} from "sections/activities/workspace/ActivityNotesFab";
+import ClickablePill from "components/chips/ClickablePill";
 import RunAIAnalysisButton from "sections/activities/workspace/RunAIAnalysisButton";
 import ActivitySignalsTab, {
   ACTIVITY_FLAT_TYPES,
@@ -54,7 +60,11 @@ import {
   hasNextStepsBand,
   showsCampaignConversion,
 } from "utils/nextStepsBand";
-import { isActivitySignalsLocked, TRANSCRIPT_FIELD } from "utils/activitySignalsLock";
+import {
+  isActivitySignalsLocked,
+  SOURCE_LOCKED_FIELDS,
+  SOURCE_LOCKED_MESSAGE,
+} from "utils/activitySignalsLock";
 
 // The Signals band halo reads the COMPLETE validable set (all 3 statuses).
 const HALO_STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
@@ -124,6 +134,10 @@ export default function ActivityWorkspacePage() {
   // is unchanged (next steps only).
   const conversionToTake = showsCampaignConversion(activity) ? 1 : 0;
 
+  // « Source / Notes » N5 / N6 — the notes panel: ONE state for the floating
+  // button and the Source band's « Open notes » pill.
+  const notesPanel = useActivityNotesPanel(activityId);
+
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
   const pipelineRunner = usePipelineRunner({
     onSuccess: () => {
@@ -140,12 +154,19 @@ export default function ActivityWorkspacePage() {
   const isLocked =
     activity?.status === "COMPLETED" || activity?.status === "CANCELLED";
 
-  // Handle inline field save — blocked when activity is locked. The
-  // transcript follows the signal bands' lock instead (CANCELLED only, 5.12d).
+  // Handle inline field save — blocked when activity is locked. The Source
+  // band's transcript AND notes follow the signal bands' lock instead
+  // (CANCELLED only — 5.12d, « Source / Notes » 1.5).
   const handleSaveField = async (fieldKey, newValue) => {
-    const fieldLocked =
-      fieldKey === TRANSCRIPT_FIELD ? isActivitySignalsLocked(activity) : isLocked;
-    if (fieldLocked) return false;
+    const sourceField = SOURCE_LOCKED_FIELDS.includes(fieldKey);
+    const fieldLocked = sourceField ? isActivitySignalsLocked(activity) : isLocked;
+    if (fieldLocked) {
+      // 2.4 — never silent: the Source band's lock (the activity became
+      // CANCELLED while the field was edited) is a business rule → the ORANGE
+      // warning; the edit stays open. A server refusal stays red (below).
+      if (sourceField) displayWarningSnackbar(SOURCE_LOCKED_MESSAGE);
+      return false;
+    }
 
     try {
       const result = await updateActivity(activityId, { [fieldKey]: newValue });
@@ -321,12 +342,20 @@ export default function ActivityWorkspacePage() {
             title="Source"
             icon={FileTextOutlined}
             defaultExpanded={false}
+            // 2.4 — folding the band keeps its body mounted: a note being
+            // typed is never destroyed by a fold.
+            disableUnmount
             meta={
               <Box
                 component="span"
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
+                sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}
               >
+                {/* N6 — the note is written in the notes panel: the band
+                    shows it read-only, this pill opens the panel (the
+                    pattern of the Next steps band's « + Add next step »). */}
+                <ClickablePill label={OPEN_NOTES_PILL_LABEL} active onClick={notesPanel.open} />
                 <RunAIAnalysisButton
                   activity={activity}
                   pipelineRunner={pipelineRunner}
@@ -341,10 +370,10 @@ export default function ActivityWorkspacePage() {
             <ActivityNotesTab
               activity={activity}
               onSave={handleSaveField}
-              isLocked={isLocked}
               pipelineRunner={pipelineRunner}
               lastRun={lastRun}
               latestRun={latestRun}
+              runsByPipeline={runsByPipeline}
               onOpenWizard={() => setSourceWizardOpen(true)}
             />
           </CollapsibleStrip>
@@ -391,6 +420,10 @@ export default function ActivityWorkspacePage() {
             </SignalsHaloBox>
           )}
         </Stack>
+
+      {/* « Source / Notes » N5 — the floating « Notes » button (this page
+          only, every activity type): opens / closes the coque's notes zone. */}
+      <ActivityNotesFab panel={notesPanel} />
 
       {/* Modals (Delete) */}
       {headerProps.modals}

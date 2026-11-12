@@ -22,7 +22,11 @@
  * Return value — always a flat object, discriminated on `code`:
  *
  *   { success: true, data }                                → extraction succeeded
- *   { success: false, code: 'ALREADY_EXTRACTED', data }    → 409 DB dedup hit
+ *   { success: false, code: 'ANALYSIS_ALREADY_DONE', error, status: 400 }
+ *                                                          → everything requested already
+ *                                                            analysed (« Source / Notes » 1.6:
+ *                                                            the standard refusal, shown as INFO —
+ *                                                            it replaced 409 ALREADY_EXTRACTED)
  *   { success: false, code: 'IDEMPOTENCY_CONFLICT' }      → 409 same key + different payload
  *   { success: false, code: 'TIMEOUT_PENDING', isPending } → polling exhausted, server still working
  *   { success: false, code: 'POLL_FAILED' }                → polling-side error
@@ -61,7 +65,9 @@ export const PIPELINE_STATUS_LABELS = {
 };
 
 export const EXTRACTION_OUTCOME_CODES = {
-  ALREADY_EXTRACTED: "ALREADY_EXTRACTED",
+  // The machine code of the server's standard refusal — mirror of
+  // backend ai_pipelines/constants.py ANALYSIS_ALREADY_DONE_CODE.
+  ANALYSIS_ALREADY_DONE: "ANALYSIS_ALREADY_DONE",
   IDEMPOTENCY_CONFLICT: "IDEMPOTENCY_CONFLICT",
   IDEMPOTENCY_REPLAY_FAILED: "IDEMPOTENCY_REPLAY_FAILED",
   IDEMPOTENCY_UNKNOWN_STATE: "IDEMPOTENCY_UNKNOWN_STATE",
@@ -175,13 +181,21 @@ function mapPollResult(pollResult) {
       };
     }
 
+    // A replay of the « already analysed » refusal (1.6) keeps its code.
+    if (httpStatus === 400 && body.code === EXTRACTION_OUTCOME_CODES.ANALYSIS_ALREADY_DONE) {
+      return {
+        success: false,
+        code: EXTRACTION_OUTCOME_CODES.ANALYSIS_ALREADY_DONE,
+        error: body.error || null,
+        status: 400,
+      };
+    }
+
     if (httpStatus === 409) {
       return {
         success: false,
-        code: body.code || EXTRACTION_OUTCOME_CODES.ALREADY_EXTRACTED,
-        error:
-          body.error ||
-          "This transcript has already been processed for this activity.",
+        code: body.code || EXTRACTION_OUTCOME_CODES.IDEMPOTENCY_CONFLICT,
+        error: body.error || "Conflict during extraction.",
         data: body.data || null,
         status: 409,
       };
@@ -369,7 +383,7 @@ export async function runActivityExtraction(
     );
   }
 
-  // 4d. HTTP 409 — ALREADY_EXTRACTED or IDEMPOTENCY_CONFLICT
+  // 4d. HTTP 409 — IDEMPOTENCY_CONFLICT
   if (result.status === 409) {
     const body = result.data || {};
     return {
@@ -381,7 +395,18 @@ export async function runActivityExtraction(
     };
   }
 
-  // 4e. Other errors (400 validation, 500 server, etc.)
+  // 4e. The « already analysed » standard refusal (1.6) — its code is
+  //     carried so the runner shows it as INFO, never as an error.
+  if (result.data?.code === EXTRACTION_OUTCOME_CODES.ANALYSIS_ALREADY_DONE) {
+    return {
+      success: false,
+      code: EXTRACTION_OUTCOME_CODES.ANALYSIS_ALREADY_DONE,
+      error: result.data.error || result.error,
+      status: result.status ?? 400,
+    };
+  }
+
+  // 4f. Other errors (400 validation, 500 server, etc.)
   return {
     success: false,
     error: result.error,

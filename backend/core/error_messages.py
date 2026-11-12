@@ -199,6 +199,13 @@ class ActivityErrorMessages:
         "This activity is cancelled: its signals and its AI analysis are locked."
     )
 
+    # Source lock (sprint « Source / Notes », 1.1) — activities/services/
+    # signals_lock.py, read by ActivityUpdateSerializer: the notes and the
+    # transcript of a CANCELLED activity
+    SOURCE_LOCKED = _(
+        "This activity is cancelled: its notes and transcript can no longer be changed."
+    )
+
     # Transcript lock (8g-7, TD-25) — ai_pipelines/services/analysis_state.py
     TRANSCRIPT_LOCKED = _(
         "This activity has been analysed: its transcript can no longer be changed."
@@ -678,6 +685,12 @@ class AIPipelineErrorMessages:
     NO_PIPELINE_SELECTED = _(
         "At least one pipeline must be selected "
         "(run_qualification or run_next_steps)."
+    )
+    # One analysis per pipeline (sprint « Source / Notes » 1.6, Q4) —
+    # ai_pipelines/services/analysis_state.py. Business rule, shown as INFO.
+    ANALYSIS_ALREADY_DONE = _(
+        "This activity has already been analysed: its signals and next steps "
+        "are on the page. An analysis is never re-run."
     )
 
     # -----------------------------------------------------------------

@@ -22,6 +22,8 @@ const mockRun = vi.fn();
 let mockPipelineState = "idle";
 // 8g-7: the last successful run (null = not analysed yet) — per test.
 let mockLastRun = null;
+// 3.2: the per-pipeline successful runs (the server state) — per test.
+let mockRunsByPipeline = {};
 
 vi.mock("next/font/google", () => ({
   Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
@@ -29,6 +31,7 @@ vi.mock("next/font/google", () => ({
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "act-1" }),
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/activities/act-1",
 }));
 vi.mock("@mui/x-date-pickers/DatePicker", () => ({ DatePicker: () => <input /> }));
 vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
@@ -49,7 +52,7 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
 }));
 vi.mock("api/aiPipelines/lastRun", () => ({
   useGetLastExtractionRun: () => ({
-    lastRun: mockLastRun, latestRun: null, runsByPipeline: {}, mutateLastRun: vi.fn(),
+    lastRun: mockLastRun, latestRun: null, runsByPipeline: mockRunsByPipeline, mutateLastRun: vi.fn(),
   }),
 }));
 vi.mock("api/signals/signalCounts", () => ({
@@ -78,7 +81,7 @@ vi.mock("components/signals/SignalsHaloBox", () => ({
   default: ({ children, ...rest }) => <div data-testid={rest["data-testid"]}>{children}</div>,
 }));
 vi.mock("utils/displayError", () => ({
-  displaySuccessSnackbar: vi.fn(), displayErrorSnackbar: vi.fn(),
+  displaySuccessSnackbar: vi.fn(), displayErrorSnackbar: vi.fn(), displayWarningSnackbar: vi.fn(),
 }));
 vi.mock("api/signals/signals", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -114,7 +117,7 @@ const sourceRunAI = () => {
 };
 const bandRunAI = () => within(screen.getByTestId("next-steps-extraction")).getByRole("button", { name: "Run AI Analysis" });
 
-afterEach(() => { cleanup(); mockLastRun = null; });
+afterEach(() => { cleanup(); mockLastRun = null; mockRunsByPipeline = {}; });
 
 describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
   it("COMPLETED: the Source's Run AI is available", () => {
@@ -157,7 +160,8 @@ describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
 
 // ==============================|| 5.12d (1) — THE TRANSCRIPT ||============================== //
 
-const NOTES_PLACEHOLDER = /Capture key takeaways/;
+// N6: the band's note is READ-ONLY (written in the notes panel).
+const NOTES_PLACEHOLDER = /No notes yet\./;
 const editTranscriptAndSave = async (text) => {
   fireEvent.click(screen.getByText(/We agreed on a security review/));
   fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
@@ -200,20 +204,25 @@ describe("The transcript — locked ONLY on CANCELLED (5.12d (1))", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("COMPLETED: the OTHER Source fields keep their rule — the notes stay read-only", () => {
-    mockActivity = dcActivity({ status: "COMPLETED" });
+  // « Source / Notes » N6 (PO) — the ONE note is written in the notes panel
+  // (its own lock: CANCELLED only, ActivityNotesPanel); the band shows it
+  // READ-ONLY on every status (EditableTextBlock's read mode), no Save.
+  it.each(["PLANNED", "COMPLETED", "CANCELLED"])("%s: the band's note is read-only", (status) => {
+    mockActivity = dcActivity({ status, transcript: "", outcome_notes: "Takeaways from the call." });
     render(<ActivityWorkspacePage />);
     openSource();
-    fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
-    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.click(screen.getByText("Takeaways from the call."));
+    // only the transcript may open (PLANNED / COMPLETED): never the note
+    expect(screen.queryByDisplayValue("Takeaways from the call.")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Save/ })).toBeNull();
   });
 
-  it("PLANNED: the notes are editable (the rule, unchanged)", () => {
+  it("an empty note reads « No notes yet. », not an invitation to type", () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     openSource();
     fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
-    expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 });
 
@@ -237,13 +246,15 @@ describe("The transcript — locked once analysed (8g-7)", () => {
     expect(screen.getByTestId("transcript-analysed-notice")).toHaveTextContent(/already been analysed/);
   });
 
-  it("analysed: the notes keep their own rule (editable on a PLANNED activity)", () => {
+  // N6: the band's note is read-only anyway — the analysis does not change
+  // that (the note is written in the notes panel, CANCELLED its only lock).
+  it("analysed: the band's note stays read-only", () => {
     mockLastRun = ANALYSED_RUN;
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     openSource();
     fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
-    expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 
   it("not analysed (none or a failed run): editable, no notice", () => {
@@ -289,5 +300,169 @@ describe("The Source band's Run AI — a pill in the band header (TD-302)", () =
     render(<ActivityWorkspacePage />);
     const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
     expect(pill).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+// ==============================|| « SOURCE / NOTES » 2.4 — NO NOTE LOST IN THE SOURCE BAND ||============================== //
+// N6: the note is no longer edited in the band (read-only, written in the
+// notes panel — autosaved, never an unsaved change): these 2.4 protections now
+// hold for the TRANSCRIPT, the band's one edited field.
+// The Source band's transcript, while edited, is a PAGE source of
+// unsaved changes (EditableTextBlock.onDirtyChange → useUnsavedChanges): an
+// internal link asks first (2.3); a drawer opening does not lose them (the
+// page stays mounted — no confirmation). Folding the band no longer destroys
+// the edit (disableUnmount). A Save refused by the front rule (the activity
+// became CANCELLED meanwhile) is no longer silent: the ORANGE warning; a
+// server refusal stays red. Real page in the real coque.
+
+import WorkspaceCoque from "../_utils/workspaceCoque";
+import UnsavedLinkGuard from "components/drawer/UnsavedLinkGuard";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import { displayErrorSnackbar, displayWarningSnackbar } from "utils/displayError";
+import { SOURCE_LOCKED_MESSAGE } from "utils/activitySignalsLock";
+
+function OpenOther() {
+  const { openDrawer } = useWorkspaceDrawer();
+  return <button onClick={() => openDrawer(<div data-testid="other">other</div>)}>open-other</button>;
+}
+
+const renderInCoque = () =>
+  rtlRender(
+    <>
+      <ActivityWorkspacePage />
+      <OpenOther />
+      <a href="/accounts/acc-1" onClick={(e) => e.preventDefault()}>Account link</a>
+      <UnsavedLinkGuard />
+    </>,
+    { wrapper: WorkspaceCoque },
+  );
+
+// N6: the band's edited field is the transcript (empty → its placeholder).
+const typeTranscript = (text) => {
+  fireEvent.click(screen.getByText(/Paste the call transcript/));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
+};
+
+describe("The Source band — no note lost (2.4)", () => {
+  afterEach(() => {
+    vi.mocked(updateActivity).mockReset();
+    vi.mocked(displayWarningSnackbar).mockClear();
+    vi.mocked(displayErrorSnackbar).mockClear();
+  });
+
+  it("folding then unfolding the band keeps the transcript being typed", async () => {
+    mockActivity = dcActivity({ transcript: "" });
+    render(<ActivityWorkspacePage />);
+    openSource();
+    typeTranscript("Half a transcript");
+    fireEvent.click(screen.getByText("Source"));
+    // Let the fold transition end (it used to unmount the body).
+    await act(async () => { await new Promise((r) => setTimeout(r, 450)); });
+    fireEvent.click(screen.getByText("Source"));
+    expect(screen.getByRole("textbox")).toHaveValue("Half a transcript");
+  });
+
+  it("the band's note (read-only) never asks: an internal link goes through", () => {
+    mockActivity = dcActivity({ outcome_notes: "A note" });
+    renderInCoque();
+    openSource();
+    fireEvent.click(screen.getByText("A note"));
+    fireEvent.click(screen.getByText("Account link"));
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
+  });
+
+  it("a transcript being typed: an internal link asks first", () => {
+    mockActivity = dcActivity({ transcript: "" });
+    renderInCoque();
+    openSource();
+    typeTranscript("A pasted transcript");
+    fireEvent.click(screen.getByText("Account link"));
+    expect(screen.getByTestId("confirm-dialog")).toHaveTextContent("Discard your changes?");
+  });
+
+  it("a transcript being typed survives a drawer opening — the page stays, no confirmation", () => {
+    mockActivity = dcActivity({ transcript: "" });
+    renderInCoque();
+    openSource();
+    typeTranscript("Half a transcript");
+    fireEvent.click(screen.getByText("open-other"));
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
+    expect(screen.getByTestId("other")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Half a transcript")).toBeInTheDocument();
+  });
+
+  it("nothing typed: an internal link does not ask", () => {
+    mockActivity = dcActivity();
+    renderInCoque();
+    openSource();
+    fireEvent.click(screen.getByText("Account link"));
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
+  });
+
+  it("the activity became CANCELLED while typing: Save shows the ORANGE warning, no PATCH", async () => {
+    mockActivity = dcActivity({ transcript: "" });
+    const { rerender } = render(<ActivityWorkspacePage />);
+    openSource();
+    typeTranscript("A pasted transcript");
+    mockActivity = dcActivity({ status: "CANCELLED", transcript: "" });
+    rerender(<AphoriqTheme><ActivityWorkspacePage /></AphoriqTheme>);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
+    expect(displayWarningSnackbar).toHaveBeenCalledWith(SOURCE_LOCKED_MESSAGE);
+    expect(updateActivity).not.toHaveBeenCalled();
+    expect(displayErrorSnackbar).not.toHaveBeenCalled();
+  });
+
+  it("a server refusal stays a red error", async () => {
+    vi.mocked(updateActivity).mockResolvedValue({ success: false, status: 400, error: "Refused" });
+    mockActivity = dcActivity({ transcript: "" });
+    render(<ActivityWorkspacePage />);
+    openSource();
+    typeTranscript("A pasted transcript");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Save/ })); });
+    expect(displayErrorSnackbar).toHaveBeenCalledWith(expect.objectContaining({ error: "Refused" }));
+    expect(displayWarningSnackbar).not.toHaveBeenCalled();
+  });
+});
+
+// ==============================|| « SOURCE / NOTES » 3.2 — EVERYTHING ANALYSED ||============================== //
+// ONE predicate (canRunAIAnalysis) for the Source band's pill and the Next
+// steps band's: disabled once everything AVAILABLE is analysed.
+
+const DONE = { last_run_at: "2026-11-01T10:00:00Z", created_signals_count: 1 };
+
+describe("Run AI — everything available already analysed (3.2)", () => {
+  it("qualification + next steps analysed (DC): the Source pill is disabled", () => {
+    mockLastRun = DONE;
+    mockRunsByPipeline = { TRANSCRIPT_SIGNALS: DONE, NEXT_STEPS: DONE };
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
+    expect(pill).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("qualification analysed, next steps still available (DC): both pills active", () => {
+    mockLastRun = DONE;
+    mockRunsByPipeline = { TRANSCRIPT_SIGNALS: DONE, NEXT_STEPS: null };
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }))
+      .not.toHaveAttribute("aria-disabled");
+    expect(bandRunAI()).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("qualification analysed, no next steps possible (no DC, no campaign): the Source pill is disabled", () => {
+    mockLastRun = DONE;
+    mockRunsByPipeline = { TRANSCRIPT_SIGNALS: DONE, NEXT_STEPS: null };
+    mockActivity = dcActivity({ status: "COMPLETED", decision_cycle: null });
+    render(<ActivityWorkspacePage />);
+    expect(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }))
+      .toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("nothing analysed: the Source pill is active", () => {
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }))
+      .not.toHaveAttribute("aria-disabled");
   });
 });

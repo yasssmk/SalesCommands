@@ -18,7 +18,7 @@ vi.mock('components/MainCard', () => ({
 
 vi.mock('components/EditableTextBlock', () => ({
   default: ({ label, field, initialValue, onSave, isLocked, placeholder, showCharCount }) => (
-    <div data-testid={`editable-text-block-${field}`}>
+    <div data-testid={`editable-text-block-${field}`} data-has-onsave={String(Boolean(onSave))}>
       <span data-testid={`etb-label-${field}`}>{label}</span>
       <textarea
         data-testid={`etb-input-${field}`}
@@ -121,28 +121,35 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByTestId('etb-charcount-transcript')).toBeInTheDocument();
   });
 
-  // 5.12d (1) — the transcript has its own lock (CANCELLED only); the notes
-  // keep the page lock (isLocked).
-  it('disables the notes when isLocked; the transcript only on CANCELLED', () => {
-    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
-    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
-    expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
-    cleanup();
+  // « Source / Notes » 1.5 (PO) — ONE note per activity, filled throughout its
+  // lifecycle: the notes follow the transcript's lock, isActivitySignalsLocked
+  // (CANCELLED only) — read from the activity, whatever the page lock says.
+  it('locks the notes and the transcript on CANCELLED only', () => {
     renderTab({ isLocked: true, activity: { ...mockActivity, status: 'CANCELLED' } });
 
     expect(screen.getByTestId('etb-input-transcript')).toBeDisabled();
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
-  // 5.12c (5) — PO: the AI action is locked ONLY on a CANCELLED activity
-  // (isActivitySignalsLocked); the page lock (isLocked: COMPLETED or
-  // CANCELLED) keeps locking the notes only (the transcript: 5.12d).
-  it('on a COMPLETED activity (page-locked): notes locked, transcript editable', () => {
+  // N6 — the note is written in the notes panel: READ-ONLY in the band on
+  // every status; the transcript keeps its own rule (editable on COMPLETED).
+  it('on a COMPLETED activity: the transcript stays editable, the note is read-only', () => {
     renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
 
-    // The notes keep the page lock; the transcript is editable (5.12d).
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
     expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
+  });
+
+  // N6b — onSave is optional: the read-only note gets none; the transcript keeps it.
+  it('the read-only note is given no onSave; the transcript keeps its own', () => {
+    renderTab();
+    expect(screen.getByTestId('editable-text-block-outcome_notes')).toHaveAttribute('data-has-onsave', 'false');
+    expect(screen.getByTestId('editable-text-block-transcript')).toHaveAttribute('data-has-onsave', 'true');
+  });
+
+  it('on a PLANNED activity too, the note is read-only (written in the notes panel)', () => {
+    renderTab({ activity: { ...mockActivity, status: 'PLANNED' } });
+    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
   it('shows the error alert after pipeline error', () => {
@@ -154,6 +161,23 @@ describe('ActivityNotesTab', () => {
     });
 
     expect(screen.getByText('LLM provider error')).toBeInTheDocument();
+  });
+
+  // « Source / Notes » 1.6 — « already analysed » is a business rule: the
+  // server's refusal is shown as INFORMATION (InfoNotice), never as a red
+  // error, and offers no « Try again » (an analysis is never re-run).
+  it('shows the « already analysed » refusal as information, not an error', () => {
+    renderTab({
+      pipelineRunner: makePipelineRunner({
+        state: PIPELINE_STATE.INFO,
+        error: 'This activity has already been analysed.',
+      }),
+    });
+
+    const notice = screen.getByTestId('analysis-already-done-notice');
+    expect(notice).toHaveTextContent('This activity has already been analysed.');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Try again')).toBeNull();
   });
 
   it('shows success result alert after pipeline success', () => {
@@ -221,6 +245,23 @@ describe('ActivityNotesTab', () => {
     });
 
     expect(onOpenWizard).toHaveBeenCalledTimes(1);
+  });
+
+  // « Source / Notes » 3.2 — the same predicate: everything available already
+  // analysed (qualification + next steps on a DC activity) → no wizard.
+  it('"Try again" does nothing when everything available is already analysed', async () => {
+    const onOpenWizard = vi.fn();
+    const run = { last_run_at: '2026-11-01T10:00:00Z' };
+    renderTab({
+      onOpenWizard,
+      activity: { ...mockActivity, decision_cycle: 'dc-1' },
+      runsByPipeline: { TRANSCRIPT_SIGNALS: run, NEXT_STEPS: run },
+      pipelineRunner: makePipelineRunner({ state: PIPELINE_STATE.ERROR, error: 'Network error' }),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try again'));
+    });
+    expect(onOpenWizard).not.toHaveBeenCalled();
   });
 
   it('"Try again" does nothing when the AI action is unavailable (CANCELLED)', async () => {

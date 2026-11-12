@@ -29,6 +29,8 @@ import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
+import useUnsavedChanges from "hooks/useUnsavedChanges";
+
 // Icons
 import {
   CheckCircleOutlined,
@@ -136,9 +138,26 @@ export default function DrawerContentLayout({
   saveLabel = "Save",
   cancelLabel = "Cancel",
   readActions,
+  dirty = false,
   children,
 }) {
   const aq = useTheme().aphoriQ;
+  // « Source / Notes » 2.2 — a MODIFIED content is declared to the coque's
+  // guard (replacing / closing the drawer asks first). The content's own
+  // actions are deliberate: Cancel discards, Save moves on (a successful save
+  // or a flow's forward step may replace / close the drawer) — both release
+  // the guard first. A content still modified afterwards (a failed save, a
+  // step that stays in the flow) re-registers on its next render.
+  const releaseUnsaved = useUnsavedChanges(dirty);
+  const released = (handler) =>
+    handler
+      ? (...args) => {
+          releaseUnsaved();
+          return handler(...args);
+        }
+      : undefined;
+  const handleCancel = released(onCancel);
+  const handleSave = released(onSave);
 
   return (
     <Stack spacing={2}>
@@ -179,12 +198,12 @@ export default function DrawerContentLayout({
         (onSave || onCancel) && (
           <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
             {onCancel && (
-              <Button variant="text" color="inherit" onClick={onCancel}>
+              <Button variant="text" color="inherit" onClick={handleCancel}>
                 {cancelLabel}
               </Button>
             )}
             {onSave && (
-              <Button variant="contained" onClick={onSave} disabled={saveDisabled}>
+              <Button variant="contained" onClick={handleSave} disabled={saveDisabled}>
                 {saveLabel}
               </Button>
             )}
@@ -220,6 +239,9 @@ DrawerContentLayout.propTypes = {
     validateDisabled: PropTypes.bool,
     onBack: PropTypes.func,
   }),
+  /** Optional — the content holds UNSAVED changes (e.g. formik.dirty while not
+      submitting): the coque asks before replacing / closing it (2.2). */
+  dirty: PropTypes.bool,
   /** The field groups (the single content box's children). */
   children: PropTypes.node,
 };

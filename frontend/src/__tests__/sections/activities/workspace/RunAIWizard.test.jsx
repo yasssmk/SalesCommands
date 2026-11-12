@@ -181,9 +181,10 @@ describe('RunAIWizard', () => {
       expect(screen.getByText(/Include my notes/)).toBeInTheDocument();
     });
 
+    // « Source / Notes » 3.1 — no note on the activity: the transcript alone.
     it('calls onConfirm with curated transcript on Run analysis', async () => {
       const onConfirm = vi.fn();
-      await goToStep2({ onConfirm });
+      await goToStep2({ onConfirm, outcomeNotes: '' });
 
       await act(async () => {
         fireEvent.click(screen.getByText('Run analysis'));
@@ -198,9 +199,10 @@ describe('RunAIWizard', () => {
       );
     });
 
+    // « Source / Notes » 3.1 — no note on the activity: the transcript alone.
     it('passes unchecked next-steps flag to onConfirm', async () => {
       const onConfirm = vi.fn();
-      renderWizard({ onConfirm });
+      renderWizard({ onConfirm, outcomeNotes: '' });
 
       // Uncheck "Next-step suggestions" in Step 1
       const nextStepsCheckbox = screen.getByText(/Next-step suggestions/)
@@ -250,5 +252,76 @@ describe('RunAIWizard', () => {
 
       expect(screen.queryByText(/Select objectives/)).not.toBeInTheDocument();
     });
+  });
+});
+
+// ==============================|| « SOURCE / NOTES » 3.1 ||============================== //
+// The wizard follows the SERVER state of step 1 (runsByPipeline): a pipeline
+// already analysed is NOT sent (the server never re-runs it — 1.6); the
+// hash-based « Analysis already performed » alert is gone; « Include my
+// notes » is CHECKED by default when the activity has notes.
+
+import { createHash } from 'node:crypto';
+
+const RUN = { last_run_at: '2026-11-01T10:00:00Z', created_signals_count: 1 };
+const NOTES_SEPARATOR = '\n\n---\nSDR Notes:\n';
+
+async function runFromStep1(overrides = {}) {
+  const onConfirm = vi.fn();
+  renderWizard({ onConfirm, outcomeNotes: '', ...overrides });
+  await act(async () => { fireEvent.click(screen.getByText('Continue')); });
+  await act(async () => { fireEvent.click(screen.getByText('Run analysis')); });
+  return onConfirm;
+}
+
+describe('RunAIWizard — 3.1', () => {
+  it('qualification already analysed: it is NOT sent, the next steps are', async () => {
+    const onConfirm = await runFromStep1({
+      runsByPipeline: { TRANSCRIPT_SIGNALS: RUN, NEXT_STEPS: null },
+    });
+    expect(onConfirm).toHaveBeenCalledWith(
+      LONG_TRANSCRIPT,
+      { qualification: false, nextSteps: true },
+    );
+  });
+
+  it('next steps already analysed: they are NOT sent, the qualification is', async () => {
+    const onConfirm = await runFromStep1({
+      runsByPipeline: { TRANSCRIPT_SIGNALS: null, NEXT_STEPS: RUN },
+    });
+    expect(onConfirm).toHaveBeenCalledWith(
+      LONG_TRANSCRIPT,
+      { qualification: true, nextSteps: false },
+    );
+  });
+
+  it('« Include my notes » is CHECKED by default when the activity has notes, and sends them', async () => {
+    const onConfirm = vi.fn();
+    renderWizard({ onConfirm, outcomeNotes: 'Call takeaways' });
+    await act(async () => { fireEvent.click(screen.getByText('Continue')); });
+    const notes = screen.getByText(/Include my notes/).closest('label').querySelector('input[type="checkbox"]');
+    expect(notes).toBeChecked();
+    await act(async () => { fireEvent.click(screen.getByText('Run analysis')); });
+    expect(onConfirm.mock.calls[0][0]).toBe(LONG_TRANSCRIPT + NOTES_SEPARATOR + 'Call takeaways');
+  });
+
+  it('no notes on the activity: the box is unchecked and disabled', async () => {
+    renderWizard({ outcomeNotes: '' });
+    await act(async () => { fireEvent.click(screen.getByText('Continue')); });
+    const notes = screen.getByText(/Include my notes/).closest('label').querySelector('input[type="checkbox"]');
+    expect(notes).not.toBeChecked();
+    expect(notes).toBeDisabled();
+  });
+
+  it('the hash-based « Analysis already performed » alert is gone', async () => {
+    const inputHash = createHash('sha256').update(`act-111::${LONG_TRANSCRIPT}`).digest('hex');
+    renderWizard({
+      outcomeNotes: '',
+      lastRun: { ...RUN, input_hash: inputHash },
+      runsByPipeline: { TRANSCRIPT_SIGNALS: null, NEXT_STEPS: null },
+    });
+    await act(async () => { fireEvent.click(screen.getByText('Continue')); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 450)); });
+    expect(screen.queryByText(/Analysis already performed/)).toBeNull();
   });
 });

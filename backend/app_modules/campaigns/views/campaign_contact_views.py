@@ -175,14 +175,19 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         instance_id = str(instance.id)
         client_id = self.get_client_id()
 
-        # Cancel PLANNED + ON_HOLD activities — keep COMPLETED/CANCELLED untouched
+        from app_modules.activities.services.activity_notes import notes_with_system_line
+        from app_modules.campaigns.constants import TARGET_REMOVED_NOTE_LINE
+
+        # Cancel PLANNED + ON_HOLD activities — keep COMPLETED/CANCELLED untouched.
+        # The system line is APPENDED to their notes, never erasing them
+        # (sprint « Source / Notes », 1.4) — still one UPDATE.
         cancelled_count = Activity.objects.filter(
             campaign_contact=instance,
             status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
             client_id=client_id,
         ).update(
             status=ActivityStatus.CANCELLED,
-            outcome_notes='Target removed from campaign',
+            outcome_notes=notes_with_system_line(TARGET_REMOVED_NOTE_LINE),
             updated_at=timezone.now(),
         )
 

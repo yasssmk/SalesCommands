@@ -374,8 +374,11 @@ export function useGetCampaignActivities(campaignId) {
  * LOG ASYNC RESPONSE
  * POST /campaigns/{id}/log-response/
  *
+ * No note at closure (« Source / Notes » 1.5): the backend no longer reads
+ * a `notes` key.
+ *
  * @param {string} campaignId
- * @param {{ activity_id, response, notes?, response_date? }} payload
+ * @param {{ activity_id, response, response_date? }} payload
  */
 export async function logCampaignResponse(campaignId, payload) {
   if (!campaignId || !isValidUUID(campaignId)) {
@@ -1289,7 +1292,8 @@ export async function removeCampaignMember(memberId, campaignId) {
  *
  * @param {string} activityId
  * @param {string} campaignId - For cache revalidation
- * @param {Object} payload - {outcome, outcome_notes}
+ * @param {Object} payload - {outcome, callback_date?} — no note at closure
+ *   (« Source / Notes » 1.5)
  */
 export async function completePlaylistActivity(
   activityId,
@@ -1317,12 +1321,11 @@ export async function completePlaylistActivity(
  * RECORD CALL NO ANSWER
  * POST /module-activities/{id}/record-no-answer/
  * Increments attempt counter. Activity stays PLANNED until threshold.
+ * No note at closure (« Source / Notes » 1.5): the POST carries no body.
  */
-export async function recordCallNoAnswer(activityId, outcomeNotes) {
+export async function recordCallNoAnswer(activityId) {
   try {
-    const res = await api.post(endpoints.activityRecordNoAnswer(activityId), {
-      outcome_notes: outcomeNotes || undefined,
-    });
+    const res = await api.post(endpoints.activityRecordNoAnswer(activityId), {});
     return res.data;
   } catch (err) {
     return {

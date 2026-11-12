@@ -10,6 +10,28 @@
 // the menu via the existing useMenuState().handlerDrawerOpen(false)
 // (hooks/useMenuState.js — the SWR singleton that also backs the sidebar). The
 // reverse wiring (menu toggle → closeDrawer) is done at the hamburger in B3.5.2.
+//
+// « Source / Notes » 2.2 — the UNSAVED CHANGES guard, at this central point:
+// a content (or a page field) declares itself MODIFIED through
+// hooks/useUnsavedChanges (the drawer contents through DrawerContentLayout's
+// `dirty`). While a DRAWER source is modified, replacing the content
+// (openDrawer), closing it (closeDrawer, the coque's ×) or opening the menu
+// asks first (`pendingDiscard`, rendered by the visual coque with the shared
+// ConfirmDialog): « Keep editing » keeps the content, « Discard » applies the
+// action. While ANY source is modified (drawer or page), beforeunload is
+// prevented (reload / tab close). A route change cannot be blocked here (the
+// pathname effect runs after the navigation): the internal LINKS are
+// intercepted before it by components/drawer/UnsavedLinkGuard (2.3), through
+// guardUnsaved (scope: any source).
+//
+// « Source / Notes » notes panel, N3 — the coque has TWO zones: the TOP one
+// holds the content above (openDrawer / closeDrawer, unchanged), the BOTTOM
+// one the activity's notes panel (`notesPanel` = { node }: openNotesPanel /
+// closeNotesPanel). The coque is visible while either is open
+// (isCoqueOpen). Replacing or closing the top never touches the notes; a
+// route change or the menu opening closes BOTH (the note is flushed when its
+// panel unmounts — useNoteAutosave, N2). The note is never an unsaved change:
+// the 2.2 guard only asks for the top's modified content.
 
 "use client";
 
@@ -27,18 +49,32 @@ import {
 import { usePathname } from "next/navigation";
 
 import { useMenuState } from "hooks/useMenuState";
+import { UNSAVED_SCOPE } from "utils/unsavedChanges";
 
 // ==============================|| CONTEXT ||============================== //
 
 const WorkspaceDrawerContext = createContext({
   isOpen: false,
+  isCoqueOpen: false,
   content: null,
+  notesPanel: null,
+  isNotesPanelOpen: false,
+  openNotesPanel: () => {},
+  closeNotesPanel: () => {},
+  closeCoque: () => {},
   title: null,
   status: null,
   statusMap: null,
   hideClose: false,
   openDrawer: () => {},
   closeDrawer: () => {},
+  registerUnsaved: () => {},
+  releaseUnsaved: () => {},
+  hasUnsaved: () => false,
+  guardUnsaved: (apply) => apply(),
+  pendingDiscard: null,
+  confirmDiscard: () => {},
+  cancelDiscard: () => {},
 });
 
 // ==============================|| PROVIDER ||============================== //
@@ -60,28 +96,127 @@ export function WorkspaceDrawerProvider({ children }) {
   // Optional: when true the coque suppresses its own close cross (the injected
   // content renders its own — e.g. the Objective detail's in-header ×).
   const [hideClose, setHideClose] = useState(false);
+  // The TOP zone is open while it holds a content.
   const isOpen = content != null;
+  // N3 — the BOTTOM zone: the notes panel ({ node } | null).
+  const [notesPanel, setNotesPanel] = useState(null);
+  const isNotesPanelOpen = notesPanel != null;
+  const isCoqueOpen = isOpen || isNotesPanelOpen;
 
-  const openDrawer = useCallback(
-    (node, options = {}) => {
-      setContent(node ?? null);
-      setTitle(options?.title ?? null);
-      setStatus(options?.status ?? null);
-      setStatusMap(options?.statusMap ?? null);
-      setHideClose(Boolean(options?.hideClose));
-      // Exclusivity: opening the workspace drawer collapses the left menu.
-      handlerDrawerOpen(false);
-    },
-    [handlerDrawerOpen],
+  // ---- Unsaved changes registry (2.2) — id → scope. A ref: the guard reads
+  //      it at the moment of the action; sources register synchronously at
+  //      commit (useUnsavedChanges uses a layout effect).
+  const unsavedRef = useRef(new Map());
+  const registerUnsaved = useCallback((id, scope) => {
+    unsavedRef.current.set(id, scope);
+  }, []);
+  const releaseUnsaved = useCallback((id) => {
+    unsavedRef.current.delete(id);
+  }, []);
+  const hasUnsaved = useCallback(
+    (scope) => [...unsavedRef.current.values()].some((s) => !scope || s === scope),
+    [],
   );
 
-  const closeDrawer = useCallback(() => {
+  // The action waiting for « Discard » (null = no confirmation shown):
+  // { apply, keep, scope } — `keep` runs on « Keep editing » (e.g. re-fold
+  // the menu); `scope` = the sources the action discards (none = all).
+  const [pendingDiscard, setPendingDiscard] = useState(null);
+  // THE guard: `apply` runs at once when no source of `scope` is modified
+  // (no scope = any source), else after « Discard ».
+  const guardUnsaved = useCallback(
+    (apply, { scope, keep } = {}) => {
+      if (hasUnsaved(scope)) {
+        setPendingDiscard({ apply, keep: keep ?? null, scope });
+        return;
+      }
+      apply();
+    },
+    [hasUnsaved],
+  );
+  // The drawer's own actions only guard the drawer's sources.
+  const guard = useCallback(
+    (apply, keep) => guardUnsaved(apply, { scope: UNSAVED_SCOPE.DRAWER, keep }),
+    [guardUnsaved],
+  );
+
+  const resetContent = useCallback(() => {
     setContent(null);
     setTitle(null);
     setStatus(null);
     setStatusMap(null);
     setHideClose(false);
   }, []);
+
+  const openDrawer = useCallback(
+    (node, options = {}) => {
+      guard(() => {
+        setContent(node ?? null);
+        setTitle(options?.title ?? null);
+        setStatus(options?.status ?? null);
+        setStatusMap(options?.statusMap ?? null);
+        setHideClose(Boolean(options?.hideClose));
+        // Exclusivity: opening the workspace drawer collapses the left menu.
+        handlerDrawerOpen(false);
+      });
+    },
+    [guard, handlerDrawerOpen],
+  );
+
+  // The TOP zone only: the notes panel stays.
+  const closeDrawer = useCallback(() => {
+    guard(resetContent);
+  }, [guard, resetContent]);
+
+  // N3 — the notes panel (bottom zone). Never guarded: it replaces nothing,
+  // and the note saves itself.
+  const openNotesPanel = useCallback(
+    (node) => {
+      setNotesPanel(node == null ? null : { node });
+      // Exclusivity: the coque appearing collapses the left menu.
+      handlerDrawerOpen(false);
+    },
+    [handlerDrawerOpen],
+  );
+  const closeNotesPanel = useCallback(() => setNotesPanel(null), []);
+
+  // BOTH zones — unguarded (a navigation that already happened).
+  const resetCoque = useCallback(() => {
+    resetContent();
+    setNotesPanel(null);
+  }, [resetContent]);
+  // BOTH zones, guarded like the top's own close (the overlay's backdrop).
+  const closeCoque = useCallback(() => guard(resetCoque), [guard, resetCoque]);
+
+  const confirmDiscard = useCallback(() => {
+    const pending = pendingDiscard;
+    setPendingDiscard(null);
+    // The discarded sources go with the action (they unmount) — clear them
+    // now so the applied action is not intercepted again (beforeunload
+    // included).
+    for (const [id, scope] of unsavedRef.current) {
+      if (!pending?.scope || scope === pending.scope) unsavedRef.current.delete(id);
+    }
+    pending?.apply();
+  }, [pendingDiscard]);
+
+  const cancelDiscard = useCallback(() => {
+    const pending = pendingDiscard;
+    setPendingDiscard(null);
+    pending?.keep?.();
+  }, [pendingDiscard]);
+
+  // beforeunload (reload / tab close) while ANY source is modified.
+  useEffect(() => {
+    const onBeforeUnload = (event) => {
+      if (!hasUnsaved()) return;
+      event.preventDefault();
+      // Legacy browsers need a returnValue to show their native prompt.
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsaved]);
 
   // Close the drawer on route change: navigating away from the workspace must
   // not leave a stale drawer open. Observe the Next pathname and close only on
@@ -92,29 +227,41 @@ export function WorkspaceDrawerProvider({ children }) {
   useEffect(() => {
     if (prevPathname.current !== pathname) {
       prevPathname.current = pathname;
-      closeDrawer();
+      // The navigation already happened (it cannot be blocked here — 2.3
+      // intercepts the internal links before it): close without asking —
+      // BOTH zones (N3).
+      resetCoque();
     }
-  }, [pathname, closeDrawer]);
+  }, [pathname, resetCoque]);
 
   // Reverse exclusivity: the hamburger lives in the shell (outside this
   // provider), so we OBSERVE the menu singleton instead of wiring the toggle.
   // Close the drawer only on a menu OPEN transition (false → true) — never on
   // its close, so openDrawer()'s own handlerDrawerOpen(false) can't loop.
+  // 2.2: over a MODIFIED drawer, the menu opening asks first — « Keep
+  // editing » re-folds the menu, « Discard » closes the drawer.
   const prevMenuOpen = useRef(menuOpen);
   useEffect(() => {
-    if (menuOpen && !prevMenuOpen.current) {
-      setContent(null);
-      setTitle(null);
-      setStatus(null);
-      setStatusMap(null);
-      setHideClose(false);
+    // N3: the menu closes the WHOLE coque (both zones).
+    if (menuOpen && !prevMenuOpen.current && isCoqueOpen) {
+      guard(resetCoque, () => handlerDrawerOpen(false));
     }
     prevMenuOpen.current = menuOpen;
-  }, [menuOpen]);
+  }, [menuOpen, isCoqueOpen, guard, resetCoque, handlerDrawerOpen]);
 
   const value = useMemo(
-    () => ({ isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer }),
-    [isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer],
+    () => ({
+      isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer,
+      isCoqueOpen, notesPanel, isNotesPanelOpen, openNotesPanel, closeNotesPanel, closeCoque,
+      registerUnsaved, releaseUnsaved, hasUnsaved, guardUnsaved,
+      pendingDiscard, confirmDiscard, cancelDiscard,
+    }),
+    [
+      isOpen, content, title, status, statusMap, hideClose, openDrawer, closeDrawer,
+      isCoqueOpen, notesPanel, isNotesPanelOpen, openNotesPanel, closeNotesPanel, closeCoque,
+      registerUnsaved, releaseUnsaved, hasUnsaved, guardUnsaved,
+      pendingDiscard, confirmDiscard, cancelDiscard,
+    ],
   );
 
   return (

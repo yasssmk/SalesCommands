@@ -16,6 +16,9 @@ export const PIPELINE_STATE = {
   SUCCESS: 'success',
   PARTIAL: 'partial',
   ERROR: 'error',
+  // « Source / Notes » 1.6 — the server refused because everything requested
+  // is already analysed: a business rule, shown as INFORMATION (never red).
+  INFO: 'info',
 };
 
 // ==============================|| HOOK ||============================== //
@@ -23,7 +26,7 @@ export const PIPELINE_STATE = {
 /**
  * State-machine hook for the activity extraction pipeline.
  *
- * Lifecycle: idle -> running -> success | partial | error
+ * Lifecycle: idle -> running -> success | partial | error | info
  * State is purely local React — lost on page refresh.
  * After run() success, state stays `success` until next run() or reset().
  * Long-term source of truth is lastRun (persisted in DB via AIPipelineRun).
@@ -69,10 +72,12 @@ export default function usePipelineRunner({ onSuccess, onError } = {}) {
         }
         setResult(data);
         onSuccessRef.current?.(data);
-      } else if (res.code === EXTRACTION_OUTCOME_CODES.ALREADY_EXTRACTED) {
-        setState(PIPELINE_STATE.SUCCESS);
-        setResult(res.data || null);
-        onSuccessRef.current?.(res.data || null);
+      } else if (res.code === EXTRACTION_OUTCOME_CODES.ANALYSIS_ALREADY_DONE) {
+        // Already analysed (1.6): information, not an error. The page
+        // refreshes its « analysed » state (lastRun) through onSuccess.
+        setState(PIPELINE_STATE.INFO);
+        setError(res.error || null);
+        onSuccessRef.current?.(null);
       } else if (res.code === EXTRACTION_OUTCOME_CODES.TIMEOUT_PENDING) {
         setState(PIPELINE_STATE.ERROR);
         setError(

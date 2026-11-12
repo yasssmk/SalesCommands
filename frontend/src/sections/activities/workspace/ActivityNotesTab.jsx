@@ -17,9 +17,15 @@ import Typography from '@mui/material/Typography';
 // project imports
 import EditableTextBlock from 'components/EditableTextBlock';
 import InfoNotice from 'components/display/InfoNotice';
+import useUnsavedChanges from 'hooks/useUnsavedChanges';
+import { UNSAVED_SCOPE } from 'utils/unsavedChanges';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
-import { isTranscriptLocked, TRANSCRIPT_FIELD } from 'utils/activitySignalsLock';
+import {
+  isTranscriptLocked,
+  NOTES_FIELD,
+  TRANSCRIPT_FIELD,
+} from 'utils/activitySignalsLock';
 
 // assets
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
@@ -28,14 +34,16 @@ import WarningOutlined from '@ant-design/icons/WarningOutlined';
 // ==============================|| ACTIVITY NOTES TAB ||============================== //
 
 const FAILED_STATUSES = new Set(['PARSE_ERROR', 'LLM_ERROR', 'TIMEOUT']);
+/** N6 — the read-only note's placeholder (it is written in the notes panel). */
+export const NOTES_READ_PLACEHOLDER = 'No notes yet.';
 
 export default function ActivityNotesTab({
   activity,
   onSave,
-  isLocked,
   pipelineRunner,
   lastRun,
   latestRun,
+  runsByPipeline,
   onOpenWizard,
 }) {
   const transcript = activity?.transcript ?? '';
@@ -45,11 +53,18 @@ export default function ActivityNotesTab({
 
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  // « Source / Notes » 2.4 — the transcript being edited is a PAGE source of
+  // unsaved changes: an internal link asks first (2.3) and beforeunload is
+  // prevented (2.2); a drawer opening keeps it (the page stays mounted).
+  // N6: no longer the note — it is written (and autosaved) in the notes panel.
+  const [transcriptDirty, setTranscriptDirty] = useState(false);
+  useUnsavedChanges(transcriptDirty, { scope: UNSAVED_SCOPE.PAGE });
+
   // "Try again" opens the wizard of the band's Run AI pill (in the Source
   // header, lot 3 / 11 — the page owns its open state) under the same
-  // predicate as the pill.
+  // predicate as the pill (3.2: runsByPipeline included).
   const handleOpenWizard = () => {
-    if (canRunAIAnalysis(activity, pipelineState)) {
+    if (canRunAIAnalysis(activity, pipelineState, runsByPipeline)) {
       onOpenWizard?.();
     }
   };
@@ -128,21 +143,23 @@ export default function ActivityNotesTab({
   return (
     <Box sx={{ p: 0 }}>
       <Stack spacing={3}>
-        {/* Notes section */}
+        {/* Notes section — ONE note per activity (« Source / Notes » 1.5),
+            written in the notes panel (N6: the band's « Open notes » pill,
+            the floating Notes button): READ-ONLY here — EditableTextBlock's
+            read mode. It follows the activity's cache, which the panel's
+            autosave updates. */}
         <EditableTextBlock
           label="Notes"
-          field="outcome_notes"
+          field={NOTES_FIELD}
           initialValue={outcomeNotes}
           rows={5}
-          placeholder="Capture key takeaways, observations, decisions made during the call..."
-          onSave={onSave}
-          isLocked={isLocked}
+          placeholder={NOTES_READ_PLACEHOLDER}
+          isLocked
         />
 
         {/* Transcript section — its own lock (5.12d: CANCELLED, so a
             transcript can be added after the call; 8g-7: or ANALYSED — no
-            re-run, the transcript stays the analysed one). The notes keep
-            isLocked. */}
+            re-run, the transcript stays the analysed one). */}
         <EditableTextBlock
           label="Transcript"
           field={TRANSCRIPT_FIELD}
@@ -152,6 +169,7 @@ export default function ActivityNotesTab({
           showCharCount
           onSave={onSave}
           isLocked={isTranscriptLocked(activity, lastRun)}
+          onDirtyChange={setTranscriptDirty}
         />
         {lastRun && (
           <InfoNotice data-testid="transcript-analysed-notice">
@@ -164,6 +182,14 @@ export default function ActivityNotesTab({
 
         {/* Failed/stuck run banner */}
         {renderLatestRunBanner()}
+
+        {/* Already analysed (« Source / Notes » 1.6): the server's refusal is
+            a business rule — INFORMATION (the shared InfoNotice, as the
+            transcript-analysed notice above), never a red error, no
+            « Try again » (an analysis is never re-run). */}
+        {pipelineState === PIPELINE_STATE.INFO && pipelineError && (
+          <InfoNotice data-testid="analysis-already-done-notice">{pipelineError}</InfoNotice>
+        )}
 
         {/* Extraction error */}
         {pipelineState === PIPELINE_STATE.ERROR && pipelineError && (
@@ -201,7 +227,6 @@ ActivityNotesTab.propTypes = {
     status: PropTypes.string,
   }),
   onSave: PropTypes.func.isRequired,
-  isLocked: PropTypes.bool,
   pipelineRunner: PropTypes.shape({
     run: PropTypes.func.isRequired,
     state: PropTypes.string.isRequired,
@@ -215,6 +240,8 @@ ActivityNotesTab.propTypes = {
   }).isRequired,
   lastRun: PropTypes.object,
   latestRun: PropTypes.object,
+  /** The per-pipeline successful runs (server state) — the Run AI predicate. */
+  runsByPipeline: PropTypes.object,
   /** Opens the wizard of the Source band's Run AI pill ("Try again"). */
   onOpenWizard: PropTypes.func,
 };

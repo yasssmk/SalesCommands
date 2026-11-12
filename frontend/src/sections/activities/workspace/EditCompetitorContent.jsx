@@ -121,6 +121,7 @@ export default function EditCompetitorContent({ competitor, onSaved, onCancel })
       onSave={formik.handleSubmit}
       onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
+      dirty={formik.dirty && !formik.isSubmitting}
     >
       <Stack spacing={2.5}>
         {/* ---- SECTION 1 — Competitor: Name, then the AI sentence (as the detail) ---- */}

@@ -37,6 +37,7 @@ import Typography from '@mui/material/Typography';
 // project imports
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import { isActivitySignalsLocked } from 'utils/activitySignalsLock';
+import { hasSuggestedNextSteps } from 'utils/nextStepsBand';
 import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
 import ClickablePill from 'components/chips/ClickablePill';
 
@@ -44,13 +45,30 @@ import ClickablePill from 'components/chips/ClickablePill';
 
 export const MIN_TRANSCRIPT_LENGTH = 50;
 
-// The Run AI action is available: the activity not locked (CANCELLED only,
-// isActivitySignalsLocked), a long enough transcript, no run in progress.
-export function canRunAIAnalysis(activity, pipelineState) {
+// « Source / Notes » 3.2 — the tooltip of a pill disabled because everything
+// available is already analysed (an analysis is never re-run — 1.6).
+export const ALREADY_ANALYSED_TOOLTIP = 'Already analysed: an analysis is never re-run';
+
+// Everything AVAILABLE is already analysed (the SERVER state, runsByPipeline):
+// the qualification done AND the next steps done or unavailable for this
+// activity (hasSuggestedNextSteps — the mirror of the server's
+// next_steps_enabled).
+export function isEverythingAnalysed(activity, runsByPipeline) {
+  const qualificationDone = Boolean(runsByPipeline?.TRANSCRIPT_SIGNALS);
+  const nextStepsDone = Boolean(runsByPipeline?.NEXT_STEPS) || !hasSuggestedNextSteps(activity);
+  return qualificationDone && nextStepsDone;
+}
+
+// THE predicate of the Run AI action, for EVERY entry point (the Source
+// band's pill and « Try again », the Next steps band's pill): the activity
+// not locked (CANCELLED only, isActivitySignalsLocked), a long enough
+// transcript, no run in progress, and something left to analyse (3.2).
+export function canRunAIAnalysis(activity, pipelineState, runsByPipeline) {
   return (
     !isActivitySignalsLocked(activity) &&
     (activity?.transcript ?? '').trim().length >= MIN_TRANSCRIPT_LENGTH &&
-    pipelineState !== PIPELINE_STATE.RUNNING
+    pipelineState !== PIPELINE_STATE.RUNNING &&
+    !isEverythingAnalysed(activity, runsByPipeline)
   );
 }
 
@@ -86,7 +104,7 @@ export default function RunAIAnalysisButton({
 
   // --- Run AI Analysis ---
   const trimmedTranscript = transcript.trim();
-  const canRunAI = canRunAIAnalysis(activity, pipelineState);
+  const canRunAI = canRunAIAnalysis(activity, pipelineState, runsByPipeline);
 
   const handleOpenWizard = () => {
     if (canRunAI) {
@@ -111,6 +129,8 @@ export default function RunAIAnalysisButton({
     const tooltipTitle =
       isLocked
         ? 'Activity is locked'
+        : isEverythingAnalysed(activity, runsByPipeline)
+          ? ALREADY_ANALYSED_TOOLTIP
         : trimmedTranscript.length === 0
           ? 'Paste a transcript first'
           : trimmedTranscript.length < MIN_TRANSCRIPT_LENGTH
@@ -154,10 +174,8 @@ export default function RunAIAnalysisButton({
       {/* Run AI Wizard (2-step) */}
       <RunAIWizard
         open={wizardOpen}
-        activityId={activityId}
         transcript={transcript}
         outcomeNotes={outcomeNotes}
-        lastRun={lastRun}
         runsByPipeline={runsByPipeline}
         onCancel={handleCancelWizard}
         onConfirm={handleConfirmWizard}

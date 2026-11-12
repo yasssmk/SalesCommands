@@ -262,3 +262,14 @@ REACHED_OUTCOMES: frozenset = frozenset({
     ActivityOutcome.FOLLOW_UP_NEEDED,
     ActivityOutcome.UNSUBSCRIBE_OPTOUT,
 })
+
+
+# ==========================================================================
+# SYSTEM NOTE LINES (sprint « Source / Notes », 1.4)
+# ==========================================================================
+# When the campaign module cancels activities in bulk, it APPENDS one of these
+# lines at the END of the activity's notes (outcome_notes) — never erasing
+# what the rep wrote (activities/services/activity_notes.py). Stored as is:
+# plain strings, not translated at write time.
+CANCEL_PLANNED_NOTE_LINE = 'Manually cancelled after terminal response'
+TARGET_REMOVED_NOTE_LINE = 'Target removed from campaign'

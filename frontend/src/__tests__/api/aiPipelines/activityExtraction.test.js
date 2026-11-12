@@ -213,25 +213,32 @@ describe('runActivityExtraction', () => {
   });
 
   // ------------------------------------------------------------------
-  // 9. HTTP 409 — ALREADY_EXTRACTED
+  // 9. HTTP 400 — ANALYSIS_ALREADY_DONE (« Source / Notes » 1.6): every
+  //    requested pipeline already analysed → the STANDARD refusal; it
+  //    replaced the former 409 ALREADY_EXTRACTED.
   // ------------------------------------------------------------------
-  it('returns ALREADY_EXTRACTED on 409 with that code', async () => {
+  it('returns ANALYSIS_ALREADY_DONE with the server message on the standard refusal', async () => {
+    const message = 'This activity has already been analysed.';
     api.post.mockResolvedValue({
       success: false,
-      status: 409,
-      data: {
-        code: 'ALREADY_EXTRACTED',
-        error: 'Already processed',
-        data: { qualification_run: {} },
-      },
+      status: 400,
+      error: message,
+      data: { error: message, code: 'ANALYSIS_ALREADY_DONE' },
     });
 
     const result = await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
 
-    expect(result.success).toBe(false);
-    expect(result.code).toBe(EXTRACTION_OUTCOME_CODES.ALREADY_EXTRACTED);
-    expect(result.data).toBeDefined();
-    expect(result.status).toBe(409);
+    expect(result).toMatchObject({
+      success: false,
+      code: EXTRACTION_OUTCOME_CODES.ANALYSIS_ALREADY_DONE,
+      error: message,
+      status: 400,
+    });
+    expect(EXTRACTION_OUTCOME_CODES.ANALYSIS_ALREADY_DONE).toBe('ANALYSIS_ALREADY_DONE');
+  });
+
+  it('the former ALREADY_EXTRACTED code no longer exists', () => {
+    expect(EXTRACTION_OUTCOME_CODES).not.toHaveProperty('ALREADY_EXTRACTED');
   });
 
   // ------------------------------------------------------------------
@@ -403,7 +410,7 @@ describe('runActivityExtraction', () => {
     api.post.mockResolvedValue({
       success: false,
       status: 409,
-      data: { code: 'ALREADY_EXTRACTED' },
+      data: { code: 'IDEMPOTENCY_CONFLICT' },
     });
 
     await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);

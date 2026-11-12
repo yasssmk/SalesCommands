@@ -161,15 +161,30 @@ describe("OutcomeDrawerContent — deal: no callback", () => {
 
 // ==============================|| LOT 3 / 13c (TD-239) — NUMBERED SECTIONS ||============================== //
 // PO (MAJ 5.18): the numbered-section design for every drawer — §1 Outcome
-// (the pills, then the callback date when it shows) · §2 Note.
+// (the pills, then the callback date when it shows). Sprint « Source / Notes »
+// 1.5: no note at closure — the former §2 Note is gone (the activity's notes
+// live in the Source band, filled throughout the lifecycle).
 
 describe("OutcomeDrawerContent — numbered sections (TD-239)", () => {
-  it("§1 Outcome · §2 Note, each block in its section", async () => {
+  it("§1 Outcome only — no note section", async () => {
     const { container } = renderDrawer(CAMPAIGN_ACT);
-    expect(sectionTitles(container)).toEqual(["Outcome", "Note"]);
+    expect(sectionTitles(container)).toEqual(["Outcome"]);
     expect(sectionOf(container, screen.getByTestId("outcome-pill-SUCCESSFUL"))).toBe(1);
-    expect(sectionOf(container, screen.getByTestId("outcome-note"))).toBe(2);
+    expect(screen.queryByTestId("outcome-note")).toBeNull();
     fireEvent.click(screen.getByTestId("outcome-pill-CALLBACK_REQUESTED"));
     expect(sectionOf(container, await screen.findByTestId("pick-Callback date"))).toBe(1);
+  });
+});
+
+describe("OutcomeDrawerContent — no note at closure (« Source / Notes » 1.5)", () => {
+  it("Save posts the outcome without any note key", async () => {
+    renderDrawer(DEAL_ACT);
+    fireEvent.click(screen.getByTestId("outcome-pill-SUCCESSFUL"));
+    const save = screen.getByRole("button", { name: /^complete$/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(completeActivity).toHaveBeenCalledTimes(1));
+    const [, payload] = completeActivity.mock.calls[0];
+    expect(payload).toEqual({ outcome: "SUCCESSFUL" });
   });
 });
