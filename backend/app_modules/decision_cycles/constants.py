@@ -143,3 +143,51 @@ class DecisionStepStatus(models.TextChoices):
 #        prep call).
 DEAL_HEALTH_SCHEMA_V1 = 1
 DEAL_HEALTH_SCHEMA_V2 = 2
+
+
+# ==========================================================================
+# STAKEHOLDER PROFILE (sprint « Deal health v2 », step 4)
+# ==========================================================================
+#
+# Stakeholder.profile — what helps convince this person, per FIELD:
+#   {field: {value, source, updated_at, updated_by, original_value}}
+# Written ONLY by services/stakeholder_service.apply_ai_profile /
+# apply_manual_profile. `source` takes the SignalSource values
+# (signals/constants.py): LLM_EXTRACTED (the AI), LLM_MODIFIED (an AI value
+# edited by a user, original_value kept), MANUAL (entered by a user). The AI
+# never overwrites a MANUAL or LLM_MODIFIED field.
+
+class ConvictionState(models.TextChoices):
+    """How convinced the stakeholder is (closed list, amendment A8)."""
+    CHAMPION   = 'CHAMPION',   _('Champion')
+    SUPPORTIVE = 'SUPPORTIVE', _('Supportive')
+    NEUTRAL    = 'NEUTRAL',    _('Neutral')
+    SKEPTICAL  = 'SKEPTICAL',  _('Skeptical')
+    OPPOSED    = 'OPPOSED',    _('Opposed')
+    UNKNOWN    = 'UNKNOWN',    _('Unknown')
+
+
+PROFILE_CONVICTION_STATE = 'conviction_state'
+PROFILE_CONVINCING_METRICS = 'convincing_metrics'
+PROFILE_FRUSTRATIONS = 'frustrations'
+PROFILE_CONVICTION_STRATEGY = 'conviction_strategy'
+PROFILE_COMMUNICATION_STYLE = 'communication_style'
+PROFILE_COMMUNICATION_LANGUAGE = 'communication_language'
+
+STAKEHOLDER_PROFILE_FIELDS = (
+    PROFILE_CONVICTION_STATE,
+    PROFILE_CONVINCING_METRICS,
+    PROFILE_FRUSTRATIONS,
+    PROFILE_CONVICTION_STRATEGY,
+    PROFILE_COMMUNICATION_STYLE,
+    PROFILE_COMMUNICATION_LANGUAGE,
+)
+
+# communication_language: a BCP-47 tag ("fr", "en-US", "pt-BR"), the
+# convention of BaseSignal.language_original (signals/models/base_model.py,
+# max 10 characters): a 2-3 letter language, optional subtags.
+PROFILE_LANGUAGE_MAX_LENGTH = 10
+PROFILE_LANGUAGE_PATTERN = r'^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$'
+
+# Free-text fields: a bound so one value can never bloat the row / prompt.
+PROFILE_TEXT_MAX_LENGTH = 2000

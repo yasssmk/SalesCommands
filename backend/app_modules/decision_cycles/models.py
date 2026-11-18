@@ -957,6 +957,19 @@ class Stakeholder(ModuleBaseModel, ClientScopeManager.ModelMixin):
                     'read there, never copied).'),
     )
 
+    # Sprint « Deal health v2 », step 4 — what helps convince this person,
+    # per field {value, source, updated_at, updated_by, original_value}
+    # (constants.STAKEHOLDER_PROFILE_FIELDS). Written ONLY by
+    # services/stakeholder_service.apply_ai_profile / apply_manual_profile;
+    # not exposed by any serializer yet (amendment A7).
+    profile = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_('Profile'),
+        help_text=_('Per-field stakeholder metadata (AI or manual). Written by '
+                    'the stakeholder service only.'),
+    )
+
     class Meta:
         db_table = 'decision_cycle_stakeholders'
         verbose_name = _('Stakeholder')
