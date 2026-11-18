@@ -100,6 +100,20 @@ class AIPipelineType(models.TextChoices):
     NEXT_STEPS_ADVICE  = 'NEXT_STEPS_ADVICE',  _('Next steps advice')
 
 
+# The pipelines that ANALYSE an activity (its transcript): a SUCCESS /
+# PARTIAL run of one of them makes the activity « analysed »
+# (services/analysis_state.py — last-run endpoint, transcript lock, one
+# analysis per pipeline). The extraction and its advice pass only: a
+# PREP_CALL brief is generated BEFORE the conversation and analyses nothing,
+# a DEAL_HEALTH run is cycle-level (no source_activity). Sprint « Deal health
+# v2 », step 1: an inclusion list, so a new pipeline never counts by default.
+ANALYSIS_PIPELINE_TYPES = (
+    AIPipelineType.TRANSCRIPT_SIGNALS,
+    AIPipelineType.NEXT_STEPS,
+    AIPipelineType.NEXT_STEPS_ADVICE,
+)
+
+
 # =============================================================================
 # PIPELINE STATUS
 # =============================================================================

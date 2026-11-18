@@ -15,18 +15,24 @@ Read by:
     the activity is analysed (no re-run: the transcript stays the analysed
     one). A failed analysis (PARSE_ERROR / LLM_ERROR / TIMEOUT) leaves it
     editable.
+
+Only the ANALYSIS pipelines count (constants.ANALYSIS_PIPELINE_TYPES): a
+prep-call brief also opens a run on the activity but analyses nothing — it
+must neither fold the Preparation band nor lock the transcript (sprint
+« Deal health v2 », step 1).
 """
 
-from ..constants import AIPipelineStatus
+from ..constants import ANALYSIS_PIPELINE_TYPES, AIPipelineStatus
 
 ANALYSED_RUN_STATUSES = (AIPipelineStatus.SUCCESS, AIPipelineStatus.PARTIAL)
 
 
 def analysed_runs(activity, client_id):
-    """The successful runs of `activity` — the « analysed » evidence."""
+    """The successful ANALYSIS runs of `activity` — the « analysed » evidence."""
     from ..models import AIPipelineRun
     return AIPipelineRun.objects.filter(
         client_id=client_id, source_activity=activity, status__in=ANALYSED_RUN_STATUSES,
+        pipeline_type__in=ANALYSIS_PIPELINE_TYPES,
     )
 
 

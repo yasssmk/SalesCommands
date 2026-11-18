@@ -138,6 +138,8 @@ class FakeProvider:
         ('Extract COMPETITOR signals', 'competitor'),
         ('Extract PEOPLE signals',     'people'),
         ('Extract NEXT-STEP signals',  'next_steps'),
+        # The prep-call brief (prompts/prep_call/brief_v1.py, TASK header).
+        ('Produce a tactical pre-call brief', 'prep_call'),
     )
 
     _EMPTY_REPLY = '{"signals": []}'
