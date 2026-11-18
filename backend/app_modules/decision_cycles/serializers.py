@@ -1416,6 +1416,17 @@ class DecisionCycleUpdateSerializer(ClientScopeManager.SerializerMixin, serializ
 # DEAL HEALTH SNAPSHOT SERIALIZERS (read-only)
 # ============================================================================
 
+# Versioning fields of a DealHealthSnapshot (sprint « Deal health v2 », step 2)
+# — read-only, shared by the List and Detail serializers.
+DEAL_HEALTH_SNAPSHOT_VERSION_FIELDS = [
+    'schema_version',
+    'declared_step',
+    'estimated_step',
+    'estimated_step_reason',
+    'sources_cursor',
+    'prompt_versions',
+]
+
 class DealHealthSnapshotListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Lightweight read-only serializer for DealHealthSnapshot list views.
@@ -1430,6 +1441,7 @@ class DealHealthSnapshotListSerializer(ClientScopeManager.SerializerMixin, seria
             'snapshot_date',
             'pipeline_run',
             'created_at',
+            *DEAL_HEALTH_SNAPSHOT_VERSION_FIELDS,
         ]
         read_only_fields = fields
 
@@ -1454,6 +1466,7 @@ class DealHealthSnapshotDetailSerializer(ClientScopeManager.SerializerMixin, ser
             'updated_by',
             'created_at',
             'updated_at',
+            *DEAL_HEALTH_SNAPSHOT_VERSION_FIELDS,
         ]
         read_only_fields = fields
 

@@ -108,12 +108,15 @@ class DealHealthPipeline(BasePipeline):
                         request=request_layer,
                     )
 
+                    current_step = (pack.get('cycle') or {}).get('current_step') or {}
                     snapshot = DealHealthWriter().write(
                         parsed=parsed,
                         decision_cycle=decision_cycle,
                         run=run,
                         user=user,
                         client_id=client_id,
+                        declared_step=current_step.get('stage'),
+                        prompt_versions=self.PROMPT_VERSIONS,
                     )
 
                     self._log_sub_call(

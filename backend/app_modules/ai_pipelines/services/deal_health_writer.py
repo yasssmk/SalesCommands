@@ -51,7 +51,8 @@ class DealHealthWriter:
         )
     """
 
-    def write(self, *, parsed, decision_cycle, run, user, client_id):
+    def write(self, *, parsed, decision_cycle, run, user, client_id,
+              declared_step=None, prompt_versions=None):
         """
         Validate the parsed diagnostic JSON and create a DealHealthSnapshot.
 
@@ -61,6 +62,12 @@ class DealHealthWriter:
             run:             AIPipelineRun instance (linked to the snapshot).
             user:            User who triggered the pipeline.
             client_id:       UUID — tenant scope.
+            declared_step:   PipelineStep value of the cycle's current step
+                             when the diagnostic was produced (derived once
+                             by the evidence builder), or None.
+            prompt_versions: the pipeline PROMPT_VERSIONS (copied: the run
+                             FK is SET_NULL). Sprint « Deal health v2 »,
+                             step 2.
 
         Returns:
             DealHealthSnapshot: the persisted snapshot.
@@ -76,6 +83,8 @@ class DealHealthWriter:
             decision_cycle=decision_cycle,
             diagnostic=parsed,
             pipeline_run=run,
+            declared_step=declared_step,
+            prompt_versions=dict(prompt_versions or {}),
         )
         snapshot.save(user=user, client_id=client_id)
 

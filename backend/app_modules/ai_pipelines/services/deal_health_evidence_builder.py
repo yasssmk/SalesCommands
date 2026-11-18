@@ -89,15 +89,21 @@ class DealHealthEvidenceBuilder:
 
     @staticmethod
     def _find_current_step(dc):
-        steps = dc.steps.select_related('previous_step').order_by('order')
-        for step in steps:
-            if step.is_current:
-                return step
-        return None
+        """The cycle's current step, derived ONCE for the whole cycle
+        (decision_steps_state — the shared definition of
+        DecisionStep.is_current) instead of one is_current per step, each
+        re-deriving the cycle. Sprint « Deal health v2 », step 2."""
+        from app_modules.activities.services.next_step_materialization import (
+            current_decision_step,
+        )
+        return current_decision_step(dc)
 
     @staticmethod
     def _serialize_step(step):
         return {
+            # The PipelineStep value — persisted as the snapshot's
+            # declared_step (not rendered in the prompt).
+            'stage': step.stage,
             'name': step.name,
             'goal': step.goal or '',
             'criterias': step.criterias or [],

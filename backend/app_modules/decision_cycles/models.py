@@ -13,7 +13,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
-from .constants import PipelineStep, DecisionStepStatus, CycleOutcome, PIPELINE_STEPS_CONFIG, ACTIVITY_OPTIONAL_STEPS
+from .constants import PipelineStep, DecisionStepStatus, CycleOutcome, PIPELINE_STEPS_CONFIG, ACTIVITY_OPTIONAL_STEPS, DEAL_HEALTH_SCHEMA_V1
 
 
 class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -1037,6 +1037,57 @@ class DealHealthSnapshot(ModuleBaseModel, ClientScopeManager.ModelMixin):
         blank=True,
         related_name='deal_health_snapshots',
         verbose_name=_('Pipeline Run'),
+    )
+
+    # -- Versioning (sprint « Deal health v2 », step 2) ----------------------
+    # What the snapshot was produced FROM, read at read time (freshness,
+    # prep call) without re-deriving the past. Written by DealHealthWriter
+    # only — read-only through the API.
+
+    schema_version = models.PositiveSmallIntegerField(
+        default=DEAL_HEALTH_SCHEMA_V1,
+        verbose_name=_('Schema Version'),
+        help_text=_('Shape of the diagnostic JSON (constants.DEAL_HEALTH_SCHEMA_*).'),
+    )
+
+    declared_step = models.CharField(
+        max_length=30,
+        choices=PipelineStep.choices,
+        null=True,
+        blank=True,
+        verbose_name=_('Declared Step'),
+        help_text=_('The cycle\'s current step (derived) when the diagnostic '
+                    'was produced. NULL on snapshots written before step 2.'),
+    )
+
+    estimated_step = models.CharField(
+        max_length=30,
+        choices=PipelineStep.choices,
+        null=True,
+        blank=True,
+        verbose_name=_('Estimated Step'),
+        help_text=_('The step the diagnostic estimates the deal is really at. '
+                    'Never applied to the cycle.'),
+    )
+
+    estimated_step_reason = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('Estimated Step Reason'),
+    )
+
+    sources_cursor = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_('Sources Cursor'),
+        help_text=_('Per source type, the latest change read by this diagnostic.'),
+    )
+
+    prompt_versions = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_('Prompt Versions'),
+        help_text=_('Copy of the pipeline PROMPT_VERSIONS (the run FK is SET_NULL).'),
     )
 
     class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(

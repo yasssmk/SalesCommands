@@ -130,3 +130,16 @@ class DecisionStepStatus(models.TextChoices):
     IN_CHASING = 'IN_CHASING', _('In Chasing')
     OVERDUE = 'OVERDUE', _('Overdue')
     VALIDATED = 'VALIDATED', _('Validated')
+
+# ==========================================================================
+# DEAL HEALTH SNAPSHOT — schema versions (sprint « Deal health v2 »)
+# ==========================================================================
+#
+# DealHealthSnapshot.schema_version: the shape of its `diagnostic` JSON.
+#   V1 — the original diagnostic (7 dimensions, gaps, levers, themes).
+#        Every snapshot written before the v2 prompt, and the default.
+#   V2 — the « manager / coach » diagnostic (sprint « Deal health v2 »,
+#        step 5); it keeps every key V1 readers use (DealHealthView, the
+#        prep call).
+DEAL_HEALTH_SCHEMA_V1 = 1
+DEAL_HEALTH_SCHEMA_V2 = 2
