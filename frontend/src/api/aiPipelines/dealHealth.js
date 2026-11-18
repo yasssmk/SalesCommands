@@ -8,8 +8,13 @@
  * Runs a single LLM call to diagnose deal maturity from validated signals
  * and transcripts. Returns a DealHealthSnapshot.
  *
- * Unlike activity extraction, this pipeline is synchronous with no polling
- * or idempotency key management — a simple POST that returns the snapshot.
+ * The pipeline is synchronous server-side but usually outlasts the client's
+ * bulk-profile timeout (a reasoning model: more than a minute). On a client
+ * timeout the run goes on and writes its snapshot: the caller polls
+ * GET .../health-snapshots/latest/ for up to DEAL_HEALTH_POLL_CONFIG
+ * (~3 min, the server polling window R2 of core/timeout_conventions.py, as
+ * the Activity Run AI: activityExtraction.js EXTRACTION_POLL_CONFIG). The
+ * run state shared by every trigger lives in hooks/useDealHealthRunner.js.
  *
  * Return value:
  *   { success: true, data: { run, snapshot } }   → pipeline succeeded
@@ -31,6 +36,29 @@ const endpoints = {
     `/decision_cycles/${cycleId}/health-snapshots/latest/`,
   snapshotList: (cycleId) =>
     `/decision_cycles/${cycleId}/health-snapshots/`,
+};
+
+// ==============================|| RUN CONSTANTS ||============================== //
+
+// Sprint « Deal health v2 », 5c: the polling window after a client timeout —
+// 36 x 5 s ≈ 3 min, the backend's POLLING_MAX_ATTEMPTS x
+// POLLING_INTERVAL_SECONDS (core/timeout_conventions.py), within which the
+// deal health call ends (DEAL_HEALTH_TIMEOUT_S).
+export const DEAL_HEALTH_POLL_CONFIG = {
+  intervalMs: 5000,
+  maxAttempts: 36,
+};
+
+// The labels and messages of a deal health run, shared by every trigger.
+export const DEAL_HEALTH_RUN_LABELS = {
+  RUN: "Run Deal Health",
+  RERUN: "Re-run",
+  HEADER: "Deal Health",
+  RUNNING: "Analysis in progress…",
+  DONE: "Deal health diagnostic completed",
+  // End of the polling window, no snapshot yet: information, not an error.
+  STILL_RUNNING:
+    "The analysis is taking longer than usual. The diagnostic will appear on this deal once it is ready — no need to run it again.",
 };
 
 // ==============================|| MUTATION ||============================== //
@@ -98,15 +126,20 @@ export async function runDealHealth(cycleId) {
  * @param {string|null} previousSnapshotId - id (or snapshot_date) of the
  *   snapshot present before the run, or null if there was none.
  * @param {Object} [opts]
- * @param {number} [opts.intervalMs=4000] - Delay between attempts.
- * @param {number} [opts.maxAttempts=5] - Maximum poll attempts.
+ * @param {number} [opts.intervalMs] - Delay between attempts
+ *   (default DEAL_HEALTH_POLL_CONFIG).
+ * @param {number} [opts.maxAttempts] - Maximum poll attempts
+ *   (default DEAL_HEALTH_POLL_CONFIG).
  * @returns {Promise<Object>} { success: true, data } on a new snapshot,
  *   otherwise { success: false, timedOut: true }.
  */
 export async function pollForNewSnapshot(
   cycleId,
   previousSnapshotId,
-  { intervalMs = 4000, maxAttempts = 5 } = {},
+  {
+    intervalMs = DEAL_HEALTH_POLL_CONFIG.intervalMs,
+    maxAttempts = DEAL_HEALTH_POLL_CONFIG.maxAttempts,
+  } = {},
 ) {
   if (!cycleId || !isValidUUID(cycleId)) {
     return { success: false, error: "Invalid cycle ID format" };
