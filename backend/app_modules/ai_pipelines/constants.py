@@ -353,3 +353,44 @@ DEAL_HEALTH_TRUNCATION_INPUT_BUDGET = 'input_budget'
 # A ManagerNote's author is named by the ROLE only, never by name.
 DEAL_HEALTH_NOTE_AUTHOR_ADMIN = 'Admin'
 DEAL_HEALTH_NOTE_AUTHOR_MANAGER = 'Manager'
+
+
+# =============================================================================
+# DEAL HEALTH v2 — MODEL, PROVIDER, FORMAT (Sprint « Deal health v2 », step 5)
+# =============================================================================
+
+# THE switch of the deal health's LLM provider (amendment A11): 'openai' or
+# 'claude', each mapped to its own PROVIDER_CONFIG entry (config.py). Only
+# the deal health reads it in this sprint. 'claude' is REFUSED at load
+# (pipelines/deal_health.check_deal_health_provider) until ClaudeProvider
+# declares SUPPORTS_RESPONSE_SCHEMA (sub-step 5b).
+DEAL_HEALTH_LLM_PROVIDER = 'openai'
+DEAL_HEALTH_PROVIDER_KEYS = {
+    'openai': 'openai_deal_health',
+    'claude': 'claude_deal_health',
+}
+
+# The deal health's own call timeout (amendment A6), in seconds. The view is
+# synchronous; the front polls ~180 s for the snapshot after a client
+# timeout (core/timeout_conventions.py POLLING_MAX_ATTEMPTS x
+# POLLING_INTERVAL_SECONDS), so a call must end within that window.
+# Provisional — measured at step 7.
+DEAL_HEALTH_TIMEOUT_S = 150
+# Room for the v2 answer and the reasoning tokens (they count in max_tokens).
+DEAL_HEALTH_MAX_TOKENS = 16_000
+
+# How the v2 context is sent (compared at step 7, amendment A5):
+#   'sections' — labelled sections + compact JSON (the next_steps pattern);
+#   'json'     — the whole context as ONE JSON document.
+DEAL_HEALTH_INPUT_FORMAT_SECTIONS = 'sections'
+DEAL_HEALTH_INPUT_FORMAT_JSON = 'json'
+DEAL_HEALTH_INPUT_FORMAT = DEAL_HEALTH_INPUT_FORMAT_SECTIONS
+
+# The diagnostic v2 value lists (the strict schema and the writer).
+DEAL_HEALTH_DIMENSION_STATUSES = (
+    'confirmed', 'suggested', 'unclear', 'missing_evidence', 'contradictory',
+)
+DEAL_HEALTH_BANT_LETTERS = ('budget', 'authority', 'need', 'timeline')
+DEAL_HEALTH_BANT_STATUSES = ('validated', 'not_validated', 'unknown')
+DEAL_HEALTH_MISSING_INFO_LEVELS = ('BUSINESS', 'DEPARTMENT', 'CONTACT')
+DEAL_HEALTH_TOP_ARGUMENTS_MAX = 3

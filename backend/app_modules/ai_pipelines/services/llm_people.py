@@ -27,7 +27,7 @@ from ..constants import (
 from .participant_refs import _normalize_person_name
 
 
-__all__ = ['LLMPeopleRoster', 'cycle_roster', 'first_name_of']
+__all__ = ['LLMPeopleRoster', 'cycle_roster', 'first_name_of', 'stakeholder_for']
 
 
 def _first_word(name):
@@ -151,14 +151,39 @@ class LLMPeopleRoster:
         """
         if person is None:
             return ''
-        entry = self._people.get(_identity(person))
+        identity = _identity(person)
+        entry = self._people.get(identity)
         if entry is None:
             return first_name_of(person)
+        return self._label_of(identity, entry)
+
+    def entries(self):
+        """[(identity, label, department)] of the named people, in
+        registration order — what a prompt lists (deal health v2, step 5)."""
+        rows = []
+        for identity, entry in self._people.items():
+            label = self._label_of(identity, entry)
+            if label:
+                rows.append((identity, label, entry['department']))
+        return rows
+
+    def identity_of(self, label):
+        """The identity behind a label the LLM wrote back (exact label,
+        whitespace-trimmed), or None — the server resolves a person, never
+        the LLM (step 5)."""
+        wanted = (label or '').strip()
+        if not wanted:
+            return None
+        for identity, entry in self._people.items():
+            if self._label_of(identity, entry) == wanted:
+                return identity
+        return None
+
+    def _label_of(self, identity, entry):
         first_name = entry['first_name']
         if not first_name:
             return ''
-        refs = self._homonym_refs()
-        ref = refs.get(_identity(person))
+        ref = self._homonym_refs().get(identity)
         if ref is None:
             return first_name
         fmt = (
@@ -190,10 +215,12 @@ def cycle_roster(decision_cycle):
     The roster of a decision-cycle prompt (deal health, prep call): every
     person its evidence names — the validated People signals of the cycle
     (most recent first, the PeopleConsolidationService order), then the
-    contacts of its validated Blocker signals (oldest first). Deterministic,
-    so a homonym keeps its reference from one run to the next while the
-    evidence is unchanged.
+    contacts of its validated Blocker signals (oldest first), then the
+    other stakeholders of the cycle (step 5: the deal health profiles every
+    stakeholder). Deterministic, so a homonym keeps its reference from one
+    run to the next while the evidence is unchanged.
     """
+    from app_modules.decision_cycles.models import Stakeholder
     from app_modules.signals.constants import SignalStatus
     from app_modules.signals.models import BlockerSignal, PeopleSignal
 
@@ -213,4 +240,44 @@ def cycle_roster(decision_cycle):
         ).select_related('contact__standard_department').order_by('created_at', 'id')
     ):
         roster.add(blocker.contact)
+    for stakeholder in (
+        Stakeholder.objects.filter(
+            decision_cycle=decision_cycle, client_id=decision_cycle.client_id,
+        ).select_related(
+            'contact__standard_department', 'department',
+        ).order_by('created_at', 'id')
+    ):
+        roster.add(stakeholder)
     return roster
+
+
+def stakeholder_for(decision_cycle, identity):
+    """
+    The Stakeholder of `decision_cycle` behind a roster identity, or None —
+    THE server-side resolution of a label the LLM wrote back (deal health
+    v2, step 5). Tenant- and cycle-scoped; never creates a stakeholder; an
+    ambiguous name (two non-converted stakeholders) resolves to None.
+    """
+    from app_modules.decision_cycles.models import Stakeholder
+
+    if not identity:
+        return None
+    rows = Stakeholder.objects.filter(
+        decision_cycle=decision_cycle, client_id=decision_cycle.client_id,
+    )
+    kind, key = identity[0], identity[1]
+    if kind == 'contact':
+        rows = rows.filter(contact_id=key)
+    elif kind == 'stakeholder':
+        rows = rows.filter(pk=key)
+    elif kind == 'name':
+        # The roster's normalisation (accents stripped), not the column's.
+        found = [
+            s for s in rows.filter(contact__isnull=True)
+            if _normalize_person_name(s.full_name or '') == key
+        ]
+        return found[0] if len(found) == 1 else None
+    else:
+        return None
+    found = list(rows[:2])
+    return found[0] if len(found) == 1 else None

@@ -52,7 +52,8 @@ class DealHealthWriter:
     """
 
     def write(self, *, parsed, decision_cycle, run, user, client_id,
-              declared_step=None, prompt_versions=None, sources_cursor=None):
+              declared_step=None, prompt_versions=None, sources_cursor=None,
+              schema_version=None):
         """
         Validate the parsed diagnostic JSON and create a DealHealthSnapshot.
 
@@ -71,6 +72,11 @@ class DealHealthWriter:
             sources_cursor:  per source type, the latest change read by this
                              diagnostic (the evidence builder's cursor, step
                              3b) — the next run reads only what is newer.
+            schema_version:  the shape of `parsed` (DEAL_HEALTH_SCHEMA_V1
+                             default, V2 for the « manager / coach »
+                             diagnostic, step 5): picks the validation and
+                             is persisted; a V2 also persists its
+                             estimated step.
 
         Returns:
             DealHealthSnapshot: the persisted snapshot.
@@ -78,9 +84,18 @@ class DealHealthWriter:
         Raises:
             PromptParseError: if the parsed JSON fails structural validation.
         """
-        self._validate(parsed)
-
+        from app_modules.decision_cycles.constants import (
+            DEAL_HEALTH_SCHEMA_V1,
+            DEAL_HEALTH_SCHEMA_V2,
+        )
         from app_modules.decision_cycles.models import DealHealthSnapshot
+
+        version = schema_version or DEAL_HEALTH_SCHEMA_V1
+        self._validate(parsed)
+        estimated = {}
+        if version == DEAL_HEALTH_SCHEMA_V2:
+            self._validate_v2(parsed)
+            estimated = parsed['estimated_step']
 
         snapshot = DealHealthSnapshot(
             decision_cycle=decision_cycle,
@@ -89,6 +104,9 @@ class DealHealthWriter:
             declared_step=declared_step,
             prompt_versions=dict(prompt_versions or {}),
             sources_cursor=dict(sources_cursor or {}),
+            schema_version=version,
+            estimated_step=estimated.get('step'),
+            estimated_step_reason=estimated.get('reason', ''),
         )
         snapshot.save(user=user, client_id=client_id)
 
@@ -202,3 +220,153 @@ class DealHealthWriter:
                 raise PromptParseError(
                     f'Missing or invalid levers.{group} (expected list).'
                 )
+
+    # =========================================================================
+    # v2 — « MANAGER / COACH » DIAGNOSTIC (sprint « Deal health v2 », step 5)
+    # =========================================================================
+
+    def _validate_v2(self, parsed):
+        """The v2 keys, on top of the v1 validation (every v1 key is kept,
+        amendment A5). A refusal is a PromptParseError: nothing is written
+        (no snapshot, no profile)."""
+        from app_modules.ai_pipelines.constants import (
+            DEAL_HEALTH_BANT_LETTERS,
+            DEAL_HEALTH_BANT_STATUSES,
+            DEAL_HEALTH_MISSING_INFO_LEVELS,
+            DEAL_HEALTH_TOP_ARGUMENTS_MAX,
+        )
+        from app_modules.decision_cycles.constants import (
+            PIPELINE_STEPS_ORDER,
+            PROFILE_CONVICTION_STATE,
+            STAKEHOLDER_PROFILE_FIELDS,
+        )
+        from app_modules.decision_cycles.services.stakeholder_service import (
+            validate_ai_profile_values,
+        )
+        from core.exceptions import StandardizedValidationError
+
+        for key in ('summary', 'strategic_conclusion'):
+            if not isinstance(parsed.get(key), str) or not parsed[key].strip():
+                raise PromptParseError(f'Missing or invalid "{key}" (expected text).')
+
+        for axis in ('needs_and_urgency', 'credibility', 'fit_and_value'):
+            value = parsed.get(axis)
+            if not isinstance(value, dict) or value.get('status') not in _VALID_STATUSES \
+                    or not isinstance(value.get('assessment'), str):
+                raise PromptParseError(
+                    f'Missing or invalid "{axis}" (expected {{status, assessment}}).'
+                )
+
+        if not isinstance(parsed.get('buying_process'), dict):
+            raise PromptParseError('Missing or invalid "buying_process" (expected object).')
+
+        bant = parsed.get('bant')
+        if not isinstance(bant, dict):
+            raise PromptParseError('Missing or invalid "bant" (expected object).')
+        for letter in DEAL_HEALTH_BANT_LETTERS:
+            item = bant.get(letter)
+            if not isinstance(item, dict) or item.get('status') not in DEAL_HEALTH_BANT_STATUSES \
+                    or not isinstance(item.get('reason'), str):
+                raise PromptParseError(
+                    f'Invalid "bant.{letter}": expected {{status: '
+                    f'{" | ".join(DEAL_HEALTH_BANT_STATUSES)}, reason}}.'
+                )
+
+        for key in ('levers_to_invest', 'missing_info', 'top_arguments', 'stakeholders'):
+            if not isinstance(parsed.get(key), list):
+                raise PromptParseError(f'Missing or invalid "{key}" (expected list).')
+        if not isinstance(parsed.get('objectives'), dict):
+            raise PromptParseError('Missing or invalid "objectives" (expected object).')
+
+        for item in parsed['missing_info']:
+            if not isinstance(item, dict) or item.get('level') not in DEAL_HEALTH_MISSING_INFO_LEVELS:
+                raise PromptParseError(
+                    f'Invalid "missing_info" level: expected one of '
+                    f'{", ".join(DEAL_HEALTH_MISSING_INFO_LEVELS)}.'
+                )
+
+        estimated = parsed.get('estimated_step')
+        if not isinstance(estimated, dict) or estimated.get('step') not in [str(s) for s in PIPELINE_STEPS_ORDER] \
+                or not isinstance(estimated.get('reason'), str):
+            raise PromptParseError(
+                'Invalid "estimated_step": expected {step: one of the 5 pipeline steps, reason}.'
+            )
+
+        for target in parsed['top_arguments']:
+            if not isinstance(target, dict) or not isinstance(target.get('arguments'), list) \
+                    or len(target['arguments']) > DEAL_HEALTH_TOP_ARGUMENTS_MAX:
+                raise PromptParseError(
+                    f'Invalid "top_arguments": at most {DEAL_HEALTH_TOP_ARGUMENTS_MAX} '
+                    f'arguments per target.'
+                )
+
+        for entry in parsed['stakeholders']:
+            if not isinstance(entry, dict) or not isinstance(entry.get('ref'), str):
+                raise PromptParseError('Invalid "stakeholders" entry (expected {ref, ...}).')
+            if not entry.get(PROFILE_CONVICTION_STATE):
+                raise PromptParseError('Missing "conviction_state" for a stakeholder.')
+            try:
+                validate_ai_profile_values(
+                    {field: entry.get(field) for field in STAKEHOLDER_PROFILE_FIELDS}
+                )
+            except StandardizedValidationError as exc:
+                raise PromptParseError(f'Invalid stakeholder profile: {exc.detail}') from exc
+
+    @staticmethod
+    def apply_profiles(*, parsed, decision_cycle, run, roster):
+        """
+        Write the v2 stakeholder profiles through THE profile write point
+        (stakeholder_service.apply_ai_profile, with the run id). A label is
+        resolved server side against the prompt's roster (llm_people), never
+        by the LLM; an unknown label, or a person with no stakeholder row on
+        the cycle, is skipped and traced.
+
+        Returns:
+            dict — the counters recorded in the run's sub_calls
+            (persist_counts): profiles_written, profile_fields_kept,
+            unknown_stakeholder_refs, refs_without_stakeholder.
+        """
+        from app_modules.ai_pipelines.services.llm_people import stakeholder_for
+        from app_modules.decision_cycles.constants import STAKEHOLDER_PROFILE_FIELDS
+        from app_modules.decision_cycles.services.stakeholder_service import (
+            apply_ai_profile,
+        )
+
+        counts = {
+            'profiles_written': 0,
+            'profile_fields_kept': 0,
+            'unknown_stakeholder_refs': [],
+            'refs_without_stakeholder': [],
+        }
+        entries = parsed.get('stakeholders') if isinstance(parsed, dict) else None
+        if not entries:
+            return counts
+        for entry in entries:
+            ref = entry.get('ref', '')
+            identity = roster.identity_of(ref) if roster is not None else None
+            if identity is None:
+                counts['unknown_stakeholder_refs'].append(ref)
+                continue
+            stakeholder = stakeholder_for(decision_cycle, identity)
+            if stakeholder is None:
+                counts['refs_without_stakeholder'].append(ref)
+                continue
+            result = apply_ai_profile(
+                stakeholder,
+                {field: entry.get(field) for field in STAKEHOLDER_PROFILE_FIELDS},
+                run,
+            )
+            if result['written']:
+                counts['profiles_written'] += 1
+            counts['profile_fields_kept'] += len(result['kept'])
+        if counts['unknown_stakeholder_refs'] or counts['refs_without_stakeholder']:
+            logger.warning(
+                'deal_health_profiles_unresolved_refs',
+                extra={
+                    'run_id': str(run.id),
+                    'unknown_count': len(counts['unknown_stakeholder_refs']),
+                    'without_stakeholder_count': len(counts['refs_without_stakeholder']),
+                    'event': 'ai_pipeline_persist',
+                },
+            )
+        return counts

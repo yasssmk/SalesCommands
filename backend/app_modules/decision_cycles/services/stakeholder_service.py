@@ -400,15 +400,39 @@ def _clean_profile_value(field, value, *, allow_empty_text):
     return value.strip()
 
 
-def _profile_entry(value, source, *, user_id=None, original_value=None):
-    from django.utils import timezone
+def validate_ai_profile_values(values):
+    """
+    The AI values of ONE stakeholder, validated by THE profile rules — the
+    same check as apply_ai_profile, without writing (the deal-health writer
+    validates the whole answer before persisting anything).
+
+    Returns:
+        {field: cleaned value} — None / empty values dropped (the AI never
+        clears a field).
+
+    Raises:
+        StandardizedValidationError on an unknown field / invalid value.
+    """
     return {
+        field: _clean_profile_value(field, value, allow_empty_text=False)
+        for field, value in (values or {}).items()
+        if value not in (None, '')
+    }
+
+
+def _profile_entry(value, source, *, user_id=None, original_value=None, run_id=None):
+    from django.utils import timezone
+    entry = {
         'value': value,
         'source': source,
         'updated_at': timezone.now().isoformat(),
         'updated_by': str(user_id) if user_id else None,
         'original_value': original_value,
     }
+    # The AI run that wrote the value (step 5, orchestrator): AI entries only.
+    if run_id is not None:
+        entry['run_id'] = str(run_id)
+    return entry
 
 
 def _locked_stakeholder(stakeholder):
@@ -439,6 +463,7 @@ def apply_ai_profile(stakeholder, values, run):
 
     Returns:
         {'written': [fields], 'kept': [fields the AI may not overwrite]}.
+        Each field written carries the run id (`run_id`).
 
     Raises:
         StandardizedValidationError: an unknown field / invalid value
@@ -447,11 +472,7 @@ def apply_ai_profile(stakeholder, values, run):
     from app_modules.signals.constants import SignalSource
 
     _check_profile_tenant(stakeholder, getattr(run, 'client_id', None))
-    cleaned = {
-        field: _clean_profile_value(field, value, allow_empty_text=False)
-        for field, value in (values or {}).items()
-        if value not in (None, '')
-    }
+    cleaned = validate_ai_profile_values(values)
 
     locked = _locked_stakeholder(stakeholder)
     profile = dict(locked.profile or {})
@@ -461,7 +482,7 @@ def apply_ai_profile(stakeholder, values, run):
         if current and current.get('source') != SignalSource.LLM_EXTRACTED:
             kept.append(field)              # MANUAL / LLM_MODIFIED: never overwritten
             continue
-        profile[field] = _profile_entry(value, SignalSource.LLM_EXTRACTED)
+        profile[field] = _profile_entry(value, SignalSource.LLM_EXTRACTED, run_id=run.pk)
         written.append(field)
     if written:
         _save_profile(stakeholder, locked, profile)

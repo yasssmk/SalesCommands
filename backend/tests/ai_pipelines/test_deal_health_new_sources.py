@@ -320,5 +320,6 @@ def test_h_the_static_context_is_sent_at_every_run(
         assert 'Finance automation for the EU entities' in prompt
         assert 'Book a discovery call with the finance lead' in prompt
         assert 'Targeted Campaign' in prompt
-        assert 'Company size: 200-500' in prompt
-        assert f'Industry: {industry_label}' in prompt
+        # Format-agnostic (the v2 context is compact JSON, step 5).
+        assert '200-500' in prompt                              # company size
+        assert str(industry_label) in prompt                    # industry

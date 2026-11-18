@@ -21,7 +21,7 @@ from app_modules.ai_pipelines.pipelines.deal_health import DealHealthPipeline
 from app_modules.ai_pipelines.services.deal_health_evidence_builder import (
     DealHealthEvidenceBuilder,
 )
-from app_modules.decision_cycles.constants import DEAL_HEALTH_SCHEMA_V1, PipelineStep
+from app_modules.decision_cycles.constants import DEAL_HEALTH_SCHEMA_V2, PipelineStep
 
 from tests.ai_pipelines.test_deal_health_pipeline import _VALID_DIAGNOSTIC
 from tests.decision_cycles.conftest import (  # noqa: F401
@@ -98,13 +98,13 @@ def test_the_snapshot_records_the_declared_step_and_its_versions(
 
     for served in (snapshot, latest.json()['data']):
         assert served['declared_step'] == PipelineStep.TECHNICAL_FIT
-        assert served['schema_version'] == DEAL_HEALTH_SCHEMA_V1
+        # Step 5: the pipeline writes the v2 diagnostic (its estimated step).
+        assert served['schema_version'] == DEAL_HEALTH_SCHEMA_V2
         assert served['prompt_versions'] == DealHealthPipeline.PROMPT_VERSIONS
         assert served['prompt_versions']                      # non-empty
-        # Filled at steps 3b / 5 — empty here.
-        assert served['estimated_step'] is None
-        assert served['estimated_step_reason'] == ''
-        assert served['sources_cursor'] == {}
+        assert served['estimated_step'] == _VALID_DIAGNOSTIC['estimated_step']['step']
+        assert served['estimated_step_reason'] == _VALID_DIAGNOSTIC['estimated_step']['reason']
+        assert served['sources_cursor'] == {}                 # no source on this cycle
 
 
 def test_a_cycle_without_steps_has_no_declared_step(authed_api_a, cycle, deal_health_provider):

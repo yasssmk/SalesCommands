@@ -19,6 +19,8 @@ from app_modules.ai_pipelines.providers.base import (
 )
 from app_modules.ai_pipelines.prompts.base import PromptParseError
 
+from tests.ai_pipelines.deal_health_fixtures import V2_DIAGNOSTIC
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,34 +37,9 @@ def _make_pipeline():
         return DealHealthPipeline()
 
 
-_VALID_DIAGNOSTIC = {
-    'global_reading': 'The client recognizes an operational problem.',
-    'dimensions': [
-        {'key': 'problem_recognized', 'status': 'confirmed', 'evidence': 'Quote A', 'missing': ''},
-        {'key': 'felt_pain', 'status': 'missing_evidence', 'evidence': '', 'missing': 'Not explored'},
-        {'key': 'impact_understood', 'status': 'unclear', 'evidence': 'Partial', 'missing': 'Quantification'},
-        {'key': 'desired_gain', 'status': 'suggested', 'evidence': 'Mentioned goal', 'missing': ''},
-        {'key': 'urgency', 'status': 'missing_evidence', 'evidence': '', 'missing': 'No timeline'},
-        {'key': 'willingness_to_act', 'status': 'unclear', 'evidence': '', 'missing': 'Budget unclear'},
-        {'key': 'solution_trust', 'status': 'suggested', 'evidence': 'Positive demo', 'missing': ''},
-    ],
-    'discovery_gaps': [
-        {
-            'kind': 'qualification',
-            'dimension': 'felt_pain',
-            'public_text': 'Pain depth not yet qualified.',
-            'suggested_questions': ['How does this impact your daily work?'],
-        },
-    ],
-    'levers': {
-        'desires': [{'summary': 'Better reporting', 'theme': 'OPS:TIME'}],
-        'value': [{'summary': '10h/week recoverable', 'theme': 'OPS:TIME'}],
-        'cost': [{'summary': 'Budget not owned by champion'}],
-        'constraints': [{'summary': 'ROI > 20%', 'rigidity': 'FIRM', 'is_metric': True}],
-    },
-    'themes': [{'label': 'Ops efficiency', 'summary': 'Pain recognized.'}],
-    'evidence_scope': {'validated_signals_count': 5, 'note': 'Based on captured evidence.'},
-}
+# Sprint « Deal health v2 », step 5: the pipeline's valid answer is the v2
+# diagnostic (every v1 key kept) — shared with the other deal-health tests.
+_VALID_DIAGNOSTIC = V2_DIAGNOSTIC
 
 _LLM_SUCCESS_RESPONSE = (
     _VALID_DIAGNOSTIC,

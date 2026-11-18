@@ -19,6 +19,8 @@ Each pipeline class reads its value from that dict via its AIPipelineType key.
 
 from django.conf import settings
 
+from .constants import DEAL_HEALTH_MAX_TOKENS, DEAL_HEALTH_TIMEOUT_S
+
 
 # =============================================================================
 # PROVIDER SELECTION — single point of switch
@@ -127,6 +129,25 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'reasoning_effort':  'medium',
         'timeout_s':         90,
         'max_tokens':        8192,
+    },
+    # Sprint « Deal health v2 », step 5 -- the deal health's own entries
+    # (constants.DEAL_HEALTH_LLM_PROVIDER picks one), the NEXT_STEPS pattern
+    # above: Structured Outputs, a model chosen for quality (configurable:
+    # AI_PIPELINES_DEAL_HEALTH_MODEL; final choice at step 7), its own timeout.
+    'openai_deal_health': {
+        'provider':          'openai',
+        'model':             getattr(settings, 'AI_PIPELINES_DEAL_HEALTH_MODEL', 'gpt-5.6-terra'),
+        'reasoning_effort':  'medium',
+        'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
+        'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
+    },
+    # DECLARED only: refused at load until ClaudeProvider supports a response
+    # schema (sub-step 5b sets its model and its call options). Never called.
+    'claude_deal_health': {
+        'provider':          'claude',
+        'model':             'claude-opus-5-5',
+        'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
+        'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },
 })
 

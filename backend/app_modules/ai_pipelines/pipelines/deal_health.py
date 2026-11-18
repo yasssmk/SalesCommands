@@ -20,20 +20,38 @@ Return contract:
         'run':      AIPipelineRun (finalised),
         'snapshot': DealHealthSnapshot | None,
     }
+
+Sprint « Deal health v2 », step 5: the « manager / coach » diagnostic v2
+(prompts system_v2 / context_v2 / diagnostic_v2), sent with its strict
+Structured Outputs schema to the deal health's OWN PROVIDER_CONFIG entry
+(constants.DEAL_HEALTH_LLM_PROVIDER -> DEAL_HEALTH_PROVIDER_KEYS, the
+NextStepsPipeline pattern). The writer validates and persists the v2
+snapshot, then the stakeholder profiles go through
+stakeholder_service.apply_ai_profile only. The deal's step is never changed.
 """
 
 import json
 
-from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
-from ..prompts.base import PromptParseError
-from ..prompts.deal_health import (
-    SYSTEM_PROMPT,
-    SYSTEM_PROMPT_VERSION,
-    build_context_layer,
-    CONTEXT_VERSION,
-    build_diagnostic_request,
-    DIAGNOSTIC_PROMPT_VERSION,
+from .. import config as ai_config
+from ..constants import (
+    AIPipelineStatus,
+    AIPipelineType,
+    DEAL_HEALTH_LLM_PROVIDER,
+    DEAL_HEALTH_PROVIDER_KEYS,
+    PIPELINE_TEMPERATURES,
 )
+from ..prompts.base import PromptParseError
+from ..prompts.deal_health.context_v2 import (
+    CONTEXT_VERSION,
+    build_context_layer,
+)
+from ..prompts.deal_health.diagnostic_v2 import (
+    DEAL_HEALTH_RESPONSE_SCHEMA,
+    DIAGNOSTIC_PROMPT_VERSION,
+    build_diagnostic_request,
+)
+from ..prompts.deal_health.system_v2 import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+from ..providers import get_provider, provider_supports_response_schema
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -42,10 +60,46 @@ from ..providers.base import (
 )
 from .base import BasePipeline
 
+from app_modules.decision_cycles.constants import DEAL_HEALTH_SCHEMA_V2
+
 from django.db import transaction
 
 
 _STAGE_NAME = 'diagnostic'
+
+
+def check_deal_health_provider(choice, provider_config):
+    """
+    Load-time guard of the deal health's provider (amendment A11, the
+    pipelines/next_steps.check_next_steps_provider pattern): `choice` must be
+    a key of DEAL_HEALTH_PROVIDER_KEYS mapped to a PROVIDER_CONFIG entry whose
+    provider supports a strict response schema. Raises ImportError so a
+    misconfiguration fails at Django startup — 'claude' is refused until
+    ClaudeProvider declares SUPPORTS_RESPONSE_SCHEMA (sub-step 5b).
+    """
+    key = DEAL_HEALTH_PROVIDER_KEYS.get(choice)
+    if key is None:
+        raise ImportError(
+            f'AI Pipelines configuration error: DEAL_HEALTH_LLM_PROVIDER '
+            f'{choice!r} is not one of {sorted(DEAL_HEALTH_PROVIDER_KEYS)}.'
+        )
+    if key not in provider_config:
+        raise ImportError(
+            f'AI Pipelines configuration error: the deal health provider '
+            f'{choice!r} maps to {key!r}, which is not in PROVIDER_CONFIG. '
+            f'Available keys: {sorted(provider_config)}.'
+        )
+    if not provider_supports_response_schema(key):
+        raise ImportError(
+            f'AI Pipelines configuration error: the deal health sends a strict '
+            f'response schema, but DEAL_HEALTH_LLM_PROVIDER={choice!r} uses '
+            f'{key!r}, whose provider does not declare SUPPORTS_RESPONSE_SCHEMA. '
+            f'Keep "openai" until that provider supports Structured Outputs.'
+        )
+    return key
+
+
+check_deal_health_provider(DEAL_HEALTH_LLM_PROVIDER, ai_config.PROVIDER_CONFIG)
 
 
 class DealHealthPipeline(BasePipeline):
@@ -62,6 +116,15 @@ class DealHealthPipeline(BasePipeline):
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.DEAL_HEALTH]
+
+    def __init__(self, provider=None):
+        super().__init__(provider=provider)
+        # The deal health's own entry (step 5) — call AND run row (the
+        # NextStepsPipeline.__init__ pattern).
+        self._provider_key = DEAL_HEALTH_PROVIDER_KEYS[DEAL_HEALTH_LLM_PROVIDER]
+        self._provider_config = ai_config.PROVIDER_CONFIG[self._provider_key]
+        if not self._provider_injected:
+            self.provider = get_provider(self._provider_key)
 
     # =========================================================================
     # MAIN ENTRY
@@ -85,7 +148,8 @@ class DealHealthPipeline(BasePipeline):
         from ..services.deal_health_evidence_builder import DealHealthEvidenceBuilder
         from ..services.deal_health_writer import DealHealthWriter
 
-        pack = DealHealthEvidenceBuilder().build(decision_cycle)
+        builder = DealHealthEvidenceBuilder()
+        pack = builder.build(decision_cycle)
         # The input bounds applied (step 3b) — traced on success AND failure.
         self._pack_truncation = pack.get('truncation') if isinstance(pack, dict) else None
         input_text = json.dumps(pack, default=str)
@@ -108,10 +172,12 @@ class DealHealthPipeline(BasePipeline):
                         system_prompt=SYSTEM_PROMPT,
                         context=context_layer,
                         request=request_layer,
+                        response_schema=DEAL_HEALTH_RESPONSE_SCHEMA,
                     )
 
                     current_step = (pack.get('cycle') or {}).get('current_step') or {}
-                    snapshot = DealHealthWriter().write(
+                    writer = DealHealthWriter()
+                    snapshot = writer.write(
                         parsed=parsed,
                         decision_cycle=decision_cycle,
                         run=run,
@@ -120,6 +186,16 @@ class DealHealthPipeline(BasePipeline):
                         declared_step=current_step.get('stage'),
                         prompt_versions=self.PROMPT_VERSIONS,
                         sources_cursor=pack.get('sources_cursor'),
+                        schema_version=DEAL_HEALTH_SCHEMA_V2,
+                    )
+                    # The stakeholder profiles — validated with the answer,
+                    # written by apply_ai_profile only; a label is resolved
+                    # server side against the prompt's own roster.
+                    profile_counts = writer.apply_profiles(
+                        parsed=parsed,
+                        decision_cycle=decision_cycle,
+                        run=run,
+                        roster=getattr(builder, 'roster', None),
                     )
 
                     self._log_sub_call(
@@ -130,6 +206,7 @@ class DealHealthPipeline(BasePipeline):
                         error=None,
                         dropped_count=0,
                         input_truncation=pack.get('truncation'),
+                        persist_counts=profile_counts,
                     )
 
                 except LLMTimeoutError as exc:

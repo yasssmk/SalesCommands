@@ -116,6 +116,7 @@ def test_b_an_unedited_ai_value_is_updated_by_a_new_ai_pass(stakeholder, ai_run)
     assert first['source'] == SignalSource.LLM_EXTRACTED
     assert first['updated_by'] is None
     assert first['updated_at']
+    assert first['run_id'] == str(ai_run.id)      # step 5: the AI run that wrote it
 
     apply_ai_profile(stakeholder, {PROFILE_FRUSTRATIONS: 'Close takes 10 days; audits are manual'}, ai_run)
 

@@ -40,7 +40,7 @@ from app_modules.ai_pipelines.constants import (
     PEOPLE_ROLE_TO_QUALIFY,
     people_role_for_prompt,
 )
-from app_modules.ai_pipelines.services.llm_people import cycle_roster
+from app_modules.ai_pipelines.services.llm_people import cycle_roster, stakeholder_for
 from app_modules.signals.constants import PeopleRole, SignalStatus
 
 from app_modules.decision_cycles.services.readiness_score_service import (
@@ -86,6 +86,9 @@ class DealHealthEvidenceBuilder:
         # llm_people (first name only, homonyms told apart — sprint « Deal
         # health v2 », step 3a), the same label wherever they appear.
         roster = self._build_roster(dc)
+        # Kept for the writer (step 5): the labels the LLM writes back are
+        # resolved against THIS roster, server side.
+        self.roster = roster
 
         previous = self._latest_snapshot(dc)
         since = self._parse_cursor(previous.sources_cursor if previous else None)
@@ -100,6 +103,7 @@ class DealHealthEvidenceBuilder:
             'account': self._build_account_context(dc),
             'readiness': ReadinessScoreService().calculate(dc),
             'people': self._build_people(dc, roster),
+            'stakeholders': self._build_stakeholders(dc, roster),
             'signals': signals,
             'activities': activities,
             'manager_notes': notes,
@@ -172,6 +176,27 @@ class DealHealthEvidenceBuilder:
     @staticmethod
     def _build_roster(dc):
         return cycle_roster(dc)
+
+    @staticmethod
+    def _build_stakeholders(dc, roster):
+        """Every person of the roster by label (step 5): department, role
+        (read on the stakeholder's current signal) and the profile already
+        known (values only — manual ones included, so the diagnostic builds
+        on them). No id."""
+        rows = []
+        for identity, label, department in roster.entries():
+            stakeholder = stakeholder_for(dc, identity)
+            signal = stakeholder.current_signal if stakeholder else None
+            rows.append({
+                'ref': label,
+                'department': department,
+                'role': people_role_for_prompt(signal.role) if signal else None,
+                'profile': {
+                    field: entry.get('value')
+                    for field, entry in ((stakeholder.profile or {}).items() if stakeholder else ())
+                },
+            })
+        return rows
 
     # =========================================================================
     # CYCLE CONTEXT
