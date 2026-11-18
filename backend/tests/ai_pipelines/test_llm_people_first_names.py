@@ -12,7 +12,7 @@ fake provider, which captures the system + user prompts sent to the LLM
       "Dupont" appears nowhere in the prompts, "Marc" does;
   (b) the same for the prep call;
   (c) two « Marc » in different departments are told apart (reference +
-      first name + department, amendment A4);
+      first name + department, amendment A4; P refs — S is the steps);
   (d) the decision cycle's UUID is no longer sent by the prep call (A15).
 """
 
@@ -184,10 +184,11 @@ def test_b_prep_call_names_the_blocker_actor_by_first_name_only(
 def test_c_deal_health_tells_two_marcs_apart(authed_api_a, cycle, two_marcs, provider):
     prompt = _run_deal_health(authed_api_a, cycle, provider)
 
-    assert 'S1 Marc (Finance & Accounting)' in prompt or 'S1 Marc (Information Technology (IT))' in prompt
+    assert 'P1 Marc (Finance & Accounting)' in prompt or 'P1 Marc (Information Technology (IT))' in prompt
     assert 'Marc (Finance & Accounting)' in prompt
     assert 'Marc (Information Technology (IT))' in prompt
-    assert 'S2 Marc' in prompt
+    assert 'P2 Marc' in prompt
+    assert 'S1 Marc' not in prompt and 'S2 Marc' not in prompt   # S = steps
     assert 'Dupont' not in prompt and 'Durand' not in prompt
 
 
@@ -198,7 +199,8 @@ def test_c_prep_call_tells_two_marcs_apart(
 
     assert 'Marc (Finance & Accounting)' in prompt
     assert 'Marc (Information Technology (IT))' in prompt
-    assert 'S1 Marc' in prompt and 'S2 Marc' in prompt
+    assert 'P1 Marc' in prompt and 'P2 Marc' in prompt
+    assert 'S1 Marc' not in prompt and 'S2 Marc' not in prompt   # S = steps
     assert 'Dupont' not in prompt and 'Durand' not in prompt
 
 

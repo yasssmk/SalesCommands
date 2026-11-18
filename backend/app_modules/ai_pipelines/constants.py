@@ -249,10 +249,11 @@ NEXT_STEPS_STEP_REF_FORMAT = 'S{order}'
 # services/llm_people.py is THE point that names a person to the LLM: its
 # first name only. Two people of one prompt sharing a first name are told
 # apart by a reference + first name + department (amendment A4, the
-# NEXT_STEPS_STEP_REF_FORMAT pattern above): "S1 Marc (Finance)",
-# "S2 Marc (IT)" — "S1 Marc" when the department is unknown. The index
+# NEXT_STEPS_STEP_REF_FORMAT pattern above): "P1 Marc (Finance)",
+# "P2 Marc (IT)" — "P1 Marc" when the department is unknown. The index
 # follows the order the people are registered in the prompt's roster.
-LLM_PERSON_REF_FORMAT = 'S{index}'
+# P (person), never S: the steps are already S{order} in the prompts.
+LLM_PERSON_REF_FORMAT = 'P{index}'
 LLM_PERSON_HOMONYM_LABEL_FORMAT = '{ref} {first_name} ({department})'
 LLM_PERSON_HOMONYM_LABEL_NO_DEPT_FORMAT = '{ref} {first_name}'
 

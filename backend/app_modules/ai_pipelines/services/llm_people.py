@@ -10,7 +10,7 @@ Every pipeline that names a person in a prompt goes through here:
     of its full_name). '' when the person has no name (department only).
   * LLMPeopleRoster -- the people of ONE prompt, so that two of them sharing a
     first name are told apart (amendment A4): a reference + first name +
-    department, "S1 Marc (Finance)" / "S2 Marc (IT)" (formats in
+    department, "P1 Marc (Finance)" / "P2 Marc (IT)" (formats in
     constants.py, the NEXT_STEPS_STEP_REF_FORMAT pattern). A person with a
     unique first name keeps the bare first name. The same person registered
     twice (a stakeholder who also raised a blocker) gets ONE label.
@@ -120,7 +120,7 @@ class LLMPeopleRoster:
             roster.add(signal)
         for blocker in blockers:
             roster.add(blocker.contact)
-        roster.label(blocker.contact)   # "Marc", or "S2 Marc (IT)"
+        roster.label(blocker.contact)   # "Marc", or "P2 Marc (IT)"
 
     Register EVERY person of the prompt before reading a label: a label
     depends on the whole roster (homonyms).
@@ -169,7 +169,7 @@ class LLMPeopleRoster:
 
     def _homonym_refs(self):
         """identity -> reference, for the people sharing a first name, numbered
-        in registration order across the roster (S1, S2, ...)."""
+        in registration order across the roster (P1, P2, ...)."""
         counts = {}
         for entry in self._people.values():
             key = _normalize_person_name(entry['first_name']) if entry['first_name'] else ''
