@@ -4,13 +4,21 @@ Request layer for the deal-health diagnostic pipeline (v1).
 
 Renders the validated signals grouped by type as evidence, then
 specifies the output JSON schema and emission rules.
+
+v1.1 (sprint « Deal health v2 », step 3b): the evidence is what is NEW since
+the previous diagnostic — + the activities (transcript / email content,
+notes, description, objective, outcome), the manager notes, the competitors
+read directly, Impact metric / human impact, People notes, Objective
+success criteria / target date / notes, TechStack usage scope and
+discontinuation (TD-314); « to replace » is no longer rendered. Same output
+schema.
 """
 
 import json
 
 __all__ = ['DIAGNOSTIC_PROMPT_VERSION', 'build_diagnostic_request']
 
-DIAGNOSTIC_PROMPT_VERSION = 'v1'
+DIAGNOSTIC_PROMPT_VERSION = 'v1.1'
 
 
 # -- Output schema documentation (embedded in the prompt) --
@@ -103,6 +111,13 @@ def build_diagnostic_request(pack):
     """
     sections = ["TASK: Produce a deal-health diagnostic for this deal.\n"]
 
+    previous = pack.get('previous_snapshot')
+    if previous:
+        sections.append(
+            "The evidence below is NEW since the previous diagnostic (in the "
+            "context above). Update that diagnostic with it.\n"
+        )
+
     # -- Signals grouped by type --
     signals = pack.get('signals', {})
     total_count = 0
@@ -116,12 +131,34 @@ def build_diagnostic_request(pack):
             sections.append(_format_signal(signal_type, sig))
         sections.append('')
 
-    if total_count == 0:
-        sections.append(
-            "NO VALIDATED SIGNALS PROVIDED.\n"
-            "Set all dimension statuses to \"missing_evidence\" and generate "
-            "discovery gaps for all 7 dimensions.\n"
-        )
+    # -- Activities (step 3b) --
+    activities = pack.get('activities') or []
+    if activities:
+        sections.append(f"--- ACTIVITIES ({len(activities)}, oldest first) ---")
+        for activity in activities:
+            sections.append(_format_activity(activity))
+        sections.append('')
+
+    # -- Manager notes (step 3b) --
+    notes = pack.get('manager_notes') or []
+    if notes:
+        sections.append(f"--- MANAGER NOTES ({len(notes)}) ---")
+        for note in notes:
+            sections.append(f"  [{note['date']}] {note['author_role']}: {note['content']}")
+        sections.append('')
+
+    if total_count == 0 and not activities and not notes:
+        if previous:
+            sections.append(
+                "NO NEW EVIDENCE since the previous diagnostic.\n"
+                "Keep its reading; do not invent new evidence.\n"
+            )
+        else:
+            sections.append(
+                "NO VALIDATED SIGNALS PROVIDED.\n"
+                "Set all dimension statuses to \"missing_evidence\" and generate "
+                "discovery gaps for all 7 dimensions.\n"
+            )
 
     sections.append(_OUTPUT_SCHEMA)
     sections.append(_EMISSION_RULES)
@@ -176,10 +213,34 @@ def _format_signal(signal_type, sig):
             lines.append(f"    Tool: {tool}")
         if sig.get('is_competitor'):
             lines.append("    Competitor: yes")
-        if sig.get('is_to_replace'):
-            lines.append("    To replace: yes")
         if sig.get('on_deal'):
             lines.append("    Evaluated on this deal: yes")
+        # TD-314 (step 3b): who uses it, and whether it is being dropped.
+        if sig.get('usage_scope'):
+            lines.append(f"    Usage scope: {sig['usage_scope']}")
+        if sig.get('usage_departments'):
+            lines.append(f"    Used by: {', '.join(sig['usage_departments'])}")
+        if sig.get('discontinued'):
+            when = f" ({sig['discontinued_date']})" if sig.get('discontinued_date') else ''
+            lines.append(f"    Discontinued: {sig['discontinued']}{when}")
+
+    if signal_type == 'competitor':
+        if sig.get('competitor_name'):
+            lines.append(f"    Competitor: {sig['competitor_name']}")
+
+    if signal_type == 'impact':
+        if sig.get('metric_text'):
+            lines.append(f"    Metric: {sig['metric_text']}")
+        if sig.get('human_impact'):
+            lines.append(f"    Human impact: {sig['human_impact']}")
+
+    if signal_type == 'objective':
+        if sig.get('success_criteria'):
+            lines.append(f"    Success criteria: {sig['success_criteria']}")
+        if sig.get('target_date'):
+            lines.append(f"    Target date: {sig['target_date']}")
+        if sig.get('notes'):
+            lines.append(f"    Notes: {sig['notes']}")
 
     if signal_type == 'blocker':
         actor = sig.get('contact_name')
@@ -205,5 +266,28 @@ def _format_signal(signal_type, sig):
             lines.append(f"    Role: {role}")
         if influence:
             lines.append(f"    Influence: {influence}")
+        if sig.get('notes'):
+            lines.append(f"    Notes: {sig['notes']}")
 
+    return '\n'.join(lines)
+
+
+# Activity type -> the label of its `transcript` content (an email's content
+# is Activity.transcript, PO decision).
+_CONTENT_LABEL = {'EMAIL': 'Email content'}
+
+
+def _format_activity(activity):
+    """Format one activity of the evidence (step 3b)."""
+    header = f"  [{activity['type']} · {activity['status']} · {activity['date']}]"
+    if activity.get('step'):
+        header += f" step: {activity['step']}"
+    lines = [header]
+    for key, label in (('objective', 'Objective'), ('description', 'Description'),
+                       ('outcome', 'Outcome'), ('notes', 'Notes')):
+        if activity.get(key):
+            lines.append(f"    {label}: {activity[key]}")
+    if activity.get('transcript'):
+        label = _CONTENT_LABEL.get(activity['type'], 'Transcript')
+        lines.append(f"    {label}:\n{activity['transcript']}")
     return '\n'.join(lines)

@@ -169,6 +169,8 @@ class TestEvidenceBuilderPackShape:
         expected_types = {
             'pain', 'objective', 'impact', 'techstack',
             'blocker', 'constraint', 'people',
+            # Sprint « Deal health v2 », step 3b: read directly.
+            'competitor',
         }
         assert set(pack['signals'].keys()) == expected_types
 

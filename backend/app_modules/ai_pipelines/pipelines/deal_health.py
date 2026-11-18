@@ -86,6 +86,8 @@ class DealHealthPipeline(BasePipeline):
         from ..services.deal_health_writer import DealHealthWriter
 
         pack = DealHealthEvidenceBuilder().build(decision_cycle)
+        # The input bounds applied (step 3b) — traced on success AND failure.
+        self._pack_truncation = pack.get('truncation') if isinstance(pack, dict) else None
         input_text = json.dumps(pack, default=str)
 
         try:
@@ -117,6 +119,7 @@ class DealHealthPipeline(BasePipeline):
                         client_id=client_id,
                         declared_step=current_step.get('stage'),
                         prompt_versions=self.PROMPT_VERSIONS,
+                        sources_cursor=pack.get('sources_cursor'),
                     )
 
                     self._log_sub_call(
@@ -126,6 +129,7 @@ class DealHealthPipeline(BasePipeline):
                         parsed=parsed,
                         error=None,
                         dropped_count=0,
+                        input_truncation=pack.get('truncation'),
                     )
 
                 except LLMTimeoutError as exc:
@@ -198,6 +202,7 @@ class DealHealthPipeline(BasePipeline):
             parsed=None,
             error=error_message,
             dropped_count=0,
+            input_truncation=self._pack_truncation,
         )
         final_run = self._finalize_run(
             run,

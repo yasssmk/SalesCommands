@@ -320,3 +320,36 @@ class PeopleEvidenceStatus(models.TextChoices):
 # (frontend api/aiPipelines/activityExtraction.js). It replaces the former
 # 409 ALREADY_EXTRACTED.
 ANALYSIS_ALREADY_DONE_CODE = 'ANALYSIS_ALREADY_DONE'
+
+
+# =============================================================================
+# DEAL HEALTH — SOURCES READ (Sprint « Deal health v2 », step 3b)
+# =============================================================================
+
+# The deal health reads every source of the cycle that CHANGED since its last
+# snapshot (DealHealthSnapshot.sources_cursor, one timestamp per type below):
+#   activities     — Activity.updated_at (transcript / email content, notes,
+#                    description, objective, outcome — analysed or not);
+#   signals        — validated signals, updated_at;
+#   manager_notes  — ManagerNote.created_at.
+# Deletions / rejections after the read are not followed (known limit).
+DEAL_HEALTH_CURSOR_ACTIVITIES = 'activities'
+DEAL_HEALTH_CURSOR_SIGNALS = 'signals'
+DEAL_HEALTH_CURSOR_MANAGER_NOTES = 'manager_notes'
+
+# Input bounds (amendment A3), in characters of the source texts. A single
+# transcript / email above DEAL_HEALTH_MAX_CHARS_PER_SOURCE is cut to it (the
+# extraction's own bound, config.MAX_TRANSCRIPT_LENGTH = 50 000). Above
+# DEAL_HEALTH_MAX_INPUT_CHARS in total, the OLDEST transcripts are cut first;
+# validated signals and notes always pass whole. Every cut is traced in the
+# run's sub_calls (input_truncation). Values to confirm by the evaluation
+# (step 7).
+DEAL_HEALTH_MAX_CHARS_PER_SOURCE = 50_000
+DEAL_HEALTH_MAX_INPUT_CHARS = 200_000
+DEAL_HEALTH_TRUNCATION_MARKER = '[... truncated: {kept} of {total} characters kept]'
+DEAL_HEALTH_TRUNCATION_PER_SOURCE = 'per_source_cap'
+DEAL_HEALTH_TRUNCATION_INPUT_BUDGET = 'input_budget'
+
+# A ManagerNote's author is named by the ROLE only, never by name.
+DEAL_HEALTH_NOTE_AUTHOR_ADMIN = 'Admin'
+DEAL_HEALTH_NOTE_AUTHOR_MANAGER = 'Manager'

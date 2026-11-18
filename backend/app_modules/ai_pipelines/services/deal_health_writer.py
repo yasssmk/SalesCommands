@@ -52,7 +52,7 @@ class DealHealthWriter:
     """
 
     def write(self, *, parsed, decision_cycle, run, user, client_id,
-              declared_step=None, prompt_versions=None):
+              declared_step=None, prompt_versions=None, sources_cursor=None):
         """
         Validate the parsed diagnostic JSON and create a DealHealthSnapshot.
 
@@ -68,6 +68,9 @@ class DealHealthWriter:
             prompt_versions: the pipeline PROMPT_VERSIONS (copied: the run
                              FK is SET_NULL). Sprint « Deal health v2 »,
                              step 2.
+            sources_cursor:  per source type, the latest change read by this
+                             diagnostic (the evidence builder's cursor, step
+                             3b) — the next run reads only what is newer.
 
         Returns:
             DealHealthSnapshot: the persisted snapshot.
@@ -85,6 +88,7 @@ class DealHealthWriter:
             pipeline_run=run,
             declared_step=declared_step,
             prompt_versions=dict(prompt_versions or {}),
+            sources_cursor=dict(sources_cursor or {}),
         )
         snapshot.save(user=user, client_id=client_id)
 

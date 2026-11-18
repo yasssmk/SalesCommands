@@ -198,7 +198,8 @@ class BasePipeline(ABC):
 
     def _log_sub_call(self, run, *, stage, sub_call_meta=None,
                       parsed=None, error=None, dropped_count=0,
-                      evidence_check=None, persist_counts=None):
+                      evidence_check=None, persist_counts=None,
+                      input_truncation=None):
         """
         Append one sub-call entry to run.sub_calls and aggregate counters.
 
@@ -217,6 +218,10 @@ class BasePipeline(ABC):
                                   (Sprint Next steps 3.4: unknown step refs,
                                   duplicates, people linked / kept as
                                   names); recorded only when given.
+            input_truncation: dict | None -- the input bounds applied to the
+                                  prompt's sources (deal health, sprint « Deal
+                                  health v2 » 3b: which transcripts were cut,
+                                  why, how much); recorded only when given.
         """
         emitted = 0
         if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
@@ -242,6 +247,8 @@ class BasePipeline(ABC):
             entry['evidence_check'] = dict(evidence_check)
         if persist_counts is not None:
             entry['persist_counts'] = dict(persist_counts)
+        if input_truncation is not None:
+            entry['input_truncation'] = dict(input_truncation)
 
         # JSONField list mutation: re-bind to force change detection.
         current = list(run.sub_calls or [])
