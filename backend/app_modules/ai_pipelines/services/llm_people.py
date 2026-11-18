@@ -20,6 +20,10 @@ text (transcripts, notes) are not masked here.
 """
 
 from ..constants import (
+    LABEL_AMBIGUOUS,
+    LABEL_NO_STAKEHOLDER,
+    LABEL_RESOLVED,
+    LABEL_UNKNOWN,
     LLM_PERSON_HOMONYM_LABEL_FORMAT,
     LLM_PERSON_HOMONYM_LABEL_NO_DEPT_FORMAT,
     LLM_PERSON_REF_FORMAT,
@@ -27,7 +31,10 @@ from ..constants import (
 from .participant_refs import _normalize_person_name
 
 
-__all__ = ['LLMPeopleRoster', 'cycle_roster', 'first_name_of', 'stakeholder_for']
+__all__ = [
+    'LLMPeopleRoster', 'cycle_roster', 'first_name_of', 'stakeholder_for',
+    'stakeholder_for_label',
+]
 
 
 def _first_word(name):
@@ -167,6 +174,11 @@ class LLMPeopleRoster:
                 rows.append((identity, label, entry['department']))
         return rows
 
+    def first_name_for(self, identity):
+        """The first name the roster gave `identity` ('' / None when none)."""
+        entry = self._people.get(identity)
+        return entry['first_name'] if entry else None
+
     def identity_of(self, label):
         """The identity behind a label the LLM wrote back (exact label,
         whitespace-trimmed), or None — the server resolves a person, never
@@ -281,3 +293,28 @@ def stakeholder_for(decision_cycle, identity):
         return None
     found = list(rows[:2])
     return found[0] if len(found) == 1 else None
+
+
+def stakeholder_for_label(decision_cycle, roster, label):
+    """
+    THE resolution of a label the LLM wrote back to ONE stakeholder
+    (sub-step 5c): (stakeholder | None, outcome).
+
+    A label names a person; the stakeholder is accepted only when it carries
+    THAT name ITSELF — its contact's first name, or its own full_name. A
+    stakeholder with no name of its own (department only), whose label came
+    from an observation affiliated to it, is AMBIGUOUS: an affiliation may
+    group several people (resolve_people_signal accepts any stakeholder of
+    the cycle), so a person's profile never lands on it.
+    """
+    identity = roster.identity_of(label)
+    if identity is None:
+        return None, LABEL_UNKNOWN
+    stakeholder = stakeholder_for(decision_cycle, identity)
+    if stakeholder is None:
+        return None, LABEL_NO_STAKEHOLDER
+    own = first_name_of(stakeholder)
+    named = roster.first_name_for(identity)
+    if not own or _normalize_person_name(own) != _normalize_person_name(named or ''):
+        return None, LABEL_AMBIGUOUS
+    return stakeholder, LABEL_RESOLVED

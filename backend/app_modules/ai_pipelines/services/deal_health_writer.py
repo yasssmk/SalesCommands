@@ -316,17 +316,26 @@ class DealHealthWriter:
     def apply_profiles(*, parsed, decision_cycle, run, roster):
         """
         Write the v2 stakeholder profiles through THE profile write point
-        (stakeholder_service.apply_ai_profile, with the run id). A label is
-        resolved server side against the prompt's roster (llm_people), never
-        by the LLM; an unknown label, or a person with no stakeholder row on
-        the cycle, is skipped and traced.
+        (stakeholder_service.apply_ai_profile, with the run id). A profile is
+        written ONLY when its label designates, without ambiguity, ONE
+        stakeholder (sub-step 5c) — resolved server side by
+        llm_people.stakeholder_for_label, never by the LLM. Skipped and
+        traced: an unknown label, a person with no stakeholder row, a
+        stakeholder that does not carry that name itself (department only),
+        and every label of a stakeholder designated by more than one label.
 
         Returns:
             dict — the counters recorded in the run's sub_calls
             (persist_counts): profiles_written, profile_fields_kept,
-            unknown_stakeholder_refs, refs_without_stakeholder.
+            unknown_stakeholder_refs, refs_without_stakeholder,
+            ambiguous_stakeholder_refs.
         """
-        from app_modules.ai_pipelines.services.llm_people import stakeholder_for
+        from app_modules.ai_pipelines.constants import (
+            LABEL_AMBIGUOUS,
+            LABEL_NO_STAKEHOLDER,
+            LABEL_UNKNOWN,
+        )
+        from app_modules.ai_pipelines.services.llm_people import stakeholder_for_label
         from app_modules.decision_cycles.constants import STAKEHOLDER_PROFILE_FIELDS
         from app_modules.decision_cycles.services.stakeholder_service import (
             apply_ai_profile,
@@ -337,19 +346,39 @@ class DealHealthWriter:
             'profile_fields_kept': 0,
             'unknown_stakeholder_refs': [],
             'refs_without_stakeholder': [],
+            'ambiguous_stakeholder_refs': [],
         }
         entries = parsed.get('stakeholders') if isinstance(parsed, dict) else None
         if not entries:
             return counts
+
+        # 1. Resolve every label first (no write yet).
+        trace = {
+            LABEL_UNKNOWN: 'unknown_stakeholder_refs',
+            LABEL_NO_STAKEHOLDER: 'refs_without_stakeholder',
+            LABEL_AMBIGUOUS: 'ambiguous_stakeholder_refs',
+        }
+        resolved = []
         for entry in entries:
             ref = entry.get('ref', '')
-            identity = roster.identity_of(ref) if roster is not None else None
-            if identity is None:
+            if roster is None:
                 counts['unknown_stakeholder_refs'].append(ref)
                 continue
-            stakeholder = stakeholder_for(decision_cycle, identity)
+            stakeholder, outcome = stakeholder_for_label(decision_cycle, roster, ref)
             if stakeholder is None:
-                counts['refs_without_stakeholder'].append(ref)
+                counts[trace[outcome]].append(ref)
+                continue
+            resolved.append((ref, stakeholder, entry))
+
+        # 2. A stakeholder designated by more than one label: ambiguous.
+        per_stakeholder = {}
+        for _ref, stakeholder, _entry in resolved:
+            per_stakeholder[stakeholder.pk] = per_stakeholder.get(stakeholder.pk, 0) + 1
+
+        # 3. Write the unambiguous ones only.
+        for ref, stakeholder, entry in resolved:
+            if per_stakeholder[stakeholder.pk] > 1:
+                counts['ambiguous_stakeholder_refs'].append(ref)
                 continue
             result = apply_ai_profile(
                 stakeholder,
@@ -359,13 +388,16 @@ class DealHealthWriter:
             if result['written']:
                 counts['profiles_written'] += 1
             counts['profile_fields_kept'] += len(result['kept'])
-        if counts['unknown_stakeholder_refs'] or counts['refs_without_stakeholder']:
+
+        skipped = sum(len(counts[key]) for key in trace.values())
+        if skipped:
             logger.warning(
-                'deal_health_profiles_unresolved_refs',
+                'deal_health_profiles_skipped_refs',
                 extra={
                     'run_id': str(run.id),
                     'unknown_count': len(counts['unknown_stakeholder_refs']),
                     'without_stakeholder_count': len(counts['refs_without_stakeholder']),
+                    'ambiguous_count': len(counts['ambiguous_stakeholder_refs']),
                     'event': 'ai_pipeline_persist',
                 },
             )

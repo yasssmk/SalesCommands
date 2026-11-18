@@ -257,6 +257,13 @@ LLM_PERSON_REF_FORMAT = 'P{index}'
 LLM_PERSON_HOMONYM_LABEL_FORMAT = '{ref} {first_name} ({department})'
 LLM_PERSON_HOMONYM_LABEL_NO_DEPT_FORMAT = '{ref} {first_name}'
 
+# The outcome of resolving a label the LLM wrote back to a stakeholder
+# (llm_people.stakeholder_for_label, sub-step 5c). Only RESOLVED is written.
+LABEL_RESOLVED = 'resolved'
+LABEL_UNKNOWN = 'unknown'                  # not a label of this prompt
+LABEL_NO_STAKEHOLDER = 'no_stakeholder'    # a person with no stakeholder row
+LABEL_AMBIGUOUS = 'ambiguous'              # the stakeholder is not THAT person
+
 
 # =============================================================================
 # NEXT STEPS PERSISTENCE -- DEDUP WITHIN ONE ANSWER (Sprint Next steps 3.4)
