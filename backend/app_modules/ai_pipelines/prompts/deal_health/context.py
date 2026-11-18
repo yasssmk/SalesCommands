@@ -84,10 +84,9 @@ def build_context_layer(pack):
             dept = ''
             if q.get('target_department'):
                 dept = f" [{q['target_department']['name']}]"
-            contact_name = ''
-            if q.get('target_contact'):
-                c = q['target_contact']
-                contact_name = f" {c.get('first_name', '')} {c.get('last_name', '')}".strip()
+            # The llm_people label set by the evidence builder (first name
+            # only; homonyms "S1 Marc (Finance)") — never a last name.
+            contact_name = q.get('name') or ''
             people_lines.append(
                 f"  - {q['role_display']}{dept}{' — ' + contact_name if contact_name else ''}"
                 f" (influence: {q.get('influence_display') or 'unknown'})"

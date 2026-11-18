@@ -166,14 +166,18 @@ def _open_activities(activity):
         )
         if a['status'] in NON_TERMINAL_STATUSES and a['id'] != activity.id
     ]
+    from app_modules.ai_pipelines.services.llm_people import first_name_of
+
+    # People are named by llm_people — THE first-names-only point (sprint
+    # « Deal health v2 », step 3a). Same rows, same order as before.
     first_names = {}
-    for activity_id, first_name in (
+    for link in (
         Activity.contacts.through.objects
         .filter(activity_id__in=[a['id'] for a in sequence])
+        .select_related('contact')
         .order_by('contact__first_name', 'contact__last_name')
-        .values_list('activity_id', 'contact__first_name')
     ):
-        first_names.setdefault(activity_id, []).append(first_name)
+        first_names.setdefault(link.activity_id, []).append(first_name_of(link.contact))
     return [
         {'title': a['title'], 'type': a['activity_type'], 'date': _iso(a),
          'step': _step_ref(a['decision_step_order']) if a['decision_step_id'] else None,

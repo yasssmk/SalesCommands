@@ -17,6 +17,7 @@ from app_modules.ai_pipelines.constants import (
     PEOPLE_ROLE_TO_QUALIFY,
     people_role_for_prompt,
 )
+from app_modules.ai_pipelines.services.llm_people import cycle_roster
 from app_modules.signals.constants import PeopleRole, SignalStatus
 
 from app_modules.decision_cycles.services.readiness_score_service import (
@@ -50,14 +51,35 @@ class DealHealthEvidenceBuilder:
             previous_snapshot.
         """
         dc = decision_cycle
+        # ONE roster for the whole prompt: every person is named by
+        # llm_people (first name only, homonyms told apart — sprint « Deal
+        # health v2 », step 3a), the same label wherever they appear.
+        roster = self._build_roster(dc)
 
         return {
             'cycle': self._build_cycle_context(dc),
             'readiness': ReadinessScoreService().calculate(dc),
-            'people': self._build_people(dc),
-            'signals': self._build_signals(dc),
+            'people': self._build_people(dc, roster),
+            'signals': self._build_signals(dc, roster),
             'previous_snapshot': self._build_previous_snapshot(dc),
         }
+
+    # =========================================================================
+    # PEOPLE NAMED TO THE LLM
+    # =========================================================================
+
+    @staticmethod
+    def _validated_people_signals(dc):
+        from app_modules.signals.models import PeopleSignal
+        return list(
+            PeopleSignal.objects.filter(
+                decision_cycle=dc, status=SignalStatus.VALIDATED,
+            ).select_related('target_contact', 'target_department')
+        )
+
+    @staticmethod
+    def _build_roster(dc):
+        return cycle_roster(dc)
 
     # =========================================================================
     # CYCLE CONTEXT
@@ -114,15 +136,22 @@ class DealHealthEvidenceBuilder:
     # PEOPLE
     # =========================================================================
 
-    @staticmethod
-    def _build_people(dc):
+    def _build_people(self, dc, roster):
         result = PeopleConsolidationService().consolidate(dc)
-        # UNKNOWN is kept (TD-279 U) and shown as a role to qualify.
+        signals = {str(s.id): s for s in self._validated_people_signals(dc)}
+        qualified = []
         for entry in result['qualified']:
+            # UNKNOWN is kept (TD-279 U) and shown as a role to qualify.
             if entry['role'] == PeopleRole.UNKNOWN:
                 entry['role_display'] = PEOPLE_ROLE_TO_QUALIFY
+            # The consolidation (shared with the UI) carries the contact's
+            # full identity: the PACK keeps only the llm_people label.
+            signal = signals.get(entry['signal_id'])
+            safe = {k: v for k, v in entry.items() if k not in ('target_contact', 'full_name')}
+            safe['name'] = roster.label(signal) if signal is not None else ''
+            qualified.append(safe)
         return {
-            'qualified': result['qualified'],
+            'qualified': qualified,
             'unqualified_count': len(result['unqualified']),
         }
 
@@ -130,7 +159,7 @@ class DealHealthEvidenceBuilder:
     # SIGNALS — grouped by type, VALIDATED only
     # =========================================================================
 
-    def _build_signals(self, dc):
+    def _build_signals(self, dc, roster):
         from app_modules.signals.models import (
             PainSignal,
             ObjectiveSignal,
@@ -183,7 +212,8 @@ class DealHealthEvidenceBuilder:
             'blocker': self._serialize_blocker_signals(
                 BlockerSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('contact')
+                ).select_related('contact'),
+                roster,
             ),
             'constraint': self._serialize_constraint_signals(
                 ConstraintSignal.objects.filter(
@@ -193,7 +223,8 @@ class DealHealthEvidenceBuilder:
             'people': self._serialize_people_signals(
                 PeopleSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_contact', 'target_department')
+                ).select_related('target_contact', 'target_department'),
+                roster,
             ),
         }
 
@@ -304,16 +335,14 @@ class DealHealthEvidenceBuilder:
         ]
 
     @staticmethod
-    def _serialize_blocker_signals(qs):
+    def _serialize_blocker_signals(qs, roster):
         return [
             {
                 'summary': s.summary,
                 'source_quote': s.source_quote or '',
                 'canonical_key': s.canonical_key,
-                'contact_name': (
-                    f"{s.contact.first_name} {s.contact.last_name}".strip()
-                    if s.contact else None
-                ),
+                # llm_people label (first name only).
+                'contact_name': roster.label(s.contact) if s.contact else None,
             }
             for s in qs
         ]
@@ -342,7 +371,7 @@ class DealHealthEvidenceBuilder:
         ]
 
     @staticmethod
-    def _serialize_people_signals(qs):
+    def _serialize_people_signals(qs, roster):
         return [
             {
                 'summary': '',
@@ -354,10 +383,8 @@ class DealHealthEvidenceBuilder:
                     s.target_department.get_name_display()
                     if s.target_department else None
                 ),
-                'target_contact': (
-                    f"{s.target_contact.first_name} {s.target_contact.last_name}".strip()
-                    if s.target_contact else None
-                ),
+                # llm_people label (first name only).
+                'target_contact': roster.label(s) if s.target_contact else None,
                 'notes': s.notes or '',
             }
             for s in qs

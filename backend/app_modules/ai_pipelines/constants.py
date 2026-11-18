@@ -243,6 +243,21 @@ NEXT_STEPS_STEP_REF_FORMAT = 'S{order}'
 
 
 # =============================================================================
+# PEOPLE NAMED TO THE LLM (Sprint « Deal health v2 », step 3a)
+# =============================================================================
+
+# services/llm_people.py is THE point that names a person to the LLM: its
+# first name only. Two people of one prompt sharing a first name are told
+# apart by a reference + first name + department (amendment A4, the
+# NEXT_STEPS_STEP_REF_FORMAT pattern above): "S1 Marc (Finance)",
+# "S2 Marc (IT)" — "S1 Marc" when the department is unknown. The index
+# follows the order the people are registered in the prompt's roster.
+LLM_PERSON_REF_FORMAT = 'S{index}'
+LLM_PERSON_HOMONYM_LABEL_FORMAT = '{ref} {first_name} ({department})'
+LLM_PERSON_HOMONYM_LABEL_NO_DEPT_FORMAT = '{ref} {first_name}'
+
+
+# =============================================================================
 # NEXT STEPS PERSISTENCE -- DEDUP WITHIN ONE ANSWER (Sprint Next steps 3.4)
 # =============================================================================
 

@@ -13,6 +13,7 @@ guide/To_IMPLEMENT/signals_journey.md §3.2.
 import logging
 
 from app_modules.ai_pipelines.constants import people_role_for_prompt
+from app_modules.ai_pipelines.services.llm_people import cycle_roster
 from app_modules.signals.constants import SignalStatus
 
 logger = logging.getLogger(__name__)
@@ -206,6 +207,9 @@ class PrepInputPackAssembler:
     # =========================================================================
 
     def _build_signals(self, dc):
+        # Every person is named by llm_people (first name only, homonyms told
+        # apart) — ONE roster for the prompt (sprint « Deal health v2 », 3a).
+        roster = cycle_roster(dc)
         from app_modules.signals.models import (
             PainSignal,
             ObjectiveSignal,
@@ -277,7 +281,8 @@ class PrepInputPackAssembler:
             'blocker': self._serialize_blocker_signals(
                 BlockerSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('contact')
+                ).select_related('contact'),
+                roster,
             ),
             # Multi-department scope (sub-step 1b): read WHO the constraint
             # concerns off the target_departments M2M, not the legacy FK. A
@@ -311,7 +316,8 @@ class PrepInputPackAssembler:
             'people': self._serialize_people_signals(
                 PeopleSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_contact', 'target_department')
+                ).select_related('target_contact', 'target_department'),
+                roster,
             ),
         }
 
@@ -353,21 +359,19 @@ class PrepInputPackAssembler:
         ]
 
     @staticmethod
-    def _serialize_blocker_signals(qs):
+    def _serialize_blocker_signals(qs, roster):
         return [
             {
                 'summary': s.summary,
                 'source_quote': s.source_quote or '',
-                'contact_name': (
-                    f"{s.contact.first_name} {s.contact.last_name}".strip()
-                    if s.contact else None
-                ),
+                # llm_people label (first name only).
+                'contact_name': roster.label(s.contact) if s.contact else None,
             }
             for s in qs
         ]
 
     @staticmethod
-    def _serialize_people_signals(qs):
+    def _serialize_people_signals(qs, roster):
         return [
             {
                 'role': people_role_for_prompt(s.role),
@@ -376,9 +380,11 @@ class PrepInputPackAssembler:
                     s.target_department.get_name_display()
                     if s.target_department else None
                 ),
-                'target_contact': (
-                    f"{s.target_contact.first_name} {s.target_contact.last_name}".strip()
-                    if s.target_contact else None
+                # llm_people label (first name only).
+                'target_contact': roster.label(s) if s.target_contact else None,
+                # Server-side match of the target contact (never rendered).
+                'target_contact_id': (
+                    str(s.target_contact_id) if s.target_contact_id else None
                 ),
             }
             for s in qs
@@ -480,11 +486,11 @@ class PrepInputPackAssembler:
             )
         ]
 
+        # Matched on the contact id (was: on the full name string, which the
+        # pack no longer carries — sprint « Deal health v2 », step 3a).
         people_role = None
         for p in signals.get('people', []):
-            if p.get('target_contact') == (
-                f"{target_contact.first_name} {target_contact.last_name}".strip()
-            ):
+            if p.get('target_contact_id') == str(target_contact.id):
                 people_role = p.get('role')
                 break
 
