@@ -82,7 +82,7 @@ def _signal_cycle_or_refuse(people_signal):
 
 @transaction.atomic
 def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_id=None,
-                          create=None):
+                          create=None, name_stakeholder=False):
     """
     Validate `people_signal` WITH its stakeholder in the signal's decision
     cycle -- exactly ONE of:
@@ -97,6 +97,11 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
     8b-1 (PO): a People VALIDATED without stakeholder (validated before its
     activity joined a DC) is affiliated only — « Link to the deal », its
     status untouched; a People already affiliated is refused.
+    5d (PO, « information completes itself when it does not contradict »):
+    with stakeholder_id + name_stakeholder, a stakeholder WITHOUT a name of
+    its own (no full_name, no contact) receives the signal's full_name. A
+    named or contact-linked stakeholder, or a signal without a name: the
+    flag is ignored (a normal business case, no error) — never overwritten.
 
     Raises:
         StandardizedValidationError (400) on every business refusal.
@@ -133,6 +138,11 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
             raise StandardizedValidationError(
                 SignalErrorMessages.PEOPLE_RESOLVE_STAKEHOLDER_INVALID
             )
+        signal_name = (people_signal.full_name or '').strip()
+        if (name_stakeholder and signal_name and not stakeholder.contact_id
+                and not (stakeholder.full_name or '').strip()):
+            stakeholder.full_name = signal_name[:255]
+            stakeholder.save(user=user)          # recomputes full_name_normalized
     elif contact_id:
         contact = Contact.objects.filter(
             pk=contact_id, client_id=client_id, account_id=people_signal.account_id,

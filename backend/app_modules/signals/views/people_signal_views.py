@@ -91,7 +91,9 @@ class PeopleSignalViewSet(BaseSignalViewSet):
         """
         POST /people/{id}/resolve/ with ONE of {stakeholder_id} |
         {contact_id} | {create: {full_name?, department_id?}} — affiliation
-        + validation in one transaction (stakeholder_service).
+        + validation in one transaction (stakeholder_service). 5d: with
+        {stakeholder_id}, an optional name_stakeholder (bool) names a
+        stakeholder without a name of its own (the guard is the service's).
         """
         from app_modules.decision_cycles.services.stakeholder_service import (
             resolve_people_signal,
@@ -103,6 +105,7 @@ class PeopleSignalViewSet(BaseSignalViewSet):
             stakeholder_id=body.get('stakeholder_id'),
             contact_id=body.get('contact_id'),
             create=body.get('create'),
+            name_stakeholder=body.get('name_stakeholder') is True,
         )
         transaction.on_commit(lambda: _invalidate_signal_caches(self.get_client_id()))
         output = self.detail_serializer_class(updated, context={'request': request})
