@@ -66,6 +66,9 @@ export const DEAL_HEALTH_RUN_LABELS = {
   NOTHING_NEW: (date) => `Nothing new since the last analysis (${date})`,
   CLOSED:
     "This decision cycle is closed: its last diagnostic stays available, no new analysis is run.",
+  // 6b — the run is for an admin, a manager or the cycle's owner.
+  NOT_ALLOWED:
+    "Only an admin, a manager or the owner of this decision cycle can run its deal health.",
 };
 
 // Step 6, A10 — the INFO codes of a run stopped by a business rule (200,
@@ -92,6 +95,33 @@ export const DEAL_HEALTH_CLOSED_OUTCOMES = ["WON", "LOST", "NOT_QUALIFIED"];
  */
 export function isDealHealthClosed(cycle) {
   return DEAL_HEALTH_CLOSED_OUTCOMES.includes(cycle?.outcome);
+}
+
+/**
+ * 6b: may the current user run a deal health on this cycle (an admin, a
+ * manager or the cycle's owner)? Served by the server on the cycle payloads
+ * (can_run_deal_health — decision_cycles/services/deal_health_access.py);
+ * the server enforces it on the run (403). A payload without the flag is
+ * left to the server's guard.
+ *
+ * @param {Object} cycle - the decision cycle ({ can_run_deal_health }).
+ * @returns {boolean}
+ */
+export function canRunDealHealth(cycle) {
+  return cycle?.can_run_deal_health !== false;
+}
+
+/**
+ * Why the run triggers of this cycle are disabled — the hover info — or null
+ * when the run is possible: a closed cycle first (A10), then the right (6b).
+ *
+ * @param {{ closed: boolean, allowed: boolean }} state
+ * @returns {string|null}
+ */
+export function dealHealthBlockedReason({ closed, allowed }) {
+  if (closed) return DEAL_HEALTH_RUN_LABELS.CLOSED;
+  if (!allowed) return DEAL_HEALTH_RUN_LABELS.NOT_ALLOWED;
+  return null;
 }
 
 /**

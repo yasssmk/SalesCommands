@@ -10,6 +10,9 @@
 //     trigger is disabled, with an info on hover; the server's CYCLE_CLOSED
 //     code (the server stays the guard) is an INFORMATION too. 6c (PO): an
 //     ON_HOLD cycle is NOT closed — the triggers stay active.
+//   * 6b, the right to run (admin, manager, the cycle's owner — served by the
+//     server as can_run_deal_health): without it, every trigger is disabled
+//     with an info on hover.
 //
 // Real components (StrategicTab + DealHealthRunButton) and the real
 // api/aiPipelines/dealHealth.js + SWR; only the HTTP client, the auth and the
@@ -68,11 +71,13 @@ const info = (code, lastAt) => ({
 });
 
 function renderPage(cycle = {}) {
-  // The DC header's rule (DCWorkspaceHeader passes isDealHealthClosed).
+  // The DC header's rules (DCWorkspaceHeader passes isDealHealthClosed and
+  // the server's can_run_deal_health, 6b).
   const closed = isDealHealthClosed(cycle);
+  const allowed = cycle.can_run_deal_health !== false;
   return render(
     <SWRConfig value={{ dedupingInterval: 0, fetcher: ([url]) => api.get(url).then((r) => r.data) }}>
-      <DealHealthRunButton cycleId={CYCLE_ID} closed={closed} />
+      <DealHealthRunButton cycleId={CYCLE_ID} closed={closed} allowed={allowed} />
       <StrategicTab cycleId={CYCLE_ID} accountId="acc-1" cycle={cycle} />
     </SWRConfig>,
   );
@@ -163,5 +168,38 @@ describe("Deal health — the run guards", () => {
     fireEvent.mouseOver(screen.getByRole("button", { name: /re-run/i }).parentElement);
     expect(await screen.findByRole("tooltip")).toHaveTextContent(DEAL_HEALTH_RUN_LABELS.CLOSED);
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("can_run_deal_health = false: every trigger disabled, the reason on hover", async () => {
+    renderPage({ can_run_deal_health: false });
+    await screen.findByText("Reading A");                 // reading is unchanged
+
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((b) => b.disabled)).toBe(true);
+
+    fireEvent.mouseOver(screen.getByRole("button", { name: /re-run/i }).parentElement);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      DEAL_HEALTH_RUN_LABELS.NOT_ALLOWED,
+    );
+    cleanup();
+
+    // The header's button too.
+    renderPage({ can_run_deal_health: false });
+    await screen.findByText("Reading A");
+    // DealHealthRunButton is rendered first (renderPage).
+    const [headerButton] = screen.getAllByRole("button");
+    expect(headerButton).toHaveTextContent(DEAL_HEALTH_RUN_LABELS.HEADER);
+    fireEvent.mouseOver(headerButton.parentElement);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      DEAL_HEALTH_RUN_LABELS.NOT_ALLOWED,
+    );
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("can_run_deal_health = true: the triggers are active", async () => {
+    renderPage({ can_run_deal_health: true });
+    await screen.findByText("Reading A");
+    expect(screen.getAllByRole("button").every((b) => !b.disabled)).toBe(true);
   });
 });

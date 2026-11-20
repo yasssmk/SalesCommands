@@ -25,6 +25,8 @@ import {
 // Project imports
 import {
   DEAL_HEALTH_RUN_LABELS,
+  canRunDealHealth,
+  dealHealthBlockedReason,
   isDealHealthClosed,
   useGetDealHealthSnapshot,
 } from "api/aiPipelines/dealHealth";
@@ -51,10 +53,14 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
   // the new snapshot arrives (the view refreshes, no reload) or the polling
   // window ends (INFO).
   const { run: handleRun, running: busy } = useDealHealthRunner(cycleId);
-  // Step 6 (A10): a closed cycle is not analysed again — the triggers are
-  // disabled with the reason on hover; its last diagnostic stays readable.
-  const closed = isDealHealthClosed(cycle);
-  const closedTip = closed ? DEAL_HEALTH_RUN_LABELS.CLOSED : "";
+  // Step 6 (A10): a closed cycle is not analysed again; 6b: only an admin, a
+  // manager or the cycle's owner runs it — the triggers are disabled with the
+  // reason on hover; the last diagnostic stays readable.
+  const blockedReason = dealHealthBlockedReason({
+    closed: isDealHealthClosed(cycle),
+    allowed: canRunDealHealth(cycle),
+  });
+  const blocked = Boolean(blockedReason);
 
   // Loading
   if (snapshotLoading || readinessLoading) {
@@ -109,7 +115,7 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             </Typography>
           </Stack>
 
-          <Tooltip title={closedTip}>
+          <Tooltip title={blockedReason ?? ""}>
             <span>
               <Button
                 variant="contained"
@@ -121,7 +127,7 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
                   )
                 }
                 onClick={handleRun}
-                disabled={busy || closed}
+                disabled={busy || blocked}
               >
                 {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RUN}
               </Button>
@@ -162,7 +168,7 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             sx={{ minHeight: 36, py: 0, textTransform: "none" }}
           />
         </Tabs>
-        <Tooltip title={closedTip}>
+        <Tooltip title={blockedReason ?? ""}>
           <span>
             <Button
               size="small"
@@ -175,7 +181,7 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
                 )
               }
               onClick={handleRun}
-              disabled={busy || closed}
+              disabled={busy || blocked}
             >
               {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RERUN}
             </Button>
@@ -200,5 +206,6 @@ StrategicTab.propTypes = {
   cycle: PropTypes.shape({
     readiness_score: PropTypes.number,
     outcome: PropTypes.string,
+    can_run_deal_health: PropTypes.bool,
   }),
 };

@@ -26,6 +26,7 @@ Response (200 OK, a run guard — A10, step 6): no LLM call, no snapshot
 
 Response (202 Accepted): the same Idempotency-Key is already running.
 Response (409 Conflict): the same Idempotency-Key with another payload.
+Response (403 Forbidden): not an admin, a manager nor the cycle's owner (6b).
 
 Response (502 Bad Gateway):
     {
@@ -46,7 +47,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.apps_shared_methods import BaseAPIView
-from core.error_messages import AIPipelineErrorMessages
+from core.error_messages import AIPipelineErrorMessages, CoreErrorMessages
+from core.exceptions import StandardizedPermissionDenied
 from core.idempotency import (
     compute_payload_hash,
     complete_op,
@@ -67,6 +69,7 @@ from permissions.mixins import ScopedPermission
 from app_modules.decision_cycles.serializers import (
     DealHealthSnapshotDetailSerializer,
 )
+from app_modules.decision_cycles.services.deal_health_access import can_run_deal_health
 
 from ..constants import (
     AIPipelineStatus,
@@ -104,6 +107,8 @@ class DealHealthRunView(BaseAPIView):
         (core/idempotency.py _check_redis_available).
       Layer 2 — the run guards (A10, DealHealthPipeline): 200 + an INFO
         code, no LLM call, no snapshot.
+    6b: who may run it — decision_cycles/services/deal_health_access.py
+      can_run_deal_health (admin, manager, the cycle's owner), else 403.
     """
 
     authentication_classes = [CustomJWTAuthentication]
@@ -123,6 +128,13 @@ class DealHealthRunView(BaseAPIView):
         client_id = validated['client_id']
         client_id_str = str(client_id)
         log_ctx = {'decision_cycle_id': str(decision_cycle.id)}
+
+        # 6b (PO decision n° 6): only an admin, a manager or the cycle's owner
+        # runs a deal health — the central predicate, the standard refusal
+        # (403), before any idempotency record or LLM call.
+        if not can_run_deal_health(request, decision_cycle):
+            logger.info('deal_health_run.permission_denied', extra=log_ctx)
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
 
         # -----------------------------------------------------------------
         # Layer 1 — Redis idempotency (activity_extraction_view.py:208-242)
