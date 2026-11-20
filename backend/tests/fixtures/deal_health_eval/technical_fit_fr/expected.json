@@ -1,0 +1,29 @@
+{
+  "real_step": "TECHNICAL_FIT",
+  "missing_info": {
+    "level": "BUSINESS",
+    "any_of": [
+      "security",
+      "hosting",
+      "data residency",
+      "sécurité"
+    ]
+  },
+  "hidden_objection": {
+    "description": "The IT team is already overloaded by an ongoing migration.",
+    "any_of": [
+      "overloaded",
+      "workload",
+      "bandwidth",
+      "capacity",
+      "stretched",
+      "migration"
+    ]
+  },
+  "decision_maker": "Mathilde",
+  "planted_last_names": [
+    "Marchand",
+    "Vasseur",
+    "Benali"
+  ]
+}

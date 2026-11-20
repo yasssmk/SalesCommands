@@ -1,0 +1,96 @@
+{
+  "case": "closing_budget_fail",
+  "fictitious": true,
+  "description": "Declared CLOSING with the contract drafted, but the budget is frozen: BANT fails on budget.",
+  "account": {
+    "company_name": "Ostrander Labs",
+    "company_size": "200-500"
+  },
+  "cycle": {
+    "name": "Ostrander Labs — sample tracking",
+    "description": "Sample tracking for the research lab.",
+    "estimated_value": 36000
+  },
+  "declared_step": "CLOSING",
+  "people": [
+    {
+      "first_name": "Elena",
+      "last_name": "Duquesne",
+      "job_title": "Lab manager",
+      "role": "CHAMPION"
+    },
+    {
+      "first_name": "Helena",
+      "last_name": "Sorensen",
+      "job_title": "Chief financial officer",
+      "role": "ECONOMIC_BUYER"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "CALL",
+      "status": "COMPLETED",
+      "days_ago": 90,
+      "title": "Discovery",
+      "outcome_notes": "Samples are lost between labs."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 70,
+      "title": "Technical review",
+      "outcome_notes": "Requirements met."
+    },
+    {
+      "stage": "SOLUTION_VALIDATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 50,
+      "title": "Validation",
+      "outcome_notes": "Elena confirmed we are the preferred option."
+    },
+    {
+      "stage": "BUSINESS_CASE",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 20,
+      "title": "Business case",
+      "outcome_notes": "Contract drafted with procurement."
+    },
+    {
+      "stage": "CLOSING",
+      "type": "CALL",
+      "status": "COMPLETED",
+      "days_ago": 3,
+      "title": "Contract call",
+      "transcript": "Elena: Procurement is fine with the contract. But Helena froze all new spending until the next fiscal year after the last quarter results; I do not know when she will lift it."
+    },
+    {
+      "stage": "CLOSING",
+      "type": "MEETING",
+      "status": "PLANNED",
+      "days_ago": -4,
+      "title": "Signature meeting"
+    }
+  ],
+  "signals": {
+    "blocker": [
+      {
+        "summary": "All new spending frozen by the CFO until the next fiscal year"
+      }
+    ]
+  },
+  "manager_notes": [
+    "The contract is ready, the money is not."
+  ],
+  "products": [
+    {
+      "name": "SampleTrack",
+      "description": "Sample tracking across labs",
+      "value_proposition": "No lost samples between labs",
+      "quantity": 1
+    }
+  ]
+}

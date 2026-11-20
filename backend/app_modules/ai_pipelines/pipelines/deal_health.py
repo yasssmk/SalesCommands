@@ -34,7 +34,8 @@ None):
                                                  -> NO_NEW_SOURCES.
 
 Sprint « Deal health v2 », step 5: the « manager / coach » diagnostic v2
-(prompts system_v2 / context_v2 / diagnostic_v2), sent with its strict
+(prompts system_v2 / context_v2 / diagnostic_v2 — v2.1 since step 7: the tone
+of a strategic report, system_v2_1 / diagnostic_v2_1), sent with its strict
 Structured Outputs schema to the deal health's OWN PROVIDER_CONFIG entry
 (config.DEAL_HEALTH_LLM_PROVIDER -> DEAL_HEALTH_PROVIDER_KEYS, the
 NextStepsPipeline pattern). The writer validates and persists the v2
@@ -58,12 +59,12 @@ from ..prompts.deal_health.context_v2 import (
     CONTEXT_VERSION,
     build_context_layer,
 )
-from ..prompts.deal_health.diagnostic_v2 import (
+from ..prompts.deal_health.diagnostic_v2_1 import (
     DEAL_HEALTH_RESPONSE_SCHEMA,
     DIAGNOSTIC_PROMPT_VERSION,
     build_diagnostic_request,
 )
-from ..prompts.deal_health.system_v2 import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+from ..prompts.deal_health.system_v2_1 import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
 from ..providers import (
     get_provider,
     provider_credentials_present,

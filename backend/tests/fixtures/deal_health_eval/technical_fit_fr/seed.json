@@ -1,0 +1,90 @@
+{
+  "case": "technical_fit_fr",
+  "fictitious": true,
+  "description": "TECHNICAL_FIT, the evidence in French (the output stays in English).",
+  "account": {
+    "company_name": "Transports Velmont",
+    "company_size": "200-500"
+  },
+  "cycle": {
+    "name": "Transports Velmont — optimisation des tournées",
+    "description": "Optimisation des tournées de la flotte régionale (quarante camions)."
+  },
+  "declared_step": "TECHNICAL_FIT",
+  "people": [
+    {
+      "first_name": "Julien",
+      "last_name": "Marchand",
+      "job_title": "Responsable exploitation",
+      "role": "CHAMPION"
+    },
+    {
+      "first_name": "Mathilde",
+      "last_name": "Vasseur",
+      "job_title": "Directrice administrative et financière",
+      "role": "ECONOMIC_BUYER"
+    },
+    {
+      "first_name": "Karim",
+      "last_name": "Benali",
+      "job_title": "DSI",
+      "role": "INFLUENCER"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 20,
+      "title": "Découverte",
+      "transcript": "Julien : On perd environ six heures par semaine à refaire les plannings quand une commande change. Mathilde valide le budget, elle a réservé une enveloppe pour l’an prochain. Julien : Si l’outil réduit les kilomètres à vide, la direction suivra."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 5,
+      "title": "Atelier technique",
+      "transcript": "Karim : Il faut que ça se connecte à notre TMS. Honnêtement, mon équipe est déjà débordée avec la migration en cours, je ne veux pas d’un projet qui nous rajoute de la charge. Julien : On doit encore vérifier les exigences de sécurité et d’hébergement des données."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "MEETING",
+      "status": "PLANNED",
+      "days_ago": -10,
+      "title": "Revue d’intégration avec la DSI"
+    }
+  ],
+  "signals": {
+    "pain": [
+      {
+        "summary": "Plannings refaits à la main à chaque changement de commande",
+        "what": "OPS",
+        "dimension": "TIME",
+        "source_quote": "On perd environ six heures par semaine à refaire les plannings"
+      }
+    ],
+    "impact": [
+      {
+        "summary": "Six heures par semaine de replanification",
+        "what": "OPS",
+        "dimension": "TIME",
+        "scope_level": "DEPARTMENT",
+        "metric_text": "six heures par semaine",
+        "source_quote": "On perd environ six heures par semaine"
+      }
+    ]
+  },
+  "manager_notes": [
+    "Le DSI est la clé : sans son accord sur l’intégration, rien ne passera."
+  ],
+  "products": [
+    {
+      "name": "Planificateur de tournées",
+      "description": "Optimisation des tournées et replanification automatique",
+      "value_proposition": "Moins de kilomètres à vide",
+      "quantity": 40
+    }
+  ]
+}

@@ -142,6 +142,18 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },
+    # Step 7 -- the CHALLENGER of the deal health's model, DECLARED for the
+    # evaluation only (evals/deal_health: model Y of the format x model
+    # matrix) -- never wired: DEAL_HEALTH_LLM_PROVIDER picks openai or claude.
+    # gpt-5.4: the full model of the 5.4 line (gpt-5.4-mini is declared
+    # above), quality tier; same options as openai_deal_health.
+    'openai_deal_health_challenger': {
+        'provider':          'openai',
+        'model':             'gpt-5.4',
+        'reasoning_effort':  'medium',
+        'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
+        'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
+    },
     # Sub-step 5b -- the deal health on Claude (DEAL_HEALTH_LLM_PROVIDER below
     # = 'claude', ANTHROPIC_API_KEY set): a quality-tier model (configurable:
     # AI_PIPELINES_DEAL_HEALTH_CLAUDE_MODEL), Structured Outputs through

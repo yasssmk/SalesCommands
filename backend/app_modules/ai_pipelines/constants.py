@@ -459,3 +459,18 @@ DEAL_HEALTH_BANT_LETTERS = ('budget', 'authority', 'need', 'timeline')
 DEAL_HEALTH_BANT_STATUSES = ('validated', 'not_validated', 'unknown')
 DEAL_HEALTH_MISSING_INFO_LEVELS = ('BUSINESS', 'DEPARTMENT', 'CONTACT')
 DEAL_HEALTH_TOP_ARGUMENTS_MAX = 3
+
+# Step 7 (prompt v2.1, PO decision of 18/11) — the guard rails stay INTERNAL:
+# none of these phrases may appear in the text of a diagnostic (the prompt's
+# examples included). Lower-case, matched as substrings of the lower-cased
+# text. Read by the v2.1 prompt test and by evals/deal_health/scoring.py.
+DEAL_HEALTH_GUARDRAIL_LEAK_PHRASES = (
+    'do not invent', "don't invent", 'never invent', 'must not invent',
+    'without inventing', 'not invent',
+    'unsupported capabilit', 'unverified capabilit', 'capability not supported',
+    'hard rule', 'evidence-only', 'as instructed', 'per the rules',
+    'i cannot', 'as an ai',
+)
+# Classical rhetoric labels — never in a diagnostic (sales vocabulary only:
+# needs and urgency, credibility, fit and value). Whole words, any case.
+DEAL_HEALTH_RHETORIC_LABELS = ('ethos', 'pathos', 'logos')
