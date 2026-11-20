@@ -93,7 +93,7 @@ class DealHealthEvidenceBuilder:
 
         previous = self._latest_snapshot(dc)
         # Kept for the run guard (step 6, A10): with a previous snapshot and
-        # no new evidence (has_new_evidence), the run stops before the LLM.
+        # nothing new (has_new_sources), the run stops before the LLM.
         self.previous_snapshot = previous
         since = self._parse_cursor(previous.sources_cursor if previous else None)
 
@@ -132,27 +132,75 @@ class DealHealthEvidenceBuilder:
     # SOURCES CURSOR (step 3b)
     # =========================================================================
 
-    def has_new_evidence(self, pack):
-        """Step 6 (A10): does the pack carry ANY source changed since the
-        cursor — an activity, a validated signal (any type) or a manager
-        note — or (6c) a static context other than the previous snapshot's
-        (its fingerprint)? The same reads as the prompt's, so the guard and
-        the LLM input never disagree."""
-        signals = pack.get('signals') or {}
-        previous = getattr(self, 'previous_snapshot', None)
-        previous_fingerprint = (
-            (previous.sources_cursor or {}).get(DEAL_HEALTH_CURSOR_STATIC_CONTEXT)
-            if previous is not None else None
+    # -- THE filters of the new sources (one source of truth, step 8) --------
+    # The prompt's reads (_build_signals / _build_activities /
+    # _build_manager_notes) and the « is there anything new? » test
+    # (has_new_sources: the run guard A10 and the read-time freshness) use
+    # these querysets, never a copy of their filters.
+
+    @staticmethod
+    def signal_models():
+        """The validated signal types the deal health reads."""
+        from app_modules.signals.models import (
+            BlockerSignal, CompetitorSignal, ConstraintSignal, ImpactSignal,
+            ObjectiveSignal, PainSignal, PeopleSignal, TechStackSignal,
         )
-        current_fingerprint = (pack.get('sources_cursor') or {}).get(
-            DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
+        return (PainSignal, ObjectiveSignal, ImpactSignal, TechStackSignal,
+                BlockerSignal, ConstraintSignal, PeopleSignal, CompetitorSignal)
+
+    @staticmethod
+    def fresh_signals_qs(model, dc, since=None):
+        """The validated signals of `model` changed after `since` (all when None)."""
+        qs = model.objects.filter(decision_cycle=dc, status=SignalStatus.VALIDATED)
+        return qs.filter(updated_at__gt=since) if since is not None else qs
+
+    @classmethod
+    def fresh_activities_qs(cls, dc, since=None):
+        """The activities of the cycle carrying content (_ACTIVITY_TEXT_FIELDS)
+        changed after `since` (all when None)."""
+        from django.db.models import Q
+        from app_modules.activities.models import Activity
+
+        has_content = Q()
+        for field in cls._ACTIVITY_TEXT_FIELDS:
+            has_content |= (Q(**{f'{field}__isnull': False}) & ~Q(**{field: ''}))
+        qs = (
+            Activity.objects
+            .filter(decision_cycle=dc, client_id=dc.client_id)
+            .filter(has_content)
         )
-        return bool(
-            pack.get('activities')
-            or pack.get('manager_notes')
-            or any(rows for rows in signals.values())
-            or current_fingerprint != previous_fingerprint
+        return qs.filter(updated_at__gt=since) if since is not None else qs
+
+    @staticmethod
+    def fresh_manager_notes_qs(dc, since=None):
+        """The ManagerNotes of the cycle created after `since` (all when None)."""
+        from app_modules.decision_cycles.models import ManagerNote
+        qs = ManagerNote.objects.filter(decision_cycle=dc, client_id=dc.client_id)
+        return qs.filter(created_at__gt=since) if since is not None else qs
+
+    def has_new_sources(self, dc, previous):
+        """
+        Step 6 (A10) / step 8: anything new since `previous` (the last
+        snapshot)? A source changed since its cursor — an activity, a
+        validated signal (any type), a manager note — or (6c) another
+        static-context fingerprint. EXISTENCE queries on the prompt's own
+        querysets (no pack, no transcript read): bounded, whatever the
+        number of sources.
+        """
+        cursor = (previous.sources_cursor or {}) if previous is not None else {}
+        since = self._parse_cursor(cursor)
+        if self.fresh_activities_qs(dc, since.get(DEAL_HEALTH_CURSOR_ACTIVITIES)).exists():
+            return True
+        if self.fresh_manager_notes_qs(dc, since.get(DEAL_HEALTH_CURSOR_MANAGER_NOTES)).exists():
+            return True
+        signals_since = since.get(DEAL_HEALTH_CURSOR_SIGNALS)
+        if any(self.fresh_signals_qs(model, dc, signals_since).exists()
+               for model in self.signal_models()):
+            return True
+        fingerprint = self.static_fingerprint(
+            self._build_cycle_context(dc), self._build_account_context(dc),
         )
+        return fingerprint != cursor.get(DEAL_HEALTH_CURSOR_STATIC_CONTEXT)
 
     @staticmethod
     def static_fingerprint(cycle_context, account_context):
@@ -371,8 +419,7 @@ class DealHealthEvidenceBuilder:
         validated = SignalStatus.VALIDATED
 
         def fresh(model):
-            qs = model.objects.filter(decision_cycle=dc, status=validated)
-            return qs.filter(updated_at__gt=since) if since is not None else qs
+            return self.fresh_signals_qs(model, dc, since)
 
         # Sub-step 4 recabling: the competitor facet is sourced from the
         # detached CompetitorSignal (DC-scoped + VALIDATED), not from
@@ -418,8 +465,7 @@ class DealHealthEvidenceBuilder:
         }
         latest = self._latest(
             fresh(model).aggregate(latest=Max('updated_at'))['latest']
-            for model in (PainSignal, ObjectiveSignal, ImpactSignal, TechStackSignal,
-                          BlockerSignal, ConstraintSignal, PeopleSignal, CompetitorSignal)
+            for model in self.signal_models()
         )
         return rows, latest
 
@@ -628,21 +674,7 @@ class DealHealthEvidenceBuilder:
     def _build_activities(self, dc, since=None):
         """The activities of the cycle changed after `since` (all when None)
         and carrying content, OLDEST first; and the latest updated_at read."""
-        from django.db.models import Q
-        from app_modules.activities.models import Activity
-
-        has_content = Q()
-        for field in self._ACTIVITY_TEXT_FIELDS:
-            has_content |= (Q(**{f'{field}__isnull': False}) & ~Q(**{field: ''}))
-        qs = (
-            Activity.objects
-            .filter(decision_cycle=dc, client_id=dc.client_id)
-            .filter(has_content)
-            .select_related('decision_step')
-        )
-        if since is not None:
-            qs = qs.filter(updated_at__gt=since)
-
+        qs = self.fresh_activities_qs(dc, since).select_related('decision_step')
         activities = sorted(qs, key=self._activity_moment)
         rows = [
             {
@@ -682,16 +714,11 @@ class DealHealthEvidenceBuilder:
     def _build_manager_notes(dc, since=None):
         """The ManagerNotes created after `since` (all when None), oldest
         first, the author named by the ROLE only; and the latest created_at."""
-        from app_modules.decision_cycles.models import ManagerNote
-
         qs = (
-            ManagerNote.objects
-            .filter(decision_cycle=dc, client_id=dc.client_id)
+            DealHealthEvidenceBuilder.fresh_manager_notes_qs(dc, since)
             .select_related('created_by__role')
             .order_by('created_at', 'id')
         )
-        if since is not None:
-            qs = qs.filter(created_at__gt=since)
         notes = list(qs)
         rows = [
             {

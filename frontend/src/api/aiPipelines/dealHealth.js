@@ -71,6 +71,37 @@ export const DEAL_HEALTH_RUN_LABELS = {
     "Only an admin, a manager or the owner of this decision cycle can run its deal health.",
 };
 
+// Step 8 (PO decision of 20/11) — the freshness warning
+// (components/display/DealHealthFreshnessAlert.jsx): « new information to
+// analyse », never « stale ».
+export const DEAL_HEALTH_FRESHNESS_LABELS = {
+  NEW_INFO: (date) => `New information to analyse since ${date}`,
+  NO_ANALYSIS_YET: "No deal health yet",
+};
+
+// The reasons served by the backend (ai_pipelines/constants.py
+// DEAL_HEALTH_FRESHNESS_*).
+export const DEAL_HEALTH_FRESHNESS_REASONS = {
+  NO_ANALYSIS_YET: "NO_ANALYSIS_YET",
+  NEW_SOURCES: "NEW_SOURCES",
+  STEP_CHANGED: "STEP_CHANGED",
+};
+
+/**
+ * The text of the freshness warning, or null when nothing is to be shown
+ * (not applicable, or nothing new).
+ *
+ * @param {Object|null} freshness - { applies, has_new_info, last_analysis_at, reasons }.
+ * @returns {string|null}
+ */
+export function dealHealthFreshnessMessage(freshness) {
+  if (!freshness?.applies || !freshness?.has_new_info) return null;
+  if (!freshness.last_analysis_at) return DEAL_HEALTH_FRESHNESS_LABELS.NO_ANALYSIS_YET;
+  return DEAL_HEALTH_FRESHNESS_LABELS.NEW_INFO(
+    format(parseISO(freshness.last_analysis_at), LAST_ANALYSIS_DATE_FORMAT),
+  );
+}
+
 // Step 6, A10 — the INFO codes of a run stopped by a business rule (200,
 // no LLM call, no snapshot): backend ai_pipelines/constants.py.
 export const DEAL_HEALTH_INFO_CODES = {
@@ -297,11 +328,11 @@ export async function getLatestSnapshotId(cycleId) {
  *
  * GET /decision_cycles/{cycleId}/health-snapshots/latest/
  *
- * Backend returns { success: true, data: <snapshot|null> }.
+ * Backend returns { success: true, data: <snapshot|null>, freshness }.
  * When no snapshot exists, data is null — this is NOT an error.
  *
  * @param {string} cycleId - UUID of the DecisionCycle.
- * @returns {Object} { snapshot, snapshotLoading, snapshotError, mutateSnapshot }
+ * @returns {Object} { snapshot, freshness, snapshotLoading, snapshotError, mutateSnapshot }
  */
 export function useGetDealHealthSnapshot(cycleId) {
   const { tenantId } = useAuth();
@@ -320,6 +351,9 @@ export function useGetDealHealthSnapshot(cycleId) {
   return useMemo(
     () => ({
       snapshot: data?.data ?? null,
+      // Step 8: computed at read time, served beside the snapshot (even
+      // without one) — { applies, has_new_info, last_analysis_at, reasons }.
+      freshness: data?.freshness ?? null,
       snapshotLoading: isLoading,
       snapshotError: error,
       mutateSnapshot: mutate,

@@ -369,6 +369,20 @@ DEAL_HEALTH_CYCLE_CLOSED_CODE = 'DEAL_HEALTH_CYCLE_CLOSED'
 # click (a source added, a retry after an LLM error).
 DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS = 10
 
+# =============================================================================
+# DEAL HEALTH — FRESHNESS (Sprint « Deal health v2 », step 8, A13)
+# =============================================================================
+# Why there is new information to analyse (services/deal_health_freshness.py
+# reasons[]) — never « stale »:
+#   NO_ANALYSIS_YET — the cycle has no snapshot;
+#   NEW_SOURCES     — a source changed since the cursor, or another static
+#                     context fingerprint (has_new_sources);
+#   STEP_CHANGED    — the current declared step differs from the last
+#                     snapshot's declared_step (ignored when NULL — v1).
+DEAL_HEALTH_FRESHNESS_NO_ANALYSIS_YET = 'NO_ANALYSIS_YET'
+DEAL_HEALTH_FRESHNESS_NEW_SOURCES = 'NEW_SOURCES'
+DEAL_HEALTH_FRESHNESS_STEP_CHANGED = 'STEP_CHANGED'
+
 # Input bounds (amendment A3), in characters of the source texts. A single
 # transcript / email above DEAL_HEALTH_MAX_CHARS_PER_SOURCE is cut to it (the
 # extraction's own bound, config.MAX_TRANSCRIPT_LENGTH = 50 000). Above

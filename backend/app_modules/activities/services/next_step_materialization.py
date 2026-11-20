@@ -169,8 +169,16 @@ def decision_steps_state(cycle):
         StepStatusDerivationService,
     )
 
+    from django.db.models import Prefetch
+    from app_modules.activities.models import Activity
+
+    # The derivation reads the activities' status / dates, never their
+    # transcript — deferred (step 8: the read-time freshness reads no
+    # transcript; no caller reads it off these rows).
     steps = sorted(
-        DecisionStep.objects.filter(cycle=cycle).prefetch_related('activities'),
+        DecisionStep.objects.filter(cycle=cycle).prefetch_related(
+            Prefetch('activities', queryset=Activity.objects.defer('transcript')),
+        ),
         key=lambda s: s.order,
     )
     if not steps:

@@ -107,6 +107,11 @@ TERMINAL_OUTCOMES = frozenset([CycleOutcome.WON, CycleOutcome.LOST, CycleOutcome
 # guard). The terminal outcomes above, one list.
 DEAL_HEALTH_CLOSED_OUTCOMES = TERMINAL_OUTCOMES
 
+# Step 8 (PO decision n° 7): the deal health's freshness applies from this
+# declared step on (the order of PIPELINE_STEPS_ORDER) — before it, too
+# little is known for a diagnostic to be expected.
+DEAL_HEALTH_MIN_STEP = PipelineStep.TECHNICAL_FIT
+
 
 # ==========================================================================
 # STEP STATUS (SIMPLIFIED)

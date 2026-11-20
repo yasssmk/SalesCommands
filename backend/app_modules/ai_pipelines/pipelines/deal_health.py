@@ -180,7 +180,7 @@ class DealHealthPipeline(BasePipeline):
         # A10 — nothing changed since the last snapshot (sources and static
         # context): no LLM call.
         previous = getattr(builder, 'previous_snapshot', None)
-        if previous is not None and not builder.has_new_evidence(pack):
+        if previous is not None and not builder.has_new_sources(decision_cycle, previous):
             return self._blocked(DEAL_HEALTH_NO_NEW_SOURCES_CODE, previous)
 
         # The input bounds applied (step 3b) — traced on success AND failure.

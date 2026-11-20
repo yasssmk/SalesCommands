@@ -32,6 +32,7 @@ import {
 } from "api/aiPipelines/dealHealth";
 import { useGetReadiness } from "api/accounts/decisionCycles";
 import useDealHealthRunner from "hooks/useDealHealthRunner";
+import DealHealthFreshnessAlert from "components/display/DealHealthFreshnessAlert";
 
 // Section imports
 import ReadinessScoreGauge from "./ReadinessScoreGauge";
@@ -41,7 +42,7 @@ import ThemesView from "./ThemesView";
 // ==============================|| STRATEGIC TAB ||============================== //
 
 export default function StrategicTab({ cycleId, accountId, cycle }) {
-  const { snapshot, snapshotLoading, snapshotError } =
+  const { snapshot, freshness, snapshotLoading, snapshotError } =
     useGetDealHealthSnapshot(cycleId);
   const { readiness, readinessLoading } = useGetReadiness(cycleId);
 
@@ -53,6 +54,8 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
   // the new snapshot arrives (the view refreshes, no reload) or the polling
   // window ends (INFO).
   const { run: handleRun, running: busy } = useDealHealthRunner(cycleId);
+  // Step 8: « new information to analyse » next to Run / Re-run — the
+  // server's freshness (read with the latest snapshot), a warning, never red.
   // Step 6 (A10): a closed cycle is not analysed again; 6b: only an admin, a
   // manager or the cycle's owner runs it — the triggers are disabled with the
   // reason on hover; the last diagnostic stays readable.
@@ -115,24 +118,29 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             </Typography>
           </Stack>
 
-          <Tooltip title={blockedReason ?? ""}>
-            <span>
-              <Button
-                variant="contained"
-                startIcon={
-                  busy ? (
-                    <CircularProgress size={14} />
-                  ) : (
-                    <ExperimentOutlined style={{ fontSize: 14 }} />
-                  )
-                }
-                onClick={handleRun}
-                disabled={busy || blocked}
-              >
-                {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RUN}
-              </Button>
-            </span>
-          </Tooltip>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <DealHealthFreshnessAlert freshness={freshness} />
+            <Tooltip title={blockedReason ?? ""}>
+              <span>
+                <Button
+                  variant="contained"
+                  startIcon={
+                    busy ? (
+                      <CircularProgress size={14} />
+                    ) : (
+                      <ExperimentOutlined style={{ fontSize: 14 }} />
+                    )
+                  }
+                  onClick={handleRun}
+                  disabled={busy || blocked}
+                >
+                  {busy
+                    ? DEAL_HEALTH_RUN_LABELS.RUNNING
+                    : DEAL_HEALTH_RUN_LABELS.RUN}
+                </Button>
+              </span>
+            </Tooltip>
+          </Stack>
         </Stack>
       </Box>
     );
@@ -168,25 +176,30 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             sx={{ minHeight: 36, py: 0, textTransform: "none" }}
           />
         </Tabs>
-        <Tooltip title={blockedReason ?? ""}>
-          <span>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={
-                busy ? (
-                  <CircularProgress size={12} />
-                ) : (
-                  <ExperimentOutlined style={{ fontSize: 12 }} />
-                )
-              }
-              onClick={handleRun}
-              disabled={busy || blocked}
-            >
-              {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RERUN}
-            </Button>
-          </span>
-        </Tooltip>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <DealHealthFreshnessAlert freshness={freshness} />
+          <Tooltip title={blockedReason ?? ""}>
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={
+                  busy ? (
+                    <CircularProgress size={12} />
+                  ) : (
+                    <ExperimentOutlined style={{ fontSize: 12 }} />
+                  )
+                }
+                onClick={handleRun}
+                disabled={busy || blocked}
+              >
+                {busy
+                  ? DEAL_HEALTH_RUN_LABELS.RUNNING
+                  : DEAL_HEALTH_RUN_LABELS.RERUN}
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
       </Stack>
 
       {/* Sub-tab content */}
