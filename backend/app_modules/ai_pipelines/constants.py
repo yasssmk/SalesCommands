@@ -24,7 +24,6 @@ columns surface the values directly in the Django admin and DRF
 serializers without manual choice mapping.
 """
 
-from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -406,13 +405,8 @@ DEAL_HEALTH_NOTE_AUTHOR_MANAGER = 'Manager'
 # DEAL HEALTH v2 — MODEL, PROVIDER, FORMAT (Sprint « Deal health v2 », step 5)
 # =============================================================================
 
-# THE switch of the deal health's LLM provider (amendment A11): 'openai' or
-# 'claude', each mapped to its own PROVIDER_CONFIG entry (config.py). Only
-# the deal health reads it in this sprint. Set by the environment variable
-# DEAL_HEALTH_LLM_PROVIDER (settings.py, default 'openai'); checked at load
-# (pipelines/deal_health.check_deal_health_provider): 'claude' needs
-# ANTHROPIC_API_KEY (sub-step 5b).
-DEAL_HEALTH_LLM_PROVIDER = getattr(settings, 'DEAL_HEALTH_LLM_PROVIDER', 'openai')
+# The deal health's provider choice -> its PROVIDER_CONFIG entry. THE switch
+# itself is config.DEAL_HEALTH_LLM_PROVIDER (amendment A11).
 DEAL_HEALTH_PROVIDER_KEYS = {
     'openai': 'openai_deal_health',
     'claude': 'claude_deal_health',

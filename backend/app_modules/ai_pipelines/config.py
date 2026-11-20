@@ -132,7 +132,7 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'max_tokens':        8192,
     },
     # Sprint « Deal health v2 », step 5 -- the deal health's own entries
-    # (constants.DEAL_HEALTH_LLM_PROVIDER picks one), the NEXT_STEPS pattern
+    # (DEAL_HEALTH_LLM_PROVIDER below picks one), the NEXT_STEPS pattern
     # above: Structured Outputs, a model chosen for quality (configurable:
     # AI_PIPELINES_DEAL_HEALTH_MODEL; final choice at step 7), its own timeout.
     'openai_deal_health': {
@@ -142,8 +142,8 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },
-    # Sub-step 5b -- the deal health on Claude (DEAL_HEALTH_LLM_PROVIDER =
-    # 'claude', ANTHROPIC_API_KEY set): a quality-tier model (configurable:
+    # Sub-step 5b -- the deal health on Claude (DEAL_HEALTH_LLM_PROVIDER below
+    # = 'claude', ANTHROPIC_API_KEY set): a quality-tier model (configurable:
     # AI_PIPELINES_DEAL_HEALTH_CLAUDE_MODEL), Structured Outputs through
     # output_config.format, the effort sent as output_config.effort, no
     # temperature; the same timeout and token budget as openai_deal_health.
@@ -155,6 +155,16 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },
 })
+
+
+# THE switch of the deal health's LLM provider (amendment A11 — ONE value in
+# the module's configuration, never an environment variable: the .env holds
+# the secrets only). 'openai' -> PROVIDER_CONFIG['openai_deal_health'],
+# 'claude' -> PROVIDER_CONFIG['claude_deal_health'] (constants
+# DEAL_HEALTH_PROVIDER_KEYS). 'claude' needs ANTHROPIC_API_KEY, checked at load
+# (pipelines/deal_health.check_deal_health_provider). Only the deal health
+# reads it. See README.md.
+DEAL_HEALTH_LLM_PROVIDER = 'openai'
 
 
 # =============================================================================

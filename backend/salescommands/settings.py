@@ -504,12 +504,6 @@ OPENAI_API_KEY= {
      "OPENAI_API_KEY": env('OPENAI_API_KEY')
 } 
 
-# Sprint « Deal health v2 », 5b — THE switch of the deal health's LLM
-# provider: 'openai' (default) or 'claude' (needs ANTHROPIC_API_KEY, read by
-# the anthropic SDK from the environment). Only the deal health reads it.
-# See backend/.env.example and app_modules/ai_pipelines/README.md.
-DEAL_HEALTH_LLM_PROVIDER = env('DEAL_HEALTH_LLM_PROVIDER', default='openai')
-
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/

@@ -1,7 +1,9 @@
 # backend/tests/ai_pipelines/test_deal_health_claude.py
 """
 Sprint « Deal health v2 », sub-step 5b — the deal health on Claude, ready to
-use: a key + ONE value (DEAL_HEALTH_LLM_PROVIDER = 'claude').
+use: a key (ANTHROPIC_API_KEY, a secret of the .env) + ONE value of the
+module's configuration (ai_pipelines/config.py DEAL_HEALTH_LLM_PROVIDER =
+'claude' — amendment A11: a setting, never an environment variable).
 
 Real path: POST /module-ai-pipelines/deal-health/run/ through the real view,
 the real DealHealthPipeline and the REAL ClaudeProvider + anthropic SDK 1.x;
@@ -16,7 +18,8 @@ client (no network call, no real key).
       the provider guard;
   (c) Anthropic errors (timeout, rate limit, a non-conforming answer, a
       refusal) → the same run statuses and the same response as OpenAI;
-  (d) 'openai' stays the default (the existing tests stay green).
+  (d) the choice lives in ai_pipelines/config.py only: 'openai' by default,
+      an environment variable has NO effect.
 """
 
 import copy
@@ -106,12 +109,12 @@ class _Anthropic:
 
 @pytest.fixture
 def anthropic_api(monkeypatch):
-    """DEAL_HEALTH_LLM_PROVIDER = 'claude' + a dummy key; the real
-    ClaudeProvider builds the real SDK client, on a simulated transport."""
+    """config.DEAL_HEALTH_LLM_PROVIDER = 'claude' (the module's value) + a
+    dummy key; the real ClaudeProvider builds the real SDK client, on a
+    simulated transport."""
     import anthropic
     import httpx2
     from app_modules.ai_pipelines import providers as providers_pkg
-    from app_modules.ai_pipelines.pipelines import deal_health as deal_health_module
     from app_modules.ai_pipelines.providers import claude_provider
 
     fake = _Anthropic()
@@ -126,7 +129,7 @@ def anthropic_api(monkeypatch):
 
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-ant-test-not-a-real-key')
     monkeypatch.setattr(claude_provider, 'Anthropic', client_on_mock_transport)
-    monkeypatch.setattr(deal_health_module, 'DEAL_HEALTH_LLM_PROVIDER', 'claude')
+    monkeypatch.setattr(ai_config, 'DEAL_HEALTH_LLM_PROVIDER', 'claude')
     monkeypatch.setattr(providers_pkg, '_provider_instances', {})
     return fake
 
@@ -227,13 +230,26 @@ def test_c_anthropic_errors_map_to_the_openai_statuses(
 
 
 # =============================================================================
-# (d) — 'openai' stays the default, the setting is the one switch
+# (d) — the choice lives in the module's configuration, never in the env
 # =============================================================================
 
-def test_d_openai_stays_the_default_and_the_setting_is_the_switch():
+def test_d_the_choice_is_read_in_the_module_config_and_the_env_has_no_effect(monkeypatch):
+    import importlib
     from django.conf import settings
     from app_modules.ai_pipelines import constants
 
-    assert settings.DEAL_HEALTH_LLM_PROVIDER == 'openai'
-    assert constants.DEAL_HEALTH_LLM_PROVIDER == settings.DEAL_HEALTH_LLM_PROVIDER
+    # ONE source: ai_pipelines/config.py — no setting, no constant beside it.
+    assert ai_config.DEAL_HEALTH_LLM_PROVIDER == 'openai'
+    assert not hasattr(settings, 'DEAL_HEALTH_LLM_PROVIDER')
+    assert not hasattr(constants, 'DEAL_HEALTH_LLM_PROVIDER')
     assert DEAL_HEALTH_PROVIDER_KEYS['openai'] == 'openai_deal_health'
+
+    # An environment variable of that name changes nothing, even when the
+    # configuration is (re)loaded with it set.
+    monkeypatch.setenv('DEAL_HEALTH_LLM_PROVIDER', 'claude')
+    try:
+        importlib.reload(ai_config)
+        assert ai_config.DEAL_HEALTH_LLM_PROVIDER == 'openai'
+    finally:
+        monkeypatch.delenv('DEAL_HEALTH_LLM_PROVIDER')
+        importlib.reload(ai_config)

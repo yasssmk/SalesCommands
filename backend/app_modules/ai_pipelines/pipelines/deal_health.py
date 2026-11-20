@@ -36,7 +36,7 @@ None):
 Sprint « Deal health v2 », step 5: the « manager / coach » diagnostic v2
 (prompts system_v2 / context_v2 / diagnostic_v2), sent with its strict
 Structured Outputs schema to the deal health's OWN PROVIDER_CONFIG entry
-(constants.DEAL_HEALTH_LLM_PROVIDER -> DEAL_HEALTH_PROVIDER_KEYS, the
+(config.DEAL_HEALTH_LLM_PROVIDER -> DEAL_HEALTH_PROVIDER_KEYS, the
 NextStepsPipeline pattern). The writer validates and persists the v2
 snapshot, then the stakeholder profiles go through
 stakeholder_service.apply_ai_profile only. The deal's step is never changed.
@@ -49,7 +49,6 @@ from ..constants import (
     AIPipelineStatus,
     AIPipelineType,
     DEAL_HEALTH_CYCLE_CLOSED_CODE,
-    DEAL_HEALTH_LLM_PROVIDER,
     DEAL_HEALTH_NO_NEW_SOURCES_CODE,
     DEAL_HEALTH_PROVIDER_KEYS,
     PIPELINE_TEMPERATURES,
@@ -124,13 +123,13 @@ def check_deal_health_provider(choice, provider_config):
         raise ImportError(
             f'AI Pipelines configuration error: DEAL_HEALTH_LLM_PROVIDER={choice!r} '
             f'needs the {env_key} environment variable, which is not set. Set '
-            f'{env_key} (backend/.env.example), or set DEAL_HEALTH_LLM_PROVIDER '
-            f'back to "openai".'
+            f'{env_key} in backend/salescommands/.env (backend/.env.example), or set '
+            f'DEAL_HEALTH_LLM_PROVIDER back to "openai" in ai_pipelines/config.py.'
         )
     return key
 
 
-check_deal_health_provider(DEAL_HEALTH_LLM_PROVIDER, ai_config.PROVIDER_CONFIG)
+check_deal_health_provider(ai_config.DEAL_HEALTH_LLM_PROVIDER, ai_config.PROVIDER_CONFIG)
 
 
 class DealHealthPipeline(BasePipeline):
@@ -152,7 +151,7 @@ class DealHealthPipeline(BasePipeline):
         super().__init__(provider=provider)
         # The deal health's own entry (step 5) — call AND run row (the
         # NextStepsPipeline.__init__ pattern).
-        self._provider_key = DEAL_HEALTH_PROVIDER_KEYS[DEAL_HEALTH_LLM_PROVIDER]
+        self._provider_key = DEAL_HEALTH_PROVIDER_KEYS[ai_config.DEAL_HEALTH_LLM_PROVIDER]
         self._provider_config = ai_config.PROVIDER_CONFIG[self._provider_key]
         if not self._provider_injected:
             self.provider = get_provider(self._provider_key)
