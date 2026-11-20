@@ -344,6 +344,25 @@ DEAL_HEALTH_CURSOR_ACTIVITIES = 'activities'
 DEAL_HEALTH_CURSOR_SIGNALS = 'signals'
 DEAL_HEALTH_CURSOR_MANAGER_NOTES = 'manager_notes'
 
+# =============================================================================
+# DEAL HEALTH — RUN GUARDS (Sprint « Deal health v2 », step 6, amendment A10)
+# =============================================================================
+# Business rules of a run — answered 200 with one of these codes (the front
+# shows an INFORMATION, never an error; the ANALYSIS_ALREADY_DONE_CODE
+# pattern), no LLM call, no snapshot:
+#   NO_NEW_SOURCES — the sources cursor above finds nothing changed since the
+#                    last snapshot (there is one);
+#   CYCLE_CLOSED   — the decision cycle has an outcome (closed or on hold):
+#                    its last diagnostic stays readable.
+DEAL_HEALTH_NO_NEW_SOURCES_CODE = 'DEAL_HEALTH_NO_NEW_SOURCES'
+DEAL_HEALTH_CYCLE_CLOSED_CODE = 'DEAL_HEALTH_CYCLE_CLOSED'
+# Layer 1 (Redis, TD-50 — core/idempotency.py): a SUCCESS is replayed for the
+# standard IDEMPOTENCY_REDIS_TTL_SECONDS (its new snapshot changes the front's
+# key anyway). An INFO answer or a failure is kept only long enough to absorb
+# a double click / a second tab, so the rule is evaluated again on the next
+# click (a source added, a retry after an LLM error).
+DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS = 10
+
 # Input bounds (amendment A3), in characters of the source texts. A single
 # transcript / email above DEAL_HEALTH_MAX_CHARS_PER_SOURCE is cut to it (the
 # extraction's own bound, config.MAX_TRANSCRIPT_LENGTH = 50 000). Above

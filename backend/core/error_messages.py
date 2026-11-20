@@ -722,6 +722,15 @@ class AIPipelineErrorMessages:
         "This activity has already been analysed: its signals and next steps "
         "are on the page. An analysis is never re-run."
     )
+    # Deal health run guards (sprint « Deal health v2 », step 6, A10) —
+    # business rules, answered 200 with an INFO code, no LLM call.
+    DEAL_HEALTH_NO_NEW_SOURCES = _(
+        "Nothing new since the last analysis ({date})."
+    )
+    DEAL_HEALTH_CYCLE_CLOSED = _(
+        "This decision cycle is closed: its last diagnostic stays available, "
+        "no new analysis is run."
+    )
 
     # -----------------------------------------------------------------
     # Provider errors

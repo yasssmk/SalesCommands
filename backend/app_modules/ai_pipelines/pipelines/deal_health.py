@@ -17,9 +17,19 @@ Error handling mirrors NextStepsPipeline (single stage = no PARTIAL):
 
 Return contract:
     .run(*, decision_cycle, user, client_id) -> {
-        'run':      AIPipelineRun (finalised),
+        'run':      AIPipelineRun (finalised) | None,
         'snapshot': DealHealthSnapshot | None,
+        'blocked':  None | DEAL_HEALTH_CYCLE_CLOSED_CODE
+                         | DEAL_HEALTH_NO_NEW_SOURCES_CODE,
+        'last_snapshot': DealHealthSnapshot | None,   # when blocked
     }
+
+Run guards (sprint « Deal health v2 », step 6, amendment A10) — business
+rules, checked BEFORE any run row or LLM call (blocked: run and snapshot are
+None):
+    the cycle has an outcome (closed / on hold)  -> CYCLE_CLOSED;
+    a previous snapshot exists and the sources cursor (step 3b) finds no
+    changed source                               -> NO_NEW_SOURCES.
 
 Sprint « Deal health v2 », step 5: the « manager / coach » diagnostic v2
 (prompts system_v2 / context_v2 / diagnostic_v2), sent with its strict
@@ -36,7 +46,9 @@ from .. import config as ai_config
 from ..constants import (
     AIPipelineStatus,
     AIPipelineType,
+    DEAL_HEALTH_CYCLE_CLOSED_CODE,
     DEAL_HEALTH_LLM_PROVIDER,
+    DEAL_HEALTH_NO_NEW_SOURCES_CODE,
     DEAL_HEALTH_PROVIDER_KEYS,
     PIPELINE_TEMPERATURES,
 )
@@ -60,7 +72,7 @@ from ..providers.base import (
 )
 from .base import BasePipeline
 
-from app_modules.decision_cycles.constants import DEAL_HEALTH_SCHEMA_V2
+from app_modules.decision_cycles.constants import CycleOutcome, DEAL_HEALTH_SCHEMA_V2
 
 from django.db import transaction
 
@@ -148,8 +160,23 @@ class DealHealthPipeline(BasePipeline):
         from ..services.deal_health_evidence_builder import DealHealthEvidenceBuilder
         from ..services.deal_health_writer import DealHealthWriter
 
+        # A10 — a closed cycle (any outcome of CycleOutcome: won, lost, not
+        # qualified, on hold) is not analysed again; its last diagnostic
+        # stays readable.
+        if getattr(decision_cycle, 'outcome', None) in CycleOutcome.values:
+            return self._blocked(
+                DEAL_HEALTH_CYCLE_CLOSED_CODE,
+                DealHealthEvidenceBuilder.latest_snapshot(decision_cycle),
+            )
+
         builder = DealHealthEvidenceBuilder()
         pack = builder.build(decision_cycle)
+
+        # A10 — nothing changed since the last snapshot: no LLM call.
+        previous = getattr(builder, 'previous_snapshot', None)
+        if previous is not None and not builder.has_new_evidence(pack):
+            return self._blocked(DEAL_HEALTH_NO_NEW_SOURCES_CODE, previous)
+
         # The input bounds applied (step 3b) — traced on success AND failure.
         self._pack_truncation = pack.get('truncation') if isinstance(pack, dict) else None
         input_text = json.dumps(pack, default=str)
@@ -265,6 +292,12 @@ class DealHealthPipeline(BasePipeline):
     # =========================================================================
     # HELPERS
     # =========================================================================
+
+    @staticmethod
+    def _blocked(code, last_snapshot):
+        """A run stopped by a business rule (A10): nothing written."""
+        return {'run': None, 'snapshot': None, 'blocked': code,
+                'last_snapshot': last_snapshot}
 
     def _finalize_failure(self, run, *, status, error_label, exc):
         """

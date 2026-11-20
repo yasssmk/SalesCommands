@@ -91,6 +91,9 @@ class DealHealthEvidenceBuilder:
         self.roster = roster
 
         previous = self._latest_snapshot(dc)
+        # Kept for the run guard (step 6, A10): with a previous snapshot and
+        # no new evidence (has_new_evidence), the run stops before the LLM.
+        self.previous_snapshot = previous
         since = self._parse_cursor(previous.sources_cursor if previous else None)
 
         signals, signals_at = self._build_signals(dc, roster, since.get(DEAL_HEALTH_CURSOR_SIGNALS))
@@ -119,6 +122,24 @@ class DealHealthEvidenceBuilder:
     # =========================================================================
     # SOURCES CURSOR (step 3b)
     # =========================================================================
+
+    @staticmethod
+    def has_new_evidence(pack):
+        """Step 6 (A10): does the pack carry ANY source changed since the
+        cursor — an activity, a validated signal (any type) or a manager
+        note? The same reads as the prompt's, so the guard and the LLM input
+        never disagree."""
+        signals = pack.get('signals') or {}
+        return bool(
+            pack.get('activities')
+            or pack.get('manager_notes')
+            or any(rows for rows in signals.values())
+        )
+
+    @staticmethod
+    def latest_snapshot(dc):
+        """The cycle's latest snapshot (or None) — public for the run guard."""
+        return DealHealthEvidenceBuilder._latest_snapshot(dc)
 
     @staticmethod
     def _latest_snapshot(dc):

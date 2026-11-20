@@ -9,8 +9,10 @@ prompts (tests/ai_pipelines/conftest.py).
 
   (a) a ManagerNote, an email (Activity.transcript), an Impact metric and a
       Competitor without tech row all reach the prompt;
-  (b) a second run with nothing new: only the previous diagnostic and the
-      static context, no former evidence;
+  (b) a second run with ONE new source: only it, the previous diagnostic and
+      the static context, no former evidence (step 6, A10: a run with
+      nothing new at all is no longer sent to the LLM —
+      test_deal_health_guards.py);
   (c) a ManagerNote added after the snapshot: only it;
   (d) the notes of a NON-analysed activity changed after the snapshot
       (through the real notes endpoint): present;
@@ -19,7 +21,8 @@ prompts (tests/ai_pipelines/conftest.py).
   (f) the snapshot carries a non-empty sources_cursor;
   (g) « to replace » no longer appears in the deal-health prompt;
   (h) the static context (account, deal description, origin campaign,
-      products' description and value proposition) is sent at EVERY run.
+      products' description and value proposition) is sent at EVERY run
+      (the 2nd one with a single new source — A10).
 """
 
 import json
@@ -189,9 +192,12 @@ def test_a_every_source_reaches_the_prompt(authed_api_a, rich_cycle, provider):
 # =============================================================================
 
 def test_b_a_second_run_without_news_sends_no_former_evidence(
-    authed_api_a, rich_cycle, provider,
+    authed_api_a, rich_cycle, user_a, provider,
 ):
     _run(authed_api_a, rich_cycle, provider)
+    # Step 6 (A10): a run with nothing new at all never reaches the LLM —
+    # one new source, so the former evidence can be checked absent.
+    _manager_note(rich_cycle, user_a, 'Only news: the kickoff moved by a week.')
     prompt, _ = _run(authed_api_a, rich_cycle, provider)
 
     # The validated signals were re-sent at every run before step 3b.
@@ -313,7 +319,9 @@ def test_h_the_static_context_is_sent_at_every_run(
     cycle.account.company_size = '200-500'
     cycle.account.save(user=user_a, client_id=cycle.client_id)
 
-    for _ in range(2):                     # first run, then a run with no news
+    for attempt in range(2):     # first run, then a run with a single new source
+        if attempt:              # step 6 (A10): a run with nothing new is not sent
+            _manager_note(cycle, user_a, 'Only news: the kickoff moved by a week.')
         prompt, _snapshot = _run(authed_api_a, cycle, provider)
         assert 'Annual enterprise subscription' in prompt      # product description
         assert 'Close the books in two days' in prompt         # value proposition

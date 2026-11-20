@@ -138,12 +138,14 @@ async function postWithRetry(url, body, config) {
  *
  * Convention R4 (T4 strategy = deterministic). Same curated content → same key
  * → backend replays cached response within Redis TTL without re-running.
+ * Exported for the deal health (sha256(cycleId::latestSnapshotId), step 6 of
+ * sprint « Deal health v2 » — api/aiPipelines/dealHealth.js).
  *
  * @param {string} activityId
  * @param {string} trimmedTranscript - The curated transcript (post-modal edit).
  * @returns {Promise<string>} 64-char hex SHA-256 string.
  */
-async function computeIdempotencyKey(activityId, trimmedTranscript) {
+export async function computeIdempotencyKey(activityId, trimmedTranscript) {
   const text = `${activityId}::${trimmedTranscript}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(text);

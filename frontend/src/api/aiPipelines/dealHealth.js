@@ -23,10 +23,12 @@
 
 import useSWR from "swr";
 import { useMemo } from "react";
+import { format, parseISO } from "date-fns";
 import { useAuth } from "hooks/useAuth";
 import { api } from "utils/axiosClient";
 import { tenantKey, revalidateMultiple } from "api/_swr";
 import { isValidUUID } from "utils/validators";
+import { computeIdempotencyKey } from "api/aiPipelines/activityExtraction";
 
 // ==============================|| ENDPOINTS ||============================== //
 
@@ -59,7 +61,46 @@ export const DEAL_HEALTH_RUN_LABELS = {
   // End of the polling window, no snapshot yet: information, not an error.
   STILL_RUNNING:
     "The analysis is taking longer than usual. The diagnostic will appear on this deal once it is ready — no need to run it again.",
+  TOOLTIP: "Run deal health diagnostic",
+  // Step 6, A10 — business rules, shown as INFORMATION (never red).
+  NOTHING_NEW: (date) => `Nothing new since the last analysis (${date})`,
+  CLOSED:
+    "This decision cycle is closed: its last diagnostic stays available, no new analysis is run.",
 };
+
+// Step 6, A10 — the INFO codes of a run stopped by a business rule (200,
+// no LLM call, no snapshot): backend ai_pipelines/constants.py.
+export const DEAL_HEALTH_INFO_CODES = {
+  NO_NEW_SOURCES: "DEAL_HEALTH_NO_NEW_SOURCES",
+  CYCLE_CLOSED: "DEAL_HEALTH_CYCLE_CLOSED",
+};
+
+// The date of the last analysis in the INFO (DCWorkspaceHeader.jsx:331).
+const LAST_ANALYSIS_DATE_FORMAT = "MMM d, yyyy";
+
+/**
+ * A closed decision cycle (any outcome: won, lost, not qualified, on hold —
+ * DCWorkspaceHeader's isLocked) is not analysed again (A10).
+ *
+ * @param {Object} cycle - the decision cycle ({ outcome }).
+ * @returns {boolean}
+ */
+export function isDealHealthClosed(cycle) {
+  return Boolean(cycle?.outcome);
+}
+
+/**
+ * The INFO message of a run guard answer (A10).
+ *
+ * @param {string} code - one of DEAL_HEALTH_INFO_CODES.
+ * @param {string|null} lastAnalysisAt - ISO datetime of the last snapshot.
+ * @returns {string}
+ */
+export function dealHealthInfoMessage(code, lastAnalysisAt) {
+  if (code === DEAL_HEALTH_INFO_CODES.CYCLE_CLOSED) return DEAL_HEALTH_RUN_LABELS.CLOSED;
+  const date = lastAnalysisAt ? format(parseISO(lastAnalysisAt), LAST_ANALYSIS_DATE_FORMAT) : "";
+  return DEAL_HEALTH_RUN_LABELS.NOTHING_NEW(date);
+}
 
 // ==============================|| MUTATION ||============================== //
 
@@ -74,10 +115,22 @@ export const DEAL_HEALTH_RUN_LABELS = {
  * that a server-side snapshot created before a client timeout is picked up
  * when the Strategic tab mounts.
  *
+ * Step 6 (Redis, TD-50): a DETERMINISTIC Idempotency-Key, sha256(cycleId ::
+ * latestSnapshotId) (the activityExtraction.js R4 pattern) — a double click
+ * or a second tab on the same state is ONE operation server side: 202 while
+ * it runs (→ the caller polls, as after a client timeout), its answer
+ * replayed once done.
+ * A10: a run stopped by a business rule answers 200 + an INFO code
+ * (DEAL_HEALTH_INFO_CODES) → { success: true, code, data }.
+ *
  * @param {string} cycleId - UUID of the DecisionCycle.
- * @returns {Promise<Object>} { success, data } or { success, error, status, response }
+ * @param {Object} [opts]
+ * @param {string|null} [opts.previousSnapshotId] - the latest snapshot's id
+ *   (or null) — the state the key is computed on.
+ * @returns {Promise<Object>} { success, data, code? } or
+ *   { success, error, status, isTimeout, alreadyRunning, response }
  */
-export async function runDealHealth(cycleId) {
+export async function runDealHealth(cycleId, { previousSnapshotId = null } = {}) {
   if (!cycleId || !isValidUUID(cycleId)) {
     return {
       success: false,
@@ -88,19 +141,38 @@ export async function runDealHealth(cycleId) {
 
   const snapshotPrefix = `/decision_cycles/${cycleId}/health-snapshots/`;
 
+  const requestConfig = { profile: "bulk" };
+  try {
+    requestConfig.headers = {
+      "Idempotency-Key": await computeIdempotencyKey(cycleId, previousSnapshotId ?? ""),
+    };
+  } catch {
+    // crypto.subtle unavailable: the client's auto-injected random key
+    // (utils/axiosClient.js) — no dedup, the run still goes on.
+  }
+
   let result;
   try {
     result = await api.post(
       endpoints.dealHealthRun,
       { decision_cycle_id: cycleId },
-      { profile: "bulk" },
+      requestConfig,
     );
   } finally {
     revalidateMultiple([snapshotPrefix]);
   }
 
+  // The same operation is already running (another click / tab).
+  if (result.data?.__is202) {
+    return { success: false, alreadyRunning: true, status: 202 };
+  }
+
   if (result.success) {
-    const data = result.data?.data || result.data;
+    const body = result.data || {};
+    if (Object.values(DEAL_HEALTH_INFO_CODES).includes(body.code)) {
+      return { success: true, code: body.code, data: body.data || null };
+    }
+    const data = body.data || result.data;
     return { success: true, data };
   }
 

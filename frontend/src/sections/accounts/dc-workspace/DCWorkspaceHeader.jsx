@@ -384,7 +384,7 @@ export default function useDCWorkspaceHeaderProps({
         </>
       )}
 
-      <DealHealthRunButton cycleId={cycle?.id} disabled={isLocked} />
+      <DealHealthRunButton cycleId={cycle?.id} closed={isLocked} />
 
       <Tooltip title="Edit cycle">
         <span>

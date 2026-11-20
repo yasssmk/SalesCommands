@@ -12,6 +12,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
@@ -24,6 +25,7 @@ import {
 // Project imports
 import {
   DEAL_HEALTH_RUN_LABELS,
+  isDealHealthClosed,
   useGetDealHealthSnapshot,
 } from "api/aiPipelines/dealHealth";
 import { useGetReadiness } from "api/accounts/decisionCycles";
@@ -49,6 +51,10 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
   // the new snapshot arrives (the view refreshes, no reload) or the polling
   // window ends (INFO).
   const { run: handleRun, running: busy } = useDealHealthRunner(cycleId);
+  // Step 6 (A10): a closed cycle is not analysed again — the triggers are
+  // disabled with the reason on hover; its last diagnostic stays readable.
+  const closed = isDealHealthClosed(cycle);
+  const closedTip = closed ? DEAL_HEALTH_RUN_LABELS.CLOSED : "";
 
   // Loading
   if (snapshotLoading || readinessLoading) {
@@ -103,20 +109,24 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             </Typography>
           </Stack>
 
-          <Button
-            variant="contained"
-            startIcon={
-              busy ? (
-                <CircularProgress size={14} />
-              ) : (
-                <ExperimentOutlined style={{ fontSize: 14 }} />
-              )
-            }
-            onClick={handleRun}
-            disabled={busy}
-          >
-            {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RUN}
-          </Button>
+          <Tooltip title={closedTip}>
+            <span>
+              <Button
+                variant="contained"
+                startIcon={
+                  busy ? (
+                    <CircularProgress size={14} />
+                  ) : (
+                    <ExperimentOutlined style={{ fontSize: 14 }} />
+                  )
+                }
+                onClick={handleRun}
+                disabled={busy || closed}
+              >
+                {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RUN}
+              </Button>
+            </span>
+          </Tooltip>
         </Stack>
       </Box>
     );
@@ -152,21 +162,25 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             sx={{ minHeight: 36, py: 0, textTransform: "none" }}
           />
         </Tabs>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={
-            busy ? (
-              <CircularProgress size={12} />
-            ) : (
-              <ExperimentOutlined style={{ fontSize: 12 }} />
-            )
-          }
-          onClick={handleRun}
-          disabled={busy}
-        >
-          {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RERUN}
-        </Button>
+        <Tooltip title={closedTip}>
+          <span>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={
+                busy ? (
+                  <CircularProgress size={12} />
+                ) : (
+                  <ExperimentOutlined style={{ fontSize: 12 }} />
+                )
+              }
+              onClick={handleRun}
+              disabled={busy || closed}
+            >
+              {busy ? DEAL_HEALTH_RUN_LABELS.RUNNING : DEAL_HEALTH_RUN_LABELS.RERUN}
+            </Button>
+          </span>
+        </Tooltip>
       </Stack>
 
       {/* Sub-tab content */}
@@ -185,5 +199,6 @@ StrategicTab.propTypes = {
   accountId: PropTypes.string.isRequired,
   cycle: PropTypes.shape({
     readiness_score: PropTypes.number,
+    outcome: PropTypes.string,
   }),
 };

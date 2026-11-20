@@ -14,14 +14,18 @@
 //   * end of the polling window, no snapshot → INFO (never red), the
 //     triggers are active again;
 //   * a genuine error → the standard error snackbar.
-// The run state is local to the browser tab (lost on reload); the server-side
-// guard against concurrent runs is step 6 (Redis).
+// The run state is local to the browser tab (lost on reload); across tabs /
+// users, step 6 guards server side: a deterministic Idempotency-Key (Redis)
+// — the same operation already running → poll for its snapshot, as after a
+// client timeout. A run stopped by a business rule (A10: nothing new since
+// the last analysis, a closed cycle) → INFO, never red.
 
 import { useCallback, useSyncExternalStore } from "react";
 
 import {
   DEAL_HEALTH_POLL_CONFIG,
   DEAL_HEALTH_RUN_LABELS,
+  dealHealthInfoMessage,
   getLatestSnapshotId,
   pollForNewSnapshot,
   runDealHealth,
@@ -66,13 +70,18 @@ export default function useDealHealthRunner(cycleId) {
     try {
       // Baseline: a poll tells a newly written snapshot from this one.
       const previousSnapshotId = await getLatestSnapshotId(cycleId);
-      const result = await runDealHealth(cycleId);
+      const result = await runDealHealth(cycleId, { previousSnapshotId });
+      if (result.success && result.code) {
+        displayInfoSnackbar(dealHealthInfoMessage(result.code, result.data?.last_analysis_at));
+        return;
+      }
       if (result.success) {
         displaySuccessSnackbar(DEAL_HEALTH_RUN_LABELS.DONE);
         return;
       }
-      // The client timed out; the server keeps working: not an error.
-      if (result.isTimeout || result.status === 408) {
+      // The client timed out, or the same run is already going on (another
+      // tab): the server keeps working — not an error.
+      if (result.isTimeout || result.status === 408 || result.alreadyRunning) {
         const polled = await pollForNewSnapshot(
           cycleId,
           previousSnapshotId,
