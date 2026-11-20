@@ -24,6 +24,7 @@ columns surface the values directly in the Django admin and DRF
 serializers without manual choice mapping.
 """
 
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -407,14 +408,38 @@ DEAL_HEALTH_NOTE_AUTHOR_MANAGER = 'Manager'
 
 # THE switch of the deal health's LLM provider (amendment A11): 'openai' or
 # 'claude', each mapped to its own PROVIDER_CONFIG entry (config.py). Only
-# the deal health reads it in this sprint. 'claude' is REFUSED at load
-# (pipelines/deal_health.check_deal_health_provider) until ClaudeProvider
-# declares SUPPORTS_RESPONSE_SCHEMA (sub-step 5b).
-DEAL_HEALTH_LLM_PROVIDER = 'openai'
+# the deal health reads it in this sprint. Set by the environment variable
+# DEAL_HEALTH_LLM_PROVIDER (settings.py, default 'openai'); checked at load
+# (pipelines/deal_health.check_deal_health_provider): 'claude' needs
+# ANTHROPIC_API_KEY (sub-step 5b).
+DEAL_HEALTH_LLM_PROVIDER = getattr(settings, 'DEAL_HEALTH_LLM_PROVIDER', 'openai')
 DEAL_HEALTH_PROVIDER_KEYS = {
     'openai': 'openai_deal_health',
     'claude': 'claude_deal_health',
 }
+
+# =============================================================================
+# CLAUDE PROVIDER (sub-step 5b — anthropic SDK 1.x)
+# =============================================================================
+# Sampling parameters: the 1.x SDK no longer takes `temperature`, and Claude
+# Opus 4.7 and later models answer 400 when a request carries one. It is sent
+# (as extra_body, API version 2023-06-01) ONLY to the models of this list,
+# which still accept it — never to any other model.
+CLAUDE_MODELS_ACCEPTING_TEMPERATURE = frozenset({
+    'claude-haiku-4-5', 'claude-haiku-4-5-20251001',
+    'claude-sonnet-4-6', 'claude-opus-4-6',
+})
+# Server-side refusal fallback (beta): when a safety classifier declines the
+# request, the API re-runs it on a fallback model inside the same call
+# ('default' routes by refusal category). Sent for these models only; if the
+# whole chain declines (stop_reason 'refusal'), the provider raises
+# LLMProviderError, as for an OpenAI refusal.
+CLAUDE_REFUSAL_FALLBACK_BETA = 'server-side-fallback-2026-07-01'
+CLAUDE_REFUSAL_FALLBACKS = 'default'
+CLAUDE_REFUSAL_FALLBACK_MODELS = frozenset({
+    'claude-fable-5-2', 'claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5',
+    'claude-sonnet-5-5',
+})
 
 # The deal health's own call timeout (amendment A6), in seconds. The view is
 # synchronous; the front polls ~180 s for the snapshot after a client

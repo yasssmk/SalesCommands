@@ -70,7 +70,8 @@ ACTIVE_PROVIDER = getattr(settings, 'AI_PIPELINES_ACTIVE_PROVIDER', 'openai')
 #                ('low' / 'medium' / 'high'): sent as reasoning_effort,
 #                temperature NOT sent, max_tokens sent as
 #                max_completion_tokens (providers, P0). This option -- never
-#                the model name -- decides the mode.
+#                the model name -- decides the mode. On Claude (5b) it is
+#                sent as output_config.effort.
 #
 # Override the whole dict in Django settings:
 #     AI_PIPELINES_PROVIDER_CONFIG = {...}
@@ -141,11 +142,15 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },
-    # DECLARED only: refused at load until ClaudeProvider supports a response
-    # schema (sub-step 5b sets its model and its call options). Never called.
+    # Sub-step 5b -- the deal health on Claude (DEAL_HEALTH_LLM_PROVIDER =
+    # 'claude', ANTHROPIC_API_KEY set): a quality-tier model (configurable:
+    # AI_PIPELINES_DEAL_HEALTH_CLAUDE_MODEL), Structured Outputs through
+    # output_config.format, the effort sent as output_config.effort, no
+    # temperature; the same timeout and token budget as openai_deal_health.
     'claude_deal_health': {
         'provider':          'claude',
-        'model':             'claude-opus-5-5',
+        'model':             getattr(settings, 'AI_PIPELINES_DEAL_HEALTH_CLAUDE_MODEL', 'claude-opus-5-5'),
+        'reasoning_effort':  'medium',
         'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },

@@ -78,6 +78,7 @@ class OpenAIProvider(LLMProvider):
     """
 
     SUPPORTS_RESPONSE_SCHEMA = True
+    REQUIRED_ENV_KEY = 'OPENAI_API_KEY'
 
     def __init__(self) -> None:
         # OpenAI() reads OPENAI_API_KEY from os.environ at this

@@ -189,8 +189,12 @@ class TestText:
 
 class TestLoadGuard:
 
-    def test_a_schema_stage_mapped_to_claude_fails_at_load(self):
+    def test_a_schema_stage_mapped_to_claude_fails_at_load(self, monkeypatch):
+        # 5b: ClaudeProvider supports a schema now — the guard is exercised on
+        # a provider class that does not (the rule itself is unchanged).
         from app_modules.ai_pipelines.pipelines import transcript_signals
+        from app_modules.ai_pipelines.providers.claude_provider import ClaudeProvider
+        monkeypatch.setattr(ClaudeProvider, 'SUPPORTS_RESPONSE_SCHEMA', False)
         with pytest.raises(ImportError, match='does not support a response schema'):
             transcript_signals.check_stage_schemas(
                 transcript_signals.STAGE_RESPONSE_SCHEMAS, {'people': 'claude'})

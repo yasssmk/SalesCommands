@@ -166,7 +166,11 @@ class TestSchemaProviderGuard:
     def test_the_production_entry_passes(self):
         self._check(config.NEXT_STEPS_PROVIDER)
 
-    def test_a_provider_without_schema_support_is_refused(self):
+    def test_a_provider_without_schema_support_is_refused(self, monkeypatch):
+        # 5b: ClaudeProvider supports a schema now — the guard is exercised on
+        # a provider class that does not (the rule itself is unchanged).
+        from app_modules.ai_pipelines.providers.claude_provider import ClaudeProvider
+        monkeypatch.setattr(ClaudeProvider, 'SUPPORTS_RESPONSE_SCHEMA', False)
         with pytest.raises(ImportError, match='does not support a response schema'):
             self._check('claude')
 

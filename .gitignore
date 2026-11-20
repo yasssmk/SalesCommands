@@ -307,3 +307,6 @@ backend/test.db
 
 # Redis snapshot (created by a local redis-server during tests)
 dump.rdb
+
+# The example file of the backend AI keys (no secret value) — tracked.
+!backend/.env.example

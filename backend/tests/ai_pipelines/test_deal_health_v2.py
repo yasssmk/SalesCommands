@@ -296,10 +296,16 @@ def test_d_the_prep_call_reads_dimensions_and_global_reading_of_a_v2_snapshot(
 # PROVIDER SWITCH: « claude » is refused until its provider supports a schema
 # =============================================================================
 
-def test_e_the_claude_provider_is_refused_at_load_until_it_supports_a_schema():
+def test_e_a_provider_without_schema_support_is_refused_at_load(monkeypatch):
+    # 5b: ClaudeProvider supports a schema now ('claude' with its key is
+    # accepted — test_deal_health_claude.py); the schema guard is exercised
+    # on a provider class that does not.
     from app_modules.ai_pipelines import config as ai_config
     from app_modules.ai_pipelines.pipelines import deal_health
+    from app_modules.ai_pipelines.providers.claude_provider import ClaudeProvider
 
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-ant-test-not-a-real-key')
+    monkeypatch.setattr(ClaudeProvider, 'SUPPORTS_RESPONSE_SCHEMA', False)
     with pytest.raises(ImportError) as refused:
         deal_health.check_deal_health_provider('claude', ai_config.PROVIDER_CONFIG)
     assert 'SUPPORTS_RESPONSE_SCHEMA' in str(refused.value)

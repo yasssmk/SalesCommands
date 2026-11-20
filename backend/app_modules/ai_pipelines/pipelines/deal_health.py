@@ -65,7 +65,12 @@ from ..prompts.deal_health.diagnostic_v2 import (
     build_diagnostic_request,
 )
 from ..prompts.deal_health.system_v2 import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
-from ..providers import get_provider, provider_supports_response_schema
+from ..providers import (
+    get_provider,
+    provider_credentials_present,
+    provider_required_env_key,
+    provider_supports_response_schema,
+)
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -90,9 +95,10 @@ def check_deal_health_provider(choice, provider_config):
     Load-time guard of the deal health's provider (amendment A11, the
     pipelines/next_steps.check_next_steps_provider pattern): `choice` must be
     a key of DEAL_HEALTH_PROVIDER_KEYS mapped to a PROVIDER_CONFIG entry whose
-    provider supports a strict response schema. Raises ImportError so a
-    misconfiguration fails at Django startup — 'claude' is refused until
-    ClaudeProvider declares SUPPORTS_RESPONSE_SCHEMA (sub-step 5b).
+    provider supports a strict response schema AND whose API key is set
+    (its REQUIRED_ENV_KEY — sub-step 5b: 'claude' needs ANTHROPIC_API_KEY).
+    Raises ImportError so a misconfiguration fails at Django startup with a
+    clear message, not at the first run.
     """
     key = DEAL_HEALTH_PROVIDER_KEYS.get(choice)
     if key is None:
@@ -112,6 +118,14 @@ def check_deal_health_provider(choice, provider_config):
             f'response schema, but DEAL_HEALTH_LLM_PROVIDER={choice!r} uses '
             f'{key!r}, whose provider does not declare SUPPORTS_RESPONSE_SCHEMA. '
             f'Keep "openai" until that provider supports Structured Outputs.'
+        )
+    if not provider_credentials_present(key):
+        env_key = provider_required_env_key(key)
+        raise ImportError(
+            f'AI Pipelines configuration error: DEAL_HEALTH_LLM_PROVIDER={choice!r} '
+            f'needs the {env_key} environment variable, which is not set. Set '
+            f'{env_key} (backend/.env.example), or set DEAL_HEALTH_LLM_PROVIDER '
+            f'back to "openai".'
         )
     return key
 
