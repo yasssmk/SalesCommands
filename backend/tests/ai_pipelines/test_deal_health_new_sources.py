@@ -35,6 +35,7 @@ from app_modules.ai_pipelines.constants import (
     DEAL_HEALTH_CURSOR_ACTIVITIES,
     DEAL_HEALTH_CURSOR_MANAGER_NOTES,
     DEAL_HEALTH_CURSOR_SIGNALS,
+    DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
     DEAL_HEALTH_TRUNCATION_INPUT_BUDGET,
 )
 from app_modules.ai_pipelines.models import AIPipelineRun
@@ -272,10 +273,12 @@ def test_f_the_snapshot_carries_a_sources_cursor(authed_api_a, rich_cycle, provi
     _, snapshot = _run(authed_api_a, rich_cycle, provider)
 
     cursor = snapshot['sources_cursor']
+    # 6c: + the fingerprint of the static context (a sha256).
     assert set(cursor) == {
         DEAL_HEALTH_CURSOR_ACTIVITIES, DEAL_HEALTH_CURSOR_SIGNALS,
-        DEAL_HEALTH_CURSOR_MANAGER_NOTES,
+        DEAL_HEALTH_CURSOR_MANAGER_NOTES, DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
     }
+    assert len(cursor[DEAL_HEALTH_CURSOR_STATIC_CONTEXT]) == 64
 
 
 # =============================================================================

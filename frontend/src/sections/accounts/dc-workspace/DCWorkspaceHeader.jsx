@@ -47,6 +47,7 @@ import {
   displayErrorSnackbar,
 } from "utils/displayError";
 import DecisionCycleModal from "sections/accounts/decision-cycles/DecisionCycleModal";
+import { isDealHealthClosed } from "api/aiPipelines/dealHealth";
 import DealHealthRunButton from "./DealHealthRunButton";
 import CycleCloseDialog, { useCycleCloseReopen } from "./CycleCloseDialog";
 import formatAmount from "utils/formatAmount";
@@ -384,7 +385,7 @@ export default function useDCWorkspaceHeaderProps({
         </>
       )}
 
-      <DealHealthRunButton cycleId={cycle?.id} closed={isLocked} />
+      <DealHealthRunButton cycleId={cycle?.id} closed={isDealHealthClosed(cycle)} />
 
       <Tooltip title="Edit cycle">
         <span>

@@ -101,6 +101,12 @@ class CycleOutcome(models.TextChoices):
 # Terminal outcomes that auto-cancel PLANNED activities
 TERMINAL_OUTCOMES = frozenset([CycleOutcome.WON, CycleOutcome.LOST, CycleOutcome.NOT_QUALIFIED])
 
+# Sprint « Deal health v2 », 6c (PO): the outcomes that CLOSE a cycle for the
+# deal health — no new analysis (A10, DEAL_HEALTH_CYCLE_CLOSED). ON_HOLD is a
+# pause, not a closure: the deal health runs there (with its « nothing new »
+# guard). The terminal outcomes above, one list.
+DEAL_HEALTH_CLOSED_OUTCOMES = TERMINAL_OUTCOMES
+
 
 # ==========================================================================
 # STEP STATUS (SIMPLIFIED)

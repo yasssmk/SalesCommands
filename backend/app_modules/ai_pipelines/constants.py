@@ -343,6 +343,11 @@ ANALYSIS_ALREADY_DONE_CODE = 'ANALYSIS_ALREADY_DONE'
 DEAL_HEALTH_CURSOR_ACTIVITIES = 'activities'
 DEAL_HEALTH_CURSOR_SIGNALS = 'signals'
 DEAL_HEALTH_CURSOR_MANAGER_NOTES = 'manager_notes'
+# 6c: the fingerprint (sha256) of the STATIC context the prompt reads — the
+# deal (description, value, step, origin campaign, products with their
+# description / value proposition) and the account fields. Another
+# fingerprint than the last snapshot's is new: the run happens.
+DEAL_HEALTH_CURSOR_STATIC_CONTEXT = 'static_context'
 
 # =============================================================================
 # DEAL HEALTH — RUN GUARDS (Sprint « Deal health v2 », step 6, amendment A10)
@@ -351,9 +356,10 @@ DEAL_HEALTH_CURSOR_MANAGER_NOTES = 'manager_notes'
 # shows an INFORMATION, never an error; the ANALYSIS_ALREADY_DONE_CODE
 # pattern), no LLM call, no snapshot:
 #   NO_NEW_SOURCES — the sources cursor above finds nothing changed since the
-#                    last snapshot (there is one);
-#   CYCLE_CLOSED   — the decision cycle has an outcome (closed or on hold):
-#                    its last diagnostic stays readable.
+#                    last snapshot (there is one), static context included;
+#   CYCLE_CLOSED   — the decision cycle is closed (decision_cycles
+#                    DEAL_HEALTH_CLOSED_OUTCOMES — ON_HOLD is not, 6c): its
+#                    last diagnostic stays readable.
 DEAL_HEALTH_NO_NEW_SOURCES_CODE = 'DEAL_HEALTH_NO_NEW_SOURCES'
 DEAL_HEALTH_CYCLE_CLOSED_CODE = 'DEAL_HEALTH_CYCLE_CLOSED'
 # Layer 1 (Redis, TD-50 — core/idempotency.py): a SUCCESS is replayed for the

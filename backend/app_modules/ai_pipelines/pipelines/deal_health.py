@@ -27,9 +27,11 @@ Return contract:
 Run guards (sprint « Deal health v2 », step 6, amendment A10) — business
 rules, checked BEFORE any run row or LLM call (blocked: run and snapshot are
 None):
-    the cycle has an outcome (closed / on hold)  -> CYCLE_CLOSED;
-    a previous snapshot exists and the sources cursor (step 3b) finds no
-    changed source                               -> NO_NEW_SOURCES.
+    the cycle is closed (DEAL_HEALTH_CLOSED_OUTCOMES: won, lost, not
+    qualified — ON_HOLD is not, 6c)              -> CYCLE_CLOSED;
+    a previous snapshot exists, the sources cursor (step 3b) finds no
+    changed source and the static context's fingerprint is the same (6c)
+                                                 -> NO_NEW_SOURCES.
 
 Sprint « Deal health v2 », step 5: the « manager / coach » diagnostic v2
 (prompts system_v2 / context_v2 / diagnostic_v2), sent with its strict
@@ -72,7 +74,10 @@ from ..providers.base import (
 )
 from .base import BasePipeline
 
-from app_modules.decision_cycles.constants import CycleOutcome, DEAL_HEALTH_SCHEMA_V2
+from app_modules.decision_cycles.constants import (
+    DEAL_HEALTH_CLOSED_OUTCOMES,
+    DEAL_HEALTH_SCHEMA_V2,
+)
 
 from django.db import transaction
 
@@ -160,10 +165,10 @@ class DealHealthPipeline(BasePipeline):
         from ..services.deal_health_evidence_builder import DealHealthEvidenceBuilder
         from ..services.deal_health_writer import DealHealthWriter
 
-        # A10 — a closed cycle (any outcome of CycleOutcome: won, lost, not
-        # qualified, on hold) is not analysed again; its last diagnostic
-        # stays readable.
-        if getattr(decision_cycle, 'outcome', None) in CycleOutcome.values:
+        # A10 — a closed cycle (won, lost, not qualified) is not analysed
+        # again; its last diagnostic stays readable. 6c (PO): ON_HOLD is a
+        # pause, the usual « nothing new » guard applies.
+        if getattr(decision_cycle, 'outcome', None) in DEAL_HEALTH_CLOSED_OUTCOMES:
             return self._blocked(
                 DEAL_HEALTH_CYCLE_CLOSED_CODE,
                 DealHealthEvidenceBuilder.latest_snapshot(decision_cycle),
@@ -172,7 +177,8 @@ class DealHealthPipeline(BasePipeline):
         builder = DealHealthEvidenceBuilder()
         pack = builder.build(decision_cycle)
 
-        # A10 — nothing changed since the last snapshot: no LLM call.
+        # A10 — nothing changed since the last snapshot (sources and static
+        # context): no LLM call.
         previous = getattr(builder, 'previous_snapshot', None)
         if previous is not None and not builder.has_new_evidence(pack):
             return self._blocked(DEAL_HEALTH_NO_NEW_SOURCES_CODE, previous)

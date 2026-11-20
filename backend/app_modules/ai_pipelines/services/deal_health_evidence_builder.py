@@ -27,6 +27,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from app_modules.ai_pipelines.constants import (
+    DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
     DEAL_HEALTH_CURSOR_ACTIVITIES,
     DEAL_HEALTH_CURSOR_MANAGER_NOTES,
     DEAL_HEALTH_CURSOR_SIGNALS,
@@ -100,10 +101,22 @@ class DealHealthEvidenceBuilder:
         activities, activities_at = self._build_activities(dc, since.get(DEAL_HEALTH_CURSOR_ACTIVITIES))
         notes, notes_at = self._build_manager_notes(dc, since.get(DEAL_HEALTH_CURSOR_MANAGER_NOTES))
         truncation = self._apply_input_bounds(activities, signals, notes)
+        cycle_context = self._build_cycle_context(dc)
+        account_context = self._build_account_context(dc)
+        sources_cursor = self._next_cursor(since, {
+            DEAL_HEALTH_CURSOR_ACTIVITIES: activities_at,
+            DEAL_HEALTH_CURSOR_SIGNALS: signals_at,
+            DEAL_HEALTH_CURSOR_MANAGER_NOTES: notes_at,
+        })
+        # 6c: the static context, fingerprinted from the SAME blocks as the
+        # prompt's — a change there is new.
+        sources_cursor[DEAL_HEALTH_CURSOR_STATIC_CONTEXT] = self.static_fingerprint(
+            cycle_context, account_context,
+        )
 
         return {
-            'cycle': self._build_cycle_context(dc),
-            'account': self._build_account_context(dc),
+            'cycle': cycle_context,
+            'account': account_context,
             'readiness': ReadinessScoreService().calculate(dc),
             'people': self._build_people(dc, roster),
             'stakeholders': self._build_stakeholders(dc, roster),
@@ -111,11 +124,7 @@ class DealHealthEvidenceBuilder:
             'activities': activities,
             'manager_notes': notes,
             'previous_snapshot': self._build_previous_snapshot(previous),
-            'sources_cursor': self._next_cursor(since, {
-                DEAL_HEALTH_CURSOR_ACTIVITIES: activities_at,
-                DEAL_HEALTH_CURSOR_SIGNALS: signals_at,
-                DEAL_HEALTH_CURSOR_MANAGER_NOTES: notes_at,
-            }),
+            'sources_cursor': sources_cursor,
             'truncation': truncation,
         }
 
@@ -123,18 +132,45 @@ class DealHealthEvidenceBuilder:
     # SOURCES CURSOR (step 3b)
     # =========================================================================
 
-    @staticmethod
-    def has_new_evidence(pack):
+    def has_new_evidence(self, pack):
         """Step 6 (A10): does the pack carry ANY source changed since the
         cursor — an activity, a validated signal (any type) or a manager
-        note? The same reads as the prompt's, so the guard and the LLM input
-        never disagree."""
+        note — or (6c) a static context other than the previous snapshot's
+        (its fingerprint)? The same reads as the prompt's, so the guard and
+        the LLM input never disagree."""
         signals = pack.get('signals') or {}
+        previous = getattr(self, 'previous_snapshot', None)
+        previous_fingerprint = (
+            (previous.sources_cursor or {}).get(DEAL_HEALTH_CURSOR_STATIC_CONTEXT)
+            if previous is not None else None
+        )
+        current_fingerprint = (pack.get('sources_cursor') or {}).get(
+            DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
+        )
         return bool(
             pack.get('activities')
             or pack.get('manager_notes')
             or any(rows for rows in signals.values())
+            or current_fingerprint != previous_fingerprint
         )
+
+    @staticmethod
+    def static_fingerprint(cycle_context, account_context):
+        """6c: sha256 of the static context blocks of the prompt (canonical
+        JSON; the products sorted — their queryset has no order)."""
+        import hashlib
+        import json
+
+        cycle = dict(cycle_context or {})
+        cycle['products'] = sorted(
+            cycle.get('products') or [],
+            key=lambda p: json.dumps(p, sort_keys=True, default=str),
+        )
+        canonical = json.dumps(
+            {'cycle': cycle, 'account': account_context or {}},
+            sort_keys=True, default=str,
+        )
+        return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
     @staticmethod
     def latest_snapshot(dc):

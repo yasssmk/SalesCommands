@@ -6,9 +6,10 @@
 //     a second tab on the same state is the same operation server side.
 //   * A10, « nothing new since the last analysis » (200 + INFO code): an
 //     INFORMATION with the date of the last analysis — never red.
-//   * A10, a closed decision cycle: every trigger is disabled, with an info
-//     on hover; the server's CYCLE_CLOSED code (the server stays the guard)
-//     is an INFORMATION too.
+//   * A10, a closed decision cycle (WON / LOST / NOT_QUALIFIED): every
+//     trigger is disabled, with an info on hover; the server's CYCLE_CLOSED
+//     code (the server stays the guard) is an INFORMATION too. 6c (PO): an
+//     ON_HOLD cycle is NOT closed — the triggers stay active.
 //
 // Real components (StrategicTab + DealHealthRunButton) and the real
 // api/aiPipelines/dealHealth.js + SWR; only the HTTP client, the auth and the
@@ -46,7 +47,11 @@ import {
   displaySuccessSnackbar,
   displayWarningSnackbar,
 } from "utils/displayError";
-import { DEAL_HEALTH_RUN_LABELS } from "api/aiPipelines/dealHealth";
+import {
+  DEAL_HEALTH_CLOSED_OUTCOMES,
+  DEAL_HEALTH_RUN_LABELS,
+  isDealHealthClosed,
+} from "api/aiPipelines/dealHealth";
 import StrategicTab from "sections/accounts/dc-workspace/StrategicTab";
 import DealHealthRunButton from "sections/accounts/dc-workspace/DealHealthRunButton";
 
@@ -63,7 +68,8 @@ const info = (code, lastAt) => ({
 });
 
 function renderPage(cycle = {}) {
-  const closed = Boolean(cycle.outcome);
+  // The DC header's rule (DCWorkspaceHeader passes isDealHealthClosed).
+  const closed = isDealHealthClosed(cycle);
   return render(
     <SWRConfig value={{ dedupingInterval: 0, fetcher: ([url]) => api.get(url).then((r) => r.data) }}>
       <DealHealthRunButton cycleId={CYCLE_ID} closed={closed} />
@@ -132,6 +138,18 @@ describe("Deal health — the run guards", () => {
     await waitFor(() => expect(displayInfoSnackbar).toHaveBeenCalledTimes(1));
     expect(displayInfoSnackbar).toHaveBeenCalledWith(DEAL_HEALTH_RUN_LABELS.CLOSED);
     noRedNorWarning();
+  });
+
+  // 6c (PO): ON_HOLD is a pause, not a closure — the deal health runs there.
+  it("an ON_HOLD cycle: the triggers stay active, no « closed » info", async () => {
+    renderPage({ outcome: "ON_HOLD" });
+    await screen.findByText("Reading A");
+
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((b) => !b.disabled)).toBe(true);
+    expect(isDealHealthClosed({ outcome: "ON_HOLD" })).toBe(false);
+    expect(DEAL_HEALTH_CLOSED_OUTCOMES).toEqual(["WON", "LOST", "NOT_QUALIFIED"]);
   });
 
   it("a closed cycle: every trigger disabled, an info on hover, the diagnostic still shown", async () => {

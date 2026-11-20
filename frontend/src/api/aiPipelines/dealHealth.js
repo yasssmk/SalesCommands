@@ -78,15 +78,20 @@ export const DEAL_HEALTH_INFO_CODES = {
 // The date of the last analysis in the INFO (DCWorkspaceHeader.jsx:331).
 const LAST_ANALYSIS_DATE_FORMAT = "MMM d, yyyy";
 
+// 6c (PO): the outcomes that close a cycle for the deal health — the
+// backend's decision_cycles DEAL_HEALTH_CLOSED_OUTCOMES (= TERMINAL_OUTCOMES).
+// ON_HOLD is a pause, not a closure: the deal health runs there.
+export const DEAL_HEALTH_CLOSED_OUTCOMES = ["WON", "LOST", "NOT_QUALIFIED"];
+
 /**
- * A closed decision cycle (any outcome: won, lost, not qualified, on hold —
- * DCWorkspaceHeader's isLocked) is not analysed again (A10).
+ * A closed decision cycle (won, lost, not qualified) is not analysed again
+ * (A10); ON_HOLD is not closed (6c).
  *
  * @param {Object} cycle - the decision cycle ({ outcome }).
  * @returns {boolean}
  */
 export function isDealHealthClosed(cycle) {
-  return Boolean(cycle?.outcome);
+  return DEAL_HEALTH_CLOSED_OUTCOMES.includes(cycle?.outcome);
 }
 
 /**
