@@ -13,10 +13,10 @@ to be reused for reading / editing the stakeholder profiles.
 The rule, on the existing patterns:
   * tenant: the cycle belongs to the requester's tenant (JWT client
     account) — strict scoping, whatever the role;
-  * admin / manager: the JWT role flags, exactly as
-    decision_cycles/views/manager_note_views.py _get_effective_tier /
-    _is_manager_or_admin (permissions/compat.get_auth_ctx — no DB query).
-    Same scope as that pattern: TENANT-WIDE — any manager of the tenant,
+  * admin / manager: THE shared test permissions/checks.py
+    is_manager_or_admin (JWT role flags, no DB query), also used by
+    decision_cycles/views/manager_note_views.py. Same scope as that pattern:
+    TENANT-WIDE — any manager of the tenant,
     not only the owner's team (the TD-27 family);
   * owner: DecisionCycle.owner (decision_cycles/models.py, OWNERSHIP).
 The module gate stays the ai_pipelines registry (create: client for every
@@ -24,17 +24,8 @@ tier — permissions/registry/ai_pipelines_registry.py): the per-cycle rule
 cannot be written there (ownership 'none'), hence this predicate.
 """
 
+from permissions.checks import is_manager_or_admin
 from permissions.compat import get_auth_ctx
-
-
-def _is_manager_or_admin(ctx):
-    """The JWT role flags (manager_note_views.py _get_effective_tier)."""
-    if ctx.is_superuser:
-        return True
-    return any(
-        isinstance(role, dict) and (role.get('is_admin') or role.get('is_manager'))
-        for role in ctx.roles
-    )
 
 
 def can_run_deal_health(request, decision_cycle):
@@ -51,6 +42,6 @@ def can_run_deal_health(request, decision_cycle):
     ctx = get_auth_ctx(request)
     if not ctx.client_id or str(decision_cycle.client_id) != str(ctx.client_id):
         return False
-    if _is_manager_or_admin(ctx):
+    if is_manager_or_admin(request):
         return True
     return bool(decision_cycle.owner_id) and str(decision_cycle.owner_id) == str(user.id)

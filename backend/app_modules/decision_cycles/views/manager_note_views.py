@@ -24,6 +24,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 
 from permissions.mixins import ScopedPermission
+from permissions.checks import is_manager_or_admin
 from permissions.compat import get_auth_ctx
 
 from app_modules.notifications.models import NotificationCategory
@@ -143,7 +144,8 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
         return 'individual'
 
     def _is_manager_or_admin(self, request):
-        return self._get_effective_tier(request) in ('admin', 'manager')
+        # THE shared « manager or admin » test (permissions/checks.py).
+        return is_manager_or_admin(request)
 
     def _is_admin(self, request):
         return self._get_effective_tier(request) == 'admin'

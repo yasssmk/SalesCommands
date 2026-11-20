@@ -141,6 +141,26 @@ def check_permission(
     return scope
 
 
+def is_manager_or_admin(request) -> bool:
+    """
+    THE « manager or admin » test, from the JWT role flags (no DB query) —
+    the union rule of check_permission above (superuser = admin; any role
+    with is_admin or is_manager). Tenant-wide: it says nothing of teams.
+    Shared by decision_cycles/views/manager_note_views.py and
+    decision_cycles/services/deal_health_access.py.
+
+    Args:
+        request: DRF request (its JWT carries the role flags).
+    """
+    ctx = get_auth_ctx(request)
+    if ctx.is_superuser:
+        return True
+    return any(
+        isinstance(role, dict) and (role.get('is_admin') or role.get('is_manager'))
+        for role in ctx.roles
+    )
+
+
 def has_permission(
     user_or_request: Union['AbstractBaseUser', Request],
     module: str,
