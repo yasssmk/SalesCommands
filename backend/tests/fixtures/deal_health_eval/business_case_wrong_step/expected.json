@@ -1,12 +1,21 @@
 {
   "real_step": "TECHNICAL_FIT",
-  "missing_info": {
-    "level": "BUSINESS",
-    "any_of": [
-      "security",
-      "integration"
-    ]
-  },
+  "missing_info": [
+    {
+      "level": "BUSINESS",
+      "any_of": [
+        "security"
+      ],
+      "why": "the mandatory IT security review is a company constraint (clarified grid, 7b)"
+    },
+    {
+      "level": "DEPARTMENT",
+      "any_of": [
+        "integration"
+      ],
+      "why": "the unreviewed integration with the claims platform is an integration requirement of the tool (clarified grid, 7b)"
+    }
+  ],
   "hidden_objection": {
     "description": "IT security will veto a go-live without its review; IT has not answered.",
     "any_of": [

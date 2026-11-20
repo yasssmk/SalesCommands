@@ -39,7 +39,7 @@ def test_the_dry_run_plays_the_whole_matrix_and_writes_the_report(dry_run):
         ('json', 'openai_deal_health'), ('json', 'openai_deal_health_challenger'),
     }
     assert all(r['error'] is None for r in records), [r['error'] for r in records if r['error']]
-    assert all(r['prompt_versions'] == {'system': 'v2.1', 'context': 'v2', 'diagnostic': 'v2.1'}
+    assert all(r['prompt_versions'] == {'system': 'v2.1', 'context': 'v2', 'diagnostic': 'v2.2'}
                for r in records)
 
     report = (out_dir / 'report.md').read_text(encoding='utf-8')

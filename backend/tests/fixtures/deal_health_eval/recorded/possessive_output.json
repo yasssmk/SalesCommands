@@ -1,0 +1,179 @@
+{
+  "global_reading": "Hugo's team feels the re-planning pain; Claire’s budget and IT security are not engaged yet.",
+  "dimensions": [
+    {
+      "key": "problem_recognized",
+      "status": "suggested",
+      "evidence": "Hugo described the planning effort.",
+      "missing": ""
+    },
+    {
+      "key": "felt_pain",
+      "status": "suggested",
+      "evidence": "Hugo described the planning effort.",
+      "missing": ""
+    },
+    {
+      "key": "impact_understood",
+      "status": "suggested",
+      "evidence": "Hugo described the planning effort.",
+      "missing": ""
+    },
+    {
+      "key": "desired_gain",
+      "status": "suggested",
+      "evidence": "Hugo described the planning effort.",
+      "missing": ""
+    },
+    {
+      "key": "urgency",
+      "status": "suggested",
+      "evidence": "Hugo described the planning effort.",
+      "missing": ""
+    },
+    {
+      "key": "willingness_to_act",
+      "status": "suggested",
+      "evidence": "Hugo described the planning effort.",
+      "missing": ""
+    },
+    {
+      "key": "solution_trust",
+      "status": "suggested",
+      "evidence": "Hugo described the planning effort.",
+      "missing": ""
+    }
+  ],
+  "discovery_gaps": [
+    {
+      "kind": "qualification",
+      "dimension": "urgency",
+      "public_text": "Urgency not yet qualified.",
+      "suggested_questions": [
+        "What happens if planning stays manual next season?"
+      ],
+      "related_theme": "OPS:TIME",
+      "related_actor": "Hugo"
+    }
+  ],
+  "levers": {
+    "desires": [
+      {
+        "summary": "Less re-planning",
+        "theme": "OPS:TIME"
+      }
+    ],
+    "value": [
+      {
+        "summary": "6 hours a week of planner time",
+        "theme": "OPS:TIME"
+      }
+    ],
+    "cost": [
+      {
+        "summary": "Budget owned by Claire",
+        "actor": "Claire"
+      }
+    ],
+    "constraints": [
+      {
+        "summary": "IT security review required",
+        "rigidity": "FIRM",
+        "is_metric": false
+      }
+    ]
+  },
+  "themes": [
+    {
+      "label": "Planning efficiency",
+      "summary": "Planners lose time re-planning routes."
+    }
+  ],
+  "evidence_scope": {
+    "validated_signals_count": 3,
+    "note": "Based on captured evidence."
+  },
+  "summary": "A real operational pain carried by Hugo; the deal now needs finance and IT security on board.",
+  "needs_and_urgency": {
+    "status": "suggested",
+    "assessment": "Planners lose 6 hours a week.",
+    "cost_of_inaction": "Unknown"
+  },
+  "credibility": {
+    "status": "unclear",
+    "assessment": "No proof shared with IT yet."
+  },
+  "fit_and_value": {
+    "status": "missing_evidence",
+    "assessment": "Security requirements unknown.",
+    "requirements": [
+      "IT security review"
+    ],
+    "competitive_position": "Unknown"
+  },
+  "buying_process": {
+    "assessment": "Claire owns the 2027 budget.",
+    "steps": [
+      "IT security review"
+    ],
+    "timeline": "Unknown"
+  },
+  "bant": {
+    "budget": {
+      "status": "unknown",
+      "reason": "Claire owns the 2027 budget; amount unknown."
+    },
+    "authority": {
+      "status": "validated",
+      "reason": "Claire is the economic buyer."
+    },
+    "need": {
+      "status": "validated",
+      "reason": "Re-planning pain confirmed by Hugo."
+    },
+    "timeline": {
+      "status": "unknown",
+      "reason": "No date given."
+    }
+  },
+  "strategic_conclusion": "Hugo gets IT security to review the integration, to unblock the technical fit. The rep meets Claire to learn when Claire's 2027 budget is allocated, to secure funding before then.",
+  "levers_to_invest": [
+    {
+      "lever": "Hugo’s influence on operations",
+      "why": "He feels the pain daily."
+    }
+  ],
+  "objectives": {
+    "deal": "RoutePlanner for the regional fleet, to Northwind Freight",
+    "next_activity": [
+      "Engage IT security"
+    ]
+  },
+  "missing_info": [
+    {
+      "level": "BUSINESS",
+      "item": "IT security requirements for the integration",
+      "why_it_matters": "The technical fit cannot be confirmed without them.",
+      "suggested_question": "Which security checks must the integration pass?"
+    }
+  ],
+  "estimated_step": {
+    "step": "TECHNICAL_FIT",
+    "reason": "Requirements are still being gathered."
+  },
+  "top_arguments": [
+    {
+      "target": "Claire",
+      "arguments": [
+        {
+          "need": "Control of operating costs",
+          "value": "Planner time freed for higher-value work",
+          "benefit": "Fewer empty kilometres",
+          "advantage": "Routes re-planned automatically",
+          "feature": "Route optimisation"
+        }
+      ]
+    }
+  ],
+  "stakeholders": []
+}

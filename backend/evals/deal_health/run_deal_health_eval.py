@@ -19,7 +19,7 @@ Real path, end to end:
     its declared step (derived from the activities) is checked before any
     call;
   * each call runs the REAL DealHealthPipeline(provider=...).run(): evidence
-    builder, prompts v2.1, the strict response schema, model / effort /
+    builder, prompts v2.1 / v2.2 (the pipeline's), the strict response schema, model / effort /
     max_tokens / timeout of the PROVIDER_CONFIG entry of the matrix cell,
     the writer;
   * the matrix: format A ('sections') / B ('json') x the models of
@@ -274,7 +274,8 @@ def _dry_answer(case, fmt):
     decider = expected['decision_maker']
     champion = next((p['first_name'] for p in seed['people'] if p['role'] == 'CHAMPION'), decider)
     step = expected['real_step']
-    keyword = expected['missing_info']['any_of'][0]
+    planted = scoring.planted_alternatives(expected['missing_info'])[0]
+    keyword = planted['any_of'][0]
     objection = expected['hidden_objection']['any_of'][0]
     dims = [{'key': key, 'status': 'suggested', 'evidence': f'{champion} described the need.', 'missing': ''}
             for key in scoring.DEAL_HEALTH_RESPONSE_SCHEMA['schema']['properties']['dimensions']
@@ -288,7 +289,8 @@ def _dry_answer(case, fmt):
         'levers': {'desires': [], 'value': [], 'cost': [], 'constraints': []},
         'themes': [],
         'evidence_scope': {'validated_signals_count': 1, 'note': 'Based on captured evidence.'},
-        'summary': f'{champion} carries the need and {decider} decides; the {objection} point must be handled.',
+        'summary': (f'What is won: {champion} carries the need. What blocks: the {objection} point. '
+                    f'What comes next: {decider} decides.'),
         'needs_and_urgency': {'status': 'suggested', 'assessment': f'{champion} confirmed the need.',
                               'cost_of_inaction': 'Unknown'},
         'credibility': {'status': 'unclear', 'assessment': 'Unknown'},
@@ -300,7 +302,7 @@ def _dry_answer(case, fmt):
         'strategic_conclusion': f'The rep meets {decider} to clear the {objection} point, to move the deal on.',
         'levers_to_invest': [{'lever': f'{champion} as champion', 'why': 'carries the need'}],
         'objectives': {'deal': 'Unknown', 'next_activity': [f'meet {decider}']},
-        'missing_info': [{'level': expected['missing_info']['level'], 'item': f'the {keyword} picture',
+        'missing_info': [{'level': planted['level'], 'item': f'the {keyword} picture',
                           'why_it_matters': 'it decides the next step',
                           'suggested_question': f'what is the {keyword} situation?'}],
         'estimated_step': {'step': step, 'reason': 'from the evidence'},
@@ -485,7 +487,9 @@ def write_report(out_dir, records, suffix=''):
                   f'{_seed(case).get("description", "")}',
                   '',
                   f'Attendu : étape réelle **{expected["real_step"]}** · info manquante '
-                  f'**{expected["missing_info"]["level"]}** ({", ".join(expected["missing_info"]["any_of"])}) · '
+                  + ' ou '.join(f'**{a["level"]}** ({", ".join(a["any_of"])})'
+                                for a in scoring.planted_alternatives(expected['missing_info']))
+                  + ' · '
                   f'objection cachée : {expected["hidden_objection"]["description"]} · décideur : '
                   f'**{expected["decision_maker"]}**',
                   '',
@@ -497,7 +501,8 @@ def write_report(out_dir, records, suffix=''):
                 (_mark(scoring.checks(recs[0]['metrics'])[key]) if len(recs) == 1 else rate(recs, key))
                 if recs else '—' for recs in case_cells) + ' |')
         for key, label in (('objection_found', 'objection cachée vue'),
-                           ('decision_maker_found', 'décideur nommé'), ('bant_ok', 'BANT attendu')):
+                           ('decision_maker_found', 'décideur nommé'), ('bant_ok', 'BANT attendu'),
+                           ('summary_structured', 'summary won / blocks / next')):
             lines.append(f'| {label} (info) | ' + ' | '.join(
                 _mark(recs[0]['metrics'].get(key)) if recs else '—' for recs in case_cells) + ' |')
         lines.append('| étape estimée | ' + ' | '.join(

@@ -13,7 +13,7 @@ Plomberie commune avec `evals/next_steps` et `evals/td279` :
 
 ## Ce qui est mesuré
 
-Le **vrai** `DealHealthPipeline` (constructeur d'évidence, prompts v2.1,
+Le **vrai** `DealHealthPipeline` (constructeur d'évidence, prompts du pipeline — system v2.1, diagnostic v2.2,
 schéma strict, writer), sur **5 cas fictifs** dont la vérité est écrite à
 l'avance, dans une **matrice** :
 
@@ -38,6 +38,12 @@ python evals/deal_health/run_deal_health_eval.py --n 3
 # Un cas
 python evals/deal_health/run_deal_health_eval.py --only technical_fit_fr
 
+# Relance ciblée à faible coût : format A + gpt-5.6-terra, les 5 cas = 5 appels
+python evals/deal_health/run_deal_health_eval.py --formats sections --models openai_deal_health
+
+# … ou seulement certains cas de cette cellule
+python evals/deal_health/run_deal_health_eval.py --formats sections --models openai_deal_health --only business_case_wrong_step technical_fit_fr
+
 # Ajouter Claude (ANTHROPIC_API_KEY requise)
 python evals/deal_health/run_deal_health_eval.py --models openai_deal_health openai_deal_health_challenger claude_deal_health
 
@@ -45,6 +51,7 @@ python evals/deal_health/run_deal_health_eval.py --models openai_deal_health ope
 python evals/deal_health/run_deal_health_eval.py --formats sections
 
 # Recalculer les scores et le rapport depuis les réponses enregistrées : AUCUN appel
+# (avec le scoring et les expected.json ACTUELS — un run plus ancien en profite)
 python evals/deal_health/run_deal_health_eval.py --rescore evals/deal_health/out/<stamp>
 
 # Vérifier la chaîne complète, sans appel API (réponses fixes)
@@ -66,10 +73,12 @@ Chaque cas a son `seed.json` (le DC tel qu'il est créé) et son `expected.json`
 | `qualification_sparse` | QUALIFICATION | QUALIFICATION | budget (BUSINESS) | un outil précédent rejeté par les chauffeurs | Sofia |
 | `technical_fit_fr` (preuves en français) | TECHNICAL_FIT | TECHNICAL_FIT | sécurité / hébergement (BUSINESS) | l'équipe IT déjà débordée | Mathilde |
 | `solution_validation_contradictory` | SOLUTION_VALIDATION | SOLUTION_VALIDATION | gains chiffrés (DEPARTMENT) | un concurrent moins cher | Nadia |
-| `business_case_wrong_step` | BUSINESS_CASE | **TECHNICAL_FIT** | revue sécurité / intégration (BUSINESS) | la sécurité IT bloquera sans revue | Arthur |
+| `business_case_wrong_step` | BUSINESS_CASE | **TECHNICAL_FIT** | revue sécurité obligatoire (BUSINESS) **ou** intégration de l'outil (DEPARTMENT) | la sécurité IT bloquera sans revue | Arthur |
 | `closing_budget_fail` | CLOSING | **BUSINESS_CASE** | budget gelé (BUSINESS) ; BANT budget = `not_validated` | dépenses gelées par la DAF | Helena |
 
 L'étape déclarée est dérivée des activités du seed, comme en production ; le script vérifie qu'elle est la bonne avant tout appel.
+
+**Niveaux (grille clarifiée du prompt v2.2).** Une contrainte de l'**entreprise** (politique de sécurité, hébergement des données, conformité, revue sécurité obligatoire) est BUSINESS. Les critères d'évaluation d'un **département** (exigences d'intégration de l'outil, critères de l'équipe IT) sont DEPARTMENT. Une info manquante plantée peut donc lister plusieurs alternatives `{level, any_of}` dans `expected.json` ; une seule suffit. C'est le cas de `business_case_wrong_step`, qui plante les deux lacunes.
 
 ## Contrôles automatiques (`scoring.py`)
 
@@ -78,13 +87,13 @@ L'étape déclarée est dérivée des activités du seed, comme en production ; 
 | schéma valide | la réponse contre `DEAL_HEALTH_RESPONSE_SCHEMA` (mots-clés : type, properties, required, additionalProperties false, items, enum) |
 | prénoms seulement | aucun nom de famille planté, **ni dans le prompt ni dans la sortie** |
 | aucun nombre inventé | chaque nombre de la sortie existe dans l'entrée (séparateurs ignorés : 48 000 = 48,000 = 48000). Un chiffre collé à des lettres (P1, v2, Q3) est un libellé, pas une quantité |
-| aucun nom inventé | heuristique : un mot à majuscule hors début de phrase (ou à majuscule interne, ou en capitales de 3 lettres et plus), absent de l'entrée et hors du vocabulaire autorisé (étapes, sigles métier, mois…). Les champs de code (`status`, `theme`, `rigidity`…) ne sont pas lus. Les mots trouvés sont listés dans le rapport, pour relecture |
+| aucun nom inventé | heuristique : un mot à majuscule hors début de phrase (ou à majuscule interne, ou en capitales de 3 lettres et plus), absent de l'entrée et hors du vocabulaire autorisé (étapes, sigles métier, mois…). Le **possessif anglais est retiré avant la comparaison** (« Arthur's », « Priya’s », apostrophe droite ou typographique), et le nom est listé sans lui. Les champs de code (`status`, `theme`, `rigidity`…) ne sont pas lus. Les mots trouvés sont listés dans le rapport, pour relecture |
 | info manquante (niveau) | une entrée de `missing_info` contient un mot-clé de l'info plantée, **au bon niveau** |
 | étape réelle | `estimated_step.step` = l'étape réelle attendue |
 | aucune fuite de garde-fou | aucune phrase de `constants.DEAL_HEALTH_GUARDRAIL_LEAK_PHRASES` (« do not invent », « unsupported capabilities »…) dans le texte |
 | aucun ethos / pathos / logos | `constants.DEAL_HEALTH_RHETORIC_LABELS`, mots entiers |
 | top_arguments sans tâche | heuristique : un champ d'argument (need, value, benefit, advantage, feature) qui commence par un verbe d'action de la liste `REP_TASK_VERBS` (build, send, schedule, prepare…) à l'impératif ou en -ing est une tâche du commercial, pas un argument |
-| informatifs | objection cachée vue, décideur nommé, BANT attendu (cas 5) |
+| informatifs | objection cachée vue, décideur nommé, BANT attendu (cas 5), summary structuré « What is won / What blocks / What comes next » dans cet ordre (prompt v2.2) |
 | durée et tokens | par appel, depuis l'audit du run (`sub_calls`) |
 
 Ces contrôles sont prouvés sur des sorties enregistrées, correctes et fautives, par `tests/ai_pipelines/test_deal_health_eval_checks.py`.

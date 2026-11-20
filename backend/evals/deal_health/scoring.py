@@ -25,7 +25,9 @@ Checks (README.md, « Contrôles automatiques », documents each heuristic):
   step_ok                      — estimated step = the expected real step;
   found_in_output              — keywords of the hidden objection / the
                                  decision-maker somewhere in the output;
-  bant_ok                      — the expected BANT statuses (when given).
+  bant_ok                      — the expected BANT statuses (when given);
+  summary_structured           — the summary's « What is won / What blocks /
+                                 What comes next » (prompt v2.2, informative).
 """
 
 import re
@@ -176,6 +178,15 @@ _CODE_FIELDS = {
 }
 
 
+# The English possessive ('s, ’s, and the bare apostrophe of « James' »):
+# removed before comparing — « Arthur's » is Arthur, not a new name (7b).
+_POSSESSIVE = re.compile(r"(?:['’]s|['’])$", re.IGNORECASE)
+
+
+def _without_possessive(word):
+    return _POSSESSIVE.sub('', word)
+
+
 def _field(path):
     return re.sub(r'\[\d+\]', '', path).rsplit('.', 1)[-1]
 
@@ -184,8 +195,9 @@ def invented_names(output, input_text):
     """Name-like words of the output absent from the input: a capitalised
     word that does NOT open a sentence (or a word with an inner capital /
     all capitals of 3+ letters), unknown to the input (no case, no accent)
-    and outside the vocabulary allowlist; the code fields (_CODE_FIELDS) are
-    not scanned. A heuristic: it flags an invented
+    and outside the vocabulary allowlist, its English possessive removed
+    first (« Arthur's », « Priya’s » are Arthur and Priya); the code fields
+    (_CODE_FIELDS) are not scanned. A heuristic: it flags an invented
     customer, reference, competitor or product name (« Contoso »); the
     findings are listed in the report for review."""
     known = set(_fold(w) for w in _WORD.findall(input_text or ''))
@@ -200,10 +212,11 @@ def invented_names(output, input_text):
                 capitalised = word[0].isupper() and index > 0
                 if not (capitalised or (inner_capital and len(word) >= 3)):
                     continue
-                folded = _fold(word.strip("'’-"))
-                if folded in known or folded in _NAME_ALLOWLIST:
+                name = _without_possessive(word).strip("'’-")
+                folded = _fold(name)
+                if not folded or folded in known or folded in _NAME_ALLOWLIST:
                     continue
-                found.add(word)
+                found.add(name)
     return sorted(found)
 
 
@@ -274,12 +287,22 @@ def _has_keyword(text, keywords):
 
 def missing_info_found(parsed, planted):
     """The planted missing info: an entry of missing_info whose item / why /
-    question carries one of `planted['any_of']`, AT `planted['level']`."""
+    question carries one of `any_of`, AT its `level`. `planted` is one
+    {level, any_of}, or a list of alternatives (7b: a gap the clarified grid
+    files at two levels — a company constraint at BUSINESS, the tool's
+    integration requirements at DEPARTMENT); one match is enough."""
+    alternatives = planted if isinstance(planted, list) else [planted]
     for entry in (parsed or {}).get('missing_info') or []:
         text = ' '.join(str(entry.get(k) or '') for k in ('item', 'why_it_matters', 'suggested_question'))
-        if entry.get('level') == planted['level'] and _has_keyword(text, planted['any_of']):
-            return True
+        for alternative in alternatives:
+            if entry.get('level') == alternative['level'] and _has_keyword(text, alternative['any_of']):
+                return True
     return False
+
+
+def planted_alternatives(planted):
+    """The alternatives of a planted missing info (one dict or a list)."""
+    return planted if isinstance(planted, list) else [planted]
 
 
 def step_ok(parsed, expected_step):
@@ -294,6 +317,18 @@ def bant_ok(parsed, expected_bant):
     bant = (parsed or {}).get('bant') or {}
     return all((bant.get(letter) or {}).get('status') == status
                for letter, status in expected_bant.items())
+
+
+# Prompt v2.2 (7b): the summary's three labelled parts, in this order.
+SUMMARY_PARTS = ('what is won', 'what blocks', 'what comes next')
+
+
+def summary_structured(parsed):
+    """The summary follows « What is won / What blocks / What comes next »
+    (the three labels, in this order — informative)."""
+    summary = _fold((parsed or {}).get('summary'))
+    positions = [summary.find(part) for part in SUMMARY_PARTS]
+    return all(p >= 0 for p in positions) and positions == sorted(positions)
 
 
 def found_in_output(parsed, keywords):
@@ -337,6 +372,7 @@ def score_call(*, parsed, prompt, expected, meta=None, error_type=None):
         'objection_found': found_in_output(parsed, expected['hidden_objection']['any_of']),
         'decision_maker_found': found_in_output(parsed, [expected['decision_maker']]),
         'bant_ok': bant_ok(parsed, expected.get('bant')),
+        'summary_structured': summary_structured(parsed),
     }
 
 
