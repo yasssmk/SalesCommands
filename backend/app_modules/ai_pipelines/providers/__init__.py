@@ -182,6 +182,29 @@ def provider_supports_response_schema(config_key: str) -> bool:
     return provider_class is not None and provider_class.SUPPORTS_RESPONSE_SCHEMA
 
 
+def provider_credentials_present(config_key: str) -> bool:
+    """
+    Sub-step 5b: is the API key of the provider class of a PROVIDER_CONFIG
+    entry set in the environment (its REQUIRED_ENV_KEY)? Read on the class --
+    no instantiation, no call (load-time check). A class declaring no key ->
+    True; an unregistered provider -> False.
+    """
+    import os
+    provider_key = config.PROVIDER_CONFIG[config_key].get('provider', config_key)
+    provider_class = _PROVIDER_REGISTRY.get(provider_key)
+    if provider_class is None:
+        return False
+    env_key = provider_class.REQUIRED_ENV_KEY
+    return env_key is None or bool(os.environ.get(env_key, '').strip())
+
+
+def provider_required_env_key(config_key: str) -> str | None:
+    """The REQUIRED_ENV_KEY of the provider class of a PROVIDER_CONFIG entry."""
+    provider_key = config.PROVIDER_CONFIG[config_key].get('provider', config_key)
+    provider_class = _PROVIDER_REGISTRY.get(provider_key)
+    return provider_class.REQUIRED_ENV_KEY if provider_class is not None else None
+
+
 # =============================================================================
 # PUBLIC API
 # =============================================================================
@@ -190,6 +213,8 @@ __all__ = [
     # Factory
     'get_active_provider',
     'get_provider',
+    'provider_credentials_present',
+    'provider_required_env_key',
     'provider_supports_response_schema',
     'reset_provider_cache',
     # Abstract base + return type

@@ -100,6 +100,20 @@ class AIPipelineType(models.TextChoices):
     NEXT_STEPS_ADVICE  = 'NEXT_STEPS_ADVICE',  _('Next steps advice')
 
 
+# The pipelines that ANALYSE an activity (its transcript): a SUCCESS /
+# PARTIAL run of one of them makes the activity « analysed »
+# (services/analysis_state.py — last-run endpoint, transcript lock, one
+# analysis per pipeline). The extraction and its advice pass only: a
+# PREP_CALL brief is generated BEFORE the conversation and analyses nothing,
+# a DEAL_HEALTH run is cycle-level (no source_activity). Sprint « Deal health
+# v2 », step 1: an inclusion list, so a new pipeline never counts by default.
+ANALYSIS_PIPELINE_TYPES = (
+    AIPipelineType.TRANSCRIPT_SIGNALS,
+    AIPipelineType.NEXT_STEPS,
+    AIPipelineType.NEXT_STEPS_ADVICE,
+)
+
+
 # =============================================================================
 # PIPELINE STATUS
 # =============================================================================
@@ -229,6 +243,29 @@ NEXT_STEPS_STEP_REF_FORMAT = 'S{order}'
 
 
 # =============================================================================
+# PEOPLE NAMED TO THE LLM (Sprint « Deal health v2 », step 3a)
+# =============================================================================
+
+# services/llm_people.py is THE point that names a person to the LLM: its
+# first name only. Two people of one prompt sharing a first name are told
+# apart by a reference + first name + department (amendment A4, the
+# NEXT_STEPS_STEP_REF_FORMAT pattern above): "P1 Marc (Finance)",
+# "P2 Marc (IT)" — "P1 Marc" when the department is unknown. The index
+# follows the order the people are registered in the prompt's roster.
+# P (person), never S: the steps are already S{order} in the prompts.
+LLM_PERSON_REF_FORMAT = 'P{index}'
+LLM_PERSON_HOMONYM_LABEL_FORMAT = '{ref} {first_name} ({department})'
+LLM_PERSON_HOMONYM_LABEL_NO_DEPT_FORMAT = '{ref} {first_name}'
+
+# The outcome of resolving a label the LLM wrote back to a stakeholder
+# (llm_people.stakeholder_for_label, sub-step 5c). Only RESOLVED is written.
+LABEL_RESOLVED = 'resolved'
+LABEL_UNKNOWN = 'unknown'                  # not a label of this prompt
+LABEL_NO_STAKEHOLDER = 'no_stakeholder'    # a person with no stakeholder row
+LABEL_AMBIGUOUS = 'ambiguous'              # the stakeholder is not THAT person
+
+
+# =============================================================================
 # NEXT STEPS PERSISTENCE -- DEDUP WITHIN ONE ANSWER (Sprint Next steps 3.4)
 # =============================================================================
 
@@ -290,3 +327,150 @@ class PeopleEvidenceStatus(models.TextChoices):
 # (frontend api/aiPipelines/activityExtraction.js). It replaces the former
 # 409 ALREADY_EXTRACTED.
 ANALYSIS_ALREADY_DONE_CODE = 'ANALYSIS_ALREADY_DONE'
+
+
+# =============================================================================
+# DEAL HEALTH — SOURCES READ (Sprint « Deal health v2 », step 3b)
+# =============================================================================
+
+# The deal health reads every source of the cycle that CHANGED since its last
+# snapshot (DealHealthSnapshot.sources_cursor, one timestamp per type below):
+#   activities     — Activity.updated_at (transcript / email content, notes,
+#                    description, objective, outcome — analysed or not);
+#   signals        — validated signals, updated_at;
+#   manager_notes  — ManagerNote.created_at.
+# Deletions / rejections after the read are not followed (known limit).
+DEAL_HEALTH_CURSOR_ACTIVITIES = 'activities'
+DEAL_HEALTH_CURSOR_SIGNALS = 'signals'
+DEAL_HEALTH_CURSOR_MANAGER_NOTES = 'manager_notes'
+# 6c: the fingerprint (sha256) of the STATIC context the prompt reads — the
+# deal (description, value, step, origin campaign, products with their
+# description / value proposition) and the account fields. Another
+# fingerprint than the last snapshot's is new: the run happens.
+DEAL_HEALTH_CURSOR_STATIC_CONTEXT = 'static_context'
+
+# =============================================================================
+# DEAL HEALTH — RUN GUARDS (Sprint « Deal health v2 », step 6, amendment A10)
+# =============================================================================
+# Business rules of a run — answered 200 with one of these codes (the front
+# shows an INFORMATION, never an error; the ANALYSIS_ALREADY_DONE_CODE
+# pattern), no LLM call, no snapshot:
+#   NO_NEW_SOURCES — the sources cursor above finds nothing changed since the
+#                    last snapshot (there is one), static context included;
+#   CYCLE_CLOSED   — the decision cycle is closed (decision_cycles
+#                    DEAL_HEALTH_CLOSED_OUTCOMES — ON_HOLD is not, 6c): its
+#                    last diagnostic stays readable.
+DEAL_HEALTH_NO_NEW_SOURCES_CODE = 'DEAL_HEALTH_NO_NEW_SOURCES'
+DEAL_HEALTH_CYCLE_CLOSED_CODE = 'DEAL_HEALTH_CYCLE_CLOSED'
+# Layer 1 (Redis, TD-50 — core/idempotency.py): a SUCCESS is replayed for the
+# standard IDEMPOTENCY_REDIS_TTL_SECONDS (its new snapshot changes the front's
+# key anyway). An INFO answer or a failure is kept only long enough to absorb
+# a double click / a second tab, so the rule is evaluated again on the next
+# click (a source added, a retry after an LLM error).
+DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS = 10
+
+# =============================================================================
+# DEAL HEALTH — FRESHNESS (Sprint « Deal health v2 », step 8, A13)
+# =============================================================================
+# Why there is new information to analyse (services/deal_health_freshness.py
+# reasons[]) — never « stale »:
+#   NO_ANALYSIS_YET — the cycle has no snapshot;
+#   NEW_SOURCES     — a source changed since the cursor, or another static
+#                     context fingerprint (has_new_sources);
+#   STEP_CHANGED    — the current declared step differs from the last
+#                     snapshot's declared_step (ignored when NULL — v1).
+DEAL_HEALTH_FRESHNESS_NO_ANALYSIS_YET = 'NO_ANALYSIS_YET'
+DEAL_HEALTH_FRESHNESS_NEW_SOURCES = 'NEW_SOURCES'
+DEAL_HEALTH_FRESHNESS_STEP_CHANGED = 'STEP_CHANGED'
+
+# Input bounds (amendment A3), in characters of the source texts. A single
+# transcript / email above DEAL_HEALTH_MAX_CHARS_PER_SOURCE is cut to it (the
+# extraction's own bound, config.MAX_TRANSCRIPT_LENGTH = 50 000). Above
+# DEAL_HEALTH_MAX_INPUT_CHARS in total, the OLDEST transcripts are cut first;
+# validated signals and notes always pass whole. Every cut is traced in the
+# run's sub_calls (input_truncation). Values to confirm by the evaluation
+# (step 7).
+DEAL_HEALTH_MAX_CHARS_PER_SOURCE = 50_000
+DEAL_HEALTH_MAX_INPUT_CHARS = 200_000
+DEAL_HEALTH_TRUNCATION_MARKER = '[... truncated: {kept} of {total} characters kept]'
+DEAL_HEALTH_TRUNCATION_PER_SOURCE = 'per_source_cap'
+DEAL_HEALTH_TRUNCATION_INPUT_BUDGET = 'input_budget'
+
+# A ManagerNote's author is named by the ROLE only, never by name.
+DEAL_HEALTH_NOTE_AUTHOR_ADMIN = 'Admin'
+DEAL_HEALTH_NOTE_AUTHOR_MANAGER = 'Manager'
+
+
+# =============================================================================
+# DEAL HEALTH v2 — MODEL, PROVIDER, FORMAT (Sprint « Deal health v2 », step 5)
+# =============================================================================
+
+# The deal health's provider choice -> its PROVIDER_CONFIG entry. THE switch
+# itself is config.DEAL_HEALTH_LLM_PROVIDER (amendment A11).
+DEAL_HEALTH_PROVIDER_KEYS = {
+    'openai': 'openai_deal_health',
+    'claude': 'claude_deal_health',
+}
+
+# =============================================================================
+# CLAUDE PROVIDER (sub-step 5b — anthropic SDK 1.x)
+# =============================================================================
+# Sampling parameters: the 1.x SDK no longer takes `temperature`, and Claude
+# Opus 4.7 and later models answer 400 when a request carries one. It is sent
+# (as extra_body, API version 2023-06-01) ONLY to the models of this list,
+# which still accept it — never to any other model.
+CLAUDE_MODELS_ACCEPTING_TEMPERATURE = frozenset({
+    'claude-haiku-4-5', 'claude-haiku-4-5-20251001',
+    'claude-sonnet-4-6', 'claude-opus-4-6',
+})
+# Server-side refusal fallback (beta): when a safety classifier declines the
+# request, the API re-runs it on a fallback model inside the same call
+# ('default' routes by refusal category). Sent for these models only; if the
+# whole chain declines (stop_reason 'refusal'), the provider raises
+# LLMProviderError, as for an OpenAI refusal.
+CLAUDE_REFUSAL_FALLBACK_BETA = 'server-side-fallback-2026-07-01'
+CLAUDE_REFUSAL_FALLBACKS = 'default'
+CLAUDE_REFUSAL_FALLBACK_MODELS = frozenset({
+    'claude-fable-5-2', 'claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5',
+    'claude-sonnet-5-5',
+})
+
+# The deal health's own call timeout (amendment A6), in seconds. The view is
+# synchronous; the front polls ~180 s for the snapshot after a client
+# timeout (core/timeout_conventions.py POLLING_MAX_ATTEMPTS x
+# POLLING_INTERVAL_SECONDS), so a call must end within that window.
+# Provisional — measured at step 7.
+DEAL_HEALTH_TIMEOUT_S = 150
+# Room for the v2 answer and the reasoning tokens (they count in max_tokens).
+DEAL_HEALTH_MAX_TOKENS = 16_000
+
+# How the v2 context is sent (compared at step 7, amendment A5):
+#   'sections' — labelled sections + compact JSON (the next_steps pattern);
+#   'json'     — the whole context as ONE JSON document.
+DEAL_HEALTH_INPUT_FORMAT_SECTIONS = 'sections'
+DEAL_HEALTH_INPUT_FORMAT_JSON = 'json'
+DEAL_HEALTH_INPUT_FORMAT = DEAL_HEALTH_INPUT_FORMAT_SECTIONS
+
+# The diagnostic v2 value lists (the strict schema and the writer).
+DEAL_HEALTH_DIMENSION_STATUSES = (
+    'confirmed', 'suggested', 'unclear', 'missing_evidence', 'contradictory',
+)
+DEAL_HEALTH_BANT_LETTERS = ('budget', 'authority', 'need', 'timeline')
+DEAL_HEALTH_BANT_STATUSES = ('validated', 'not_validated', 'unknown')
+DEAL_HEALTH_MISSING_INFO_LEVELS = ('BUSINESS', 'DEPARTMENT', 'CONTACT')
+DEAL_HEALTH_TOP_ARGUMENTS_MAX = 3
+
+# Step 7 (prompt v2.1, PO decision of 18/11) — the guard rails stay INTERNAL:
+# none of these phrases may appear in the text of a diagnostic (the prompt's
+# examples included). Lower-case, matched as substrings of the lower-cased
+# text. Read by the v2.1 prompt test and by evals/deal_health/scoring.py.
+DEAL_HEALTH_GUARDRAIL_LEAK_PHRASES = (
+    'do not invent', "don't invent", 'never invent', 'must not invent',
+    'without inventing', 'not invent',
+    'unsupported capabilit', 'unverified capabilit', 'capability not supported',
+    'hard rule', 'evidence-only', 'as instructed', 'per the rules',
+    'i cannot', 'as an ai',
+)
+# Classical rhetoric labels — never in a diagnostic (sales vocabulary only:
+# needs and urgency, credibility, fit and value). Whole words, any case.
+DEAL_HEALTH_RHETORIC_LABELS = ('ethos', 'pathos', 'logos')

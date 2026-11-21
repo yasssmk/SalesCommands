@@ -118,13 +118,20 @@ class DealHealthSnapshotViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelVie
         })
 
         snapshot = self.get_queryset().first()
+        # Step 8 (A13): the freshness, computed at read time — WITH or
+        # without a snapshot, so the Strategic tab reads it in ONE call.
+        from app_modules.ai_pipelines.services.deal_health_freshness import (
+            deal_health_freshness,
+        )
+        freshness = deal_health_freshness(cycle)
         if not snapshot:
             return Response({
                 'success': True,
                 'data': None,
+                'freshness': freshness,
             })
 
         serializer = DealHealthSnapshotDetailSerializer(
             snapshot, context=self.get_serializer_context(),
         )
-        return Response({'success': True, 'data': serializer.data})
+        return Response({'success': True, 'data': serializer.data, 'freshness': freshness})

@@ -631,6 +631,36 @@ class SignalErrorMessages:
     )
 
 # =============================================================================
+# DECISION CYCLES ERROR MESSAGES
+# =============================================================================
+
+class DecisionCycleErrorMessages:
+    """
+    Centralised error messages for the decision_cycles module.
+    """
+
+    # -----------------------------------------------------------------
+    # Stakeholder profile (sprint « Deal health v2 », step 4) — raised by
+    # services/stakeholder_service.apply_ai_profile / apply_manual_profile.
+    # -----------------------------------------------------------------
+    PROFILE_UNKNOWN_FIELD = _(
+        "Unknown stakeholder profile field: '{field}'. Allowed: {allowed}."
+    )
+    PROFILE_INVALID_CHOICE = _(
+        "Invalid value '{value}' for '{field}'. Allowed: {allowed}."
+    )
+    PROFILE_INVALID_LANGUAGE = _(
+        "Invalid language '{value}': expected a language tag such as 'fr' or 'en-US'."
+    )
+    PROFILE_INVALID_TEXT = _(
+        "Invalid value for '{field}': expected a text of at most {max_length} characters."
+    )
+    PROFILE_TENANT_MISMATCH = _(
+        "This stakeholder is not accessible."
+    )
+
+
+# =============================================================================
 # AI PIPELINES ERROR MESSAGES
 # =============================================================================
 
@@ -691,6 +721,15 @@ class AIPipelineErrorMessages:
     ANALYSIS_ALREADY_DONE = _(
         "This activity has already been analysed: its signals and next steps "
         "are on the page. An analysis is never re-run."
+    )
+    # Deal health run guards (sprint « Deal health v2 », step 6, A10) —
+    # business rules, answered 200 with an INFO code, no LLM call.
+    DEAL_HEALTH_NO_NEW_SOURCES = _(
+        "Nothing new since the last analysis ({date})."
+    )
+    DEAL_HEALTH_CYCLE_CLOSED = _(
+        "This decision cycle is closed: its last diagnostic stays available, "
+        "no new analysis is run."
     )
 
     # -----------------------------------------------------------------

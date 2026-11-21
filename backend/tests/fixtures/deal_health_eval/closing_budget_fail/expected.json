@@ -1,0 +1,27 @@
+{
+  "real_step": "BUSINESS_CASE",
+  "missing_info": {
+    "level": "BUSINESS",
+    "any_of": [
+      "budget",
+      "freeze",
+      "fiscal"
+    ]
+  },
+  "hidden_objection": {
+    "description": "The CFO froze all new spending until the next fiscal year.",
+    "any_of": [
+      "freeze",
+      "frozen",
+      "spending"
+    ]
+  },
+  "decision_maker": "Helena",
+  "planted_last_names": [
+    "Duquesne",
+    "Sorensen"
+  ],
+  "bant": {
+    "budget": "not_validated"
+  }
+}

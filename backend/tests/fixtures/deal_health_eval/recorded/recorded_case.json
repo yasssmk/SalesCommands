@@ -1,0 +1,13 @@
+{
+  "planted_last_names": [
+    "Marchetti",
+    "Lindqvist"
+  ],
+  "real_step": "TECHNICAL_FIT",
+  "missing_info": {
+    "level": "BUSINESS",
+    "any_of": [
+      "security"
+    ]
+  }
+}

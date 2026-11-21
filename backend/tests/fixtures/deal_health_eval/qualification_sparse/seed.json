@@ -1,0 +1,57 @@
+{
+  "case": "qualification_sparse",
+  "fictitious": true,
+  "description": "QUALIFICATION, poor in information: one short discovery call.",
+  "account": {
+    "company_name": "Brightwater Dairy",
+    "company_size": "50-200"
+  },
+  "cycle": {
+    "name": "Brightwater Dairy — delivery planning",
+    "description": ""
+  },
+  "declared_step": "QUALIFICATION",
+  "people": [
+    {
+      "first_name": "Tom",
+      "last_name": "Okafor",
+      "job_title": "Logistics coordinator",
+      "role": "CHAMPION"
+    },
+    {
+      "first_name": "Sofia",
+      "last_name": "Brennan",
+      "job_title": "Operations director",
+      "role": "DECISION_MAKER"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "CALL",
+      "status": "COMPLETED",
+      "days_ago": 6,
+      "title": "Discovery call",
+      "outcome_notes": "Tom says delivery rounds are planned on a spreadsheet and drivers often call back for changes. He would like to \"see something\". Sofia, the operations director, signs anything above routine spend. Tom mentioned they tried a planning tool two years ago and the drivers rejected it."
+    },
+    {
+      "stage": "QUALIFICATION",
+      "type": "MEETING",
+      "status": "PLANNED",
+      "days_ago": -7,
+      "title": "Follow-up with Tom"
+    }
+  ],
+  "signals": {
+    "pain": [
+      {
+        "summary": "Delivery rounds planned by hand on a spreadsheet",
+        "what": "OPS",
+        "dimension": "TIME",
+        "source_quote": "we plan every round on a spreadsheet"
+      }
+    ]
+  },
+  "manager_notes": [],
+  "products": []
+}

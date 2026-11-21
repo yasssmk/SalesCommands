@@ -10,8 +10,10 @@ mocked; no network).
   * OpenAI, structured / reasoning mode: truncation (finish_reason "length")
     and refusal -> LLMProviderError (standard exception); the default mode
     keeps returning the content (parse retry downstream, unchanged).
-  * Claude: a schema or a reasoning effort -> LLMProviderError "not
-    supported"; default call unchanged.
+  * Claude (sub-step 5b, anthropic SDK 1.x): a schema / an effort go in
+    output_config; no temperature unless the model accepts it (as
+    extra_body); the server-side refusal fallback on the recent models; a
+    refused or truncated structured answer -> LLMProviderError.
   * Pipeline audit: reasoning tokens recorded in the sub_call only when the
     API reports some (default entries unchanged).
 """
@@ -127,38 +129,73 @@ class TestOpenAIDefaultUnchanged:
         assert provider.call(**BASE_ARGS, temperature=0.0).content == '{"persons": ['
 
 
-def _claude():
+def _claude_response(text='{"persons": []}', stop_reason='end_turn'):
+    return SimpleNamespace(
+        content=[SimpleNamespace(type='text', text=text)],
+        usage=SimpleNamespace(input_tokens=1, output_tokens=2),
+        model='a-model', stop_reason=stop_reason,
+    )
+
+
+def _claude(response=None):
     provider = ClaudeProvider.__new__(ClaudeProvider)   # no ANTHROPIC_API_KEY needed
     provider._client = MagicMock()
-    provider._client.messages.create.return_value = SimpleNamespace(
-        content=[SimpleNamespace(text='{"persons": []}')],
-        usage=SimpleNamespace(input_tokens=1, output_tokens=2),
-        model='a-model',
-    )
+    provider._client.messages.create.return_value = response or _claude_response()
+    provider._client.beta.messages.create.return_value = response or _claude_response()
     return provider
 
 
 class TestClaude:
+    """Sub-step 5b (anthropic SDK 1.x): Structured Outputs through
+    output_config, no temperature unless the model accepts it (as
+    extra_body), the refusal fallback on the recent models."""
 
-    @pytest.mark.parametrize('extra', [
-        {'response_schema': SCHEMA}, {'reasoning_effort': 'medium'},
-    ])
-    def test_d_schema_or_effort_is_not_supported(self, extra):
+    def test_d_schema_and_effort_go_in_output_config(self):
         provider = _claude()
-        with pytest.raises(LLMProviderError, match='not supported'):
-            provider.call(**BASE_ARGS, temperature=0.0, **extra)
-        provider._client.messages.create.assert_not_called()
+        provider.call(**BASE_ARGS, temperature=None, response_schema=SCHEMA,
+                      reasoning_effort='medium')
+        sent = provider._client.messages.create.call_args.kwargs
+        assert sent['output_config'] == {
+            'format': {'type': 'json_schema', 'schema': SCHEMA['schema']},
+            'effort': 'medium',
+        }
+        assert 'temperature' not in sent and 'extra_body' not in sent
 
-    def test_default_call_unchanged(self):
+    def test_default_call_sends_no_temperature_to_a_model_refusing_it(self):
         provider = _claude()
         provider.call(**BASE_ARGS, temperature=0.0)
         sent = provider._client.messages.create.call_args.kwargs
         assert sent == {
             'model': 'a-model', 'system': 'SYS',
             'messages': [{'role': 'user', 'content': 'USR'}],
-            'temperature': 0.0, 'max_tokens': 123, 'timeout': 9,
+            'max_tokens': 123, 'timeout': 9,
         }
 
+    def test_the_temperature_reaches_a_model_accepting_it_only(self):
+        provider = _claude()
+        provider.call(**{**BASE_ARGS, 'model': 'claude-haiku-4-5-20251001'}, temperature=0.0)
+        sent = provider._client.messages.create.call_args.kwargs
+        assert sent['extra_body'] == {'temperature': 0.0}
+        assert 'temperature' not in sent
+
+    def test_a_recent_model_gets_the_server_side_refusal_fallback(self):
+        provider = _claude()
+        provider.call(**{**BASE_ARGS, 'model': 'claude-opus-5-5'}, temperature=None,
+                      response_schema=SCHEMA)
+        provider._client.messages.create.assert_not_called()
+        sent = provider._client.beta.messages.create.call_args.kwargs
+        assert sent['betas'] == ['server-side-fallback-2026-07-01']
+        assert sent['fallbacks'] == 'default'
+
+    @pytest.mark.parametrize('stop_reason', ['refusal', 'max_tokens'])
+    def test_a_refused_or_truncated_structured_answer_is_a_provider_error(self, stop_reason):
+        provider = _claude(_claude_response(text='{"persons": [', stop_reason=stop_reason))
+        with pytest.raises(LLMProviderError):
+            provider.call(**BASE_ARGS, temperature=None, response_schema=SCHEMA)
+
+    def test_a_default_truncated_answer_still_returns_the_content(self):
+        provider = _claude(_claude_response(text='{"persons": [', stop_reason='max_tokens'))
+        assert provider.call(**BASE_ARGS, temperature=0.0).content == '{"persons": ['
 
 class TestReasoningTokensAudit:
 

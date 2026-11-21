@@ -157,7 +157,9 @@ class TestDealHealthTechEvidence:
         assert len(tech) == 1
         assert tech[0]['tech_name'] == 'Salesforce'
         assert tech[0]['is_competitor'] is True
-        assert tech[0]['is_to_replace'] is True
+        # Sprint « Deal health v2 », step 3b (PO): the deal health no longer
+        # reads is_to_replace (always False on extraction since S10).
+        assert 'is_to_replace' not in tech[0]
         # is_integration is no longer surfaced in the tech evidence — an
         # integration requirement is now a TECHNICAL ConstraintSignal.
         assert 'is_integration' not in tech[0]
@@ -174,7 +176,8 @@ class TestDealHealthTechEvidence:
         _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Slack')
 
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
-        assert (tech['is_competitor'], tech['is_to_replace']) == (True, True)
+        assert tech['is_competitor'] is True
+        assert 'is_to_replace' not in tech          # step 3b
         assert 'is_integration' not in tech
 
     def test_just_used_tool_still_appears_with_all_flags_false(
@@ -186,7 +189,7 @@ class TestDealHealthTechEvidence:
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
         assert tech['tech_name'] == 'Notion'
         assert tech['is_competitor'] is False
-        assert tech['is_to_replace'] is False
+        assert 'is_to_replace' not in tech          # step 3b
         assert 'is_integration' not in tech
 
     def test_catalogue_keys_and_canonical_key_are_gone(self, cycle, user_a):
@@ -253,7 +256,7 @@ class TestDealHealthPromptRendering:
 
         assert 'Tool: Salesforce' in rendered
         assert 'Competitor: yes' in rendered
-        assert 'To replace: yes' in rendered
+        assert 'To replace' not in rendered         # step 3b
 
     def test_prompt_omits_flags_that_are_false(self, cycle, user_a):
         from app_modules.ai_pipelines.prompts.deal_health.diagnostic_v1 import (

@@ -82,7 +82,7 @@ def _signal_cycle_or_refuse(people_signal):
 
 @transaction.atomic
 def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_id=None,
-                          create=None):
+                          create=None, name_stakeholder=False):
     """
     Validate `people_signal` WITH its stakeholder in the signal's decision
     cycle -- exactly ONE of:
@@ -97,6 +97,11 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
     8b-1 (PO): a People VALIDATED without stakeholder (validated before its
     activity joined a DC) is affiliated only — « Link to the deal », its
     status untouched; a People already affiliated is refused.
+    5d (PO, « information completes itself when it does not contradict »):
+    with stakeholder_id + name_stakeholder, a stakeholder WITHOUT a name of
+    its own (no full_name, no contact) receives the signal's full_name. A
+    named or contact-linked stakeholder, or a signal without a name: the
+    flag is ignored (a normal business case, no error) — never overwritten.
 
     Raises:
         StandardizedValidationError (400) on every business refusal.
@@ -133,6 +138,11 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
             raise StandardizedValidationError(
                 SignalErrorMessages.PEOPLE_RESOLVE_STAKEHOLDER_INVALID
             )
+        signal_name = (people_signal.full_name or '').strip()
+        if (name_stakeholder and signal_name and not stakeholder.contact_id
+                and not (stakeholder.full_name or '').strip()):
+            stakeholder.full_name = signal_name[:255]
+            stakeholder.save(user=user)          # recomputes full_name_normalized
     elif contact_id:
         contact = Contact.objects.filter(
             pk=contact_id, client_id=client_id, account_id=people_signal.account_id,
@@ -337,3 +347,184 @@ def resolution_candidates(people_signal):
                        (r['first_name'] or '').lower()),
     )
     return {'has_cycle': True, 'stakeholders': stakeholder_rows, 'contacts': contact_rows}
+
+
+# =============================================================================
+# PROFILE (sprint « Deal health v2 », step 4) — THE write point
+# =============================================================================
+#
+# Stakeholder.profile = {field: {value, source, updated_at, updated_by,
+# original_value}} (constants.STAKEHOLDER_PROFILE_FIELDS). The SignalSource
+# rule (signals/constants.py) applied PER FIELD — the per-signal transition
+# of SignalManager.update (signals/services/signal_manager.py):
+#   * the AI writes a field only when it is absent or still LLM_EXTRACTED;
+#     a MANUAL or LLM_MODIFIED field is never overwritten by the AI;
+#   * a user editing an AI value -> LLM_MODIFIED, original_value = the AI's
+#     value (kept across later edits); a first entry by a user -> MANUAL.
+# Every value is validated BEFORE anything is written (one invalid value:
+# standard refusal, nothing written). Tenant scoping is strict.
+
+def _profile_refusal(message):
+    from core.exceptions import StandardizedValidationError
+    raise StandardizedValidationError(message)
+
+
+def _check_profile_tenant(stakeholder, client_id):
+    from core.error_messages import DecisionCycleErrorMessages
+    if client_id is None or str(client_id) != str(stakeholder.client_id):
+        _profile_refusal(DecisionCycleErrorMessages.PROFILE_TENANT_MISMATCH)
+
+
+def _clean_profile_value(field, value, *, allow_empty_text):
+    """The validated value of `field`, or a standard refusal."""
+    import re
+    from core.error_messages import DecisionCycleErrorMessages
+    from ..constants import (
+        PROFILE_COMMUNICATION_LANGUAGE,
+        PROFILE_CONVICTION_STATE,
+        PROFILE_LANGUAGE_MAX_LENGTH,
+        PROFILE_LANGUAGE_PATTERN,
+        PROFILE_TEXT_MAX_LENGTH,
+        STAKEHOLDER_PROFILE_FIELDS,
+        ConvictionState,
+    )
+
+    if field not in STAKEHOLDER_PROFILE_FIELDS:
+        _profile_refusal(DecisionCycleErrorMessages.PROFILE_UNKNOWN_FIELD.format(
+            field=field, allowed=', '.join(STAKEHOLDER_PROFILE_FIELDS)))
+    if field == PROFILE_CONVICTION_STATE:
+        if value not in ConvictionState.values:
+            _profile_refusal(DecisionCycleErrorMessages.PROFILE_INVALID_CHOICE.format(
+                value=value, field=field, allowed=', '.join(ConvictionState.values)))
+        return value
+    if field == PROFILE_COMMUNICATION_LANGUAGE:
+        if (not isinstance(value, str) or len(value) > PROFILE_LANGUAGE_MAX_LENGTH
+                or not re.fullmatch(PROFILE_LANGUAGE_PATTERN, value)):
+            _profile_refusal(DecisionCycleErrorMessages.PROFILE_INVALID_LANGUAGE.format(value=value))
+        return value
+    # Free text (a user may clear it: '' is kept, so the AI never refills it).
+    if not isinstance(value, str) or len(value) > PROFILE_TEXT_MAX_LENGTH or (
+            not allow_empty_text and not value.strip()):
+        _profile_refusal(DecisionCycleErrorMessages.PROFILE_INVALID_TEXT.format(
+            field=field, max_length=PROFILE_TEXT_MAX_LENGTH))
+    return value.strip()
+
+
+def validate_ai_profile_values(values):
+    """
+    The AI values of ONE stakeholder, validated by THE profile rules — the
+    same check as apply_ai_profile, without writing (the deal-health writer
+    validates the whole answer before persisting anything).
+
+    Returns:
+        {field: cleaned value} — None / empty values dropped (the AI never
+        clears a field).
+
+    Raises:
+        StandardizedValidationError on an unknown field / invalid value.
+    """
+    return {
+        field: _clean_profile_value(field, value, allow_empty_text=False)
+        for field, value in (values or {}).items()
+        if value not in (None, '')
+    }
+
+
+def _profile_entry(value, source, *, user_id=None, original_value=None, run_id=None):
+    from django.utils import timezone
+    entry = {
+        'value': value,
+        'source': source,
+        'updated_at': timezone.now().isoformat(),
+        'updated_by': str(user_id) if user_id else None,
+        'original_value': original_value,
+    }
+    # The AI run that wrote the value (step 5, orchestrator): AI entries only.
+    if run_id is not None:
+        entry['run_id'] = str(run_id)
+    return entry
+
+
+def _locked_stakeholder(stakeholder):
+    """The stakeholder row, locked for the read-modify-write of its profile."""
+    from ..models import Stakeholder
+    return Stakeholder.objects.select_for_update().get(pk=stakeholder.pk)
+
+
+def _save_profile(stakeholder, locked, profile):
+    from ..models import Stakeholder
+    # A targeted update: only `profile` (+ updated_at) — never the other
+    # columns of a row another request may be editing.
+    from django.utils import timezone
+    Stakeholder.objects.filter(pk=locked.pk).update(profile=profile, updated_at=timezone.now())
+    stakeholder.profile = profile
+
+
+@transaction.atomic
+def apply_ai_profile(stakeholder, values, run):
+    """
+    Write the profile values the AI produced for `stakeholder`.
+
+    Args:
+        stakeholder: a Stakeholder.
+        values:      {field: value}; a None / empty value is ignored (the AI
+                     found nothing), it never clears a field.
+        run:         the AIPipelineRun that produced them (tenant check).
+
+    Returns:
+        {'written': [fields], 'kept': [fields the AI may not overwrite]}.
+        Each field written carries the run id (`run_id`).
+
+    Raises:
+        StandardizedValidationError: an unknown field / invalid value
+        (nothing written), or another tenant's run.
+    """
+    from app_modules.signals.constants import SignalSource
+
+    _check_profile_tenant(stakeholder, getattr(run, 'client_id', None))
+    cleaned = validate_ai_profile_values(values)
+
+    locked = _locked_stakeholder(stakeholder)
+    profile = dict(locked.profile or {})
+    written, kept = [], []
+    for field, value in cleaned.items():
+        current = profile.get(field)
+        if current and current.get('source') != SignalSource.LLM_EXTRACTED:
+            kept.append(field)              # MANUAL / LLM_MODIFIED: never overwritten
+            continue
+        profile[field] = _profile_entry(value, SignalSource.LLM_EXTRACTED, run_id=run.pk)
+        written.append(field)
+    if written:
+        _save_profile(stakeholder, locked, profile)
+    return {'written': written, 'kept': kept}
+
+
+@transaction.atomic
+def apply_manual_profile(stakeholder, field, value, user):
+    """
+    Write one profile field entered by `user`.
+
+    An AI value edited -> LLM_MODIFIED with original_value = the AI's value
+    (kept across later edits); a field never written by the AI -> MANUAL.
+
+    Raises:
+        StandardizedValidationError: an unknown field / invalid value
+        (nothing written), or a user of another tenant.
+    """
+    from app_modules.signals.constants import SignalSource
+
+    _check_profile_tenant(stakeholder, getattr(user, 'client_id', None))
+    value = _clean_profile_value(field, value, allow_empty_text=True)
+
+    locked = _locked_stakeholder(stakeholder)
+    profile = dict(locked.profile or {})
+    current = profile.get(field) or {}
+    if current.get('source') == SignalSource.LLM_EXTRACTED:
+        source, original = SignalSource.LLM_MODIFIED, current.get('value')
+    elif current.get('source') == SignalSource.LLM_MODIFIED:
+        source, original = SignalSource.LLM_MODIFIED, current.get('original_value')
+    else:
+        source, original = SignalSource.MANUAL, None
+    profile[field] = _profile_entry(value, source, user_id=user.id, original_value=original)
+    _save_profile(stakeholder, locked, profile)
+    return stakeholder

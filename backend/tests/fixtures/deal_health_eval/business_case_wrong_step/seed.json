@@ -1,0 +1,92 @@
+{
+  "case": "business_case_wrong_step",
+  "fictitious": true,
+  "description": "Declared BUSINESS_CASE, but the technical fit was never confirmed: the real step is TECHNICAL_FIT.",
+  "account": {
+    "company_name": "Quillfield Insurance",
+    "company_size": "1000-5000"
+  },
+  "cycle": {
+    "name": "Quillfield — claims routing",
+    "description": "Routing of incoming claims to the right handler."
+  },
+  "declared_step": "BUSINESS_CASE",
+  "people": [
+    {
+      "first_name": "Priya",
+      "last_name": "Halvorsen",
+      "job_title": "Head of claims",
+      "role": "CHAMPION"
+    },
+    {
+      "first_name": "Arthur",
+      "last_name": "Lindqvist",
+      "job_title": "Chief operating officer",
+      "role": "DECISION_MAKER"
+    },
+    {
+      "first_name": "Ben",
+      "last_name": "Achterberg",
+      "job_title": "IT security lead",
+      "role": "INFLUENCER"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 45,
+      "title": "Discovery",
+      "outcome_notes": "Priya: claims wait three days on average before reaching the right handler."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "EMAIL",
+      "status": "COMPLETED",
+      "days_ago": 30,
+      "title": "Documentation sent",
+      "transcript": "Email from Ben: we have not reviewed the integration with the claims platform yet, and nothing goes live without an IT security review. Please send the questionnaire when you can."
+    },
+    {
+      "stage": "SOLUTION_VALIDATION",
+      "type": "CALL",
+      "status": "COMPLETED",
+      "days_ago": 12,
+      "title": "Demo follow-up",
+      "outcome_notes": "Priya liked the demo. No answer yet from IT on the questionnaire."
+    },
+    {
+      "stage": "BUSINESS_CASE",
+      "type": "MEETING",
+      "status": "PLANNED",
+      "days_ago": -5,
+      "title": "Business case with Arthur"
+    }
+  ],
+  "signals": {
+    "pain": [
+      {
+        "summary": "Claims wait three days before reaching the right handler",
+        "what": "OPS",
+        "dimension": "TIME",
+        "source_quote": "claims wait three days on average"
+      }
+    ],
+    "constraint": [
+      {
+        "summary": "Nothing goes live without an IT security review",
+        "nature": "SECURITY"
+      }
+    ]
+  },
+  "manager_notes": [],
+  "products": [
+    {
+      "name": "ClaimRouter",
+      "description": "Automatic routing of incoming claims",
+      "value_proposition": "Claims reach the right handler on the first day",
+      "quantity": 1
+    }
+  ]
+}

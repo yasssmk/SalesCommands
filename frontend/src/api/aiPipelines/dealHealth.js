@@ -8,8 +8,13 @@
  * Runs a single LLM call to diagnose deal maturity from validated signals
  * and transcripts. Returns a DealHealthSnapshot.
  *
- * Unlike activity extraction, this pipeline is synchronous with no polling
- * or idempotency key management — a simple POST that returns the snapshot.
+ * The pipeline is synchronous server-side but usually outlasts the client's
+ * bulk-profile timeout (a reasoning model: more than a minute). On a client
+ * timeout the run goes on and writes its snapshot: the caller polls
+ * GET .../health-snapshots/latest/ for up to DEAL_HEALTH_POLL_CONFIG
+ * (~3 min, the server polling window R2 of core/timeout_conventions.py, as
+ * the Activity Run AI: activityExtraction.js EXTRACTION_POLL_CONFIG). The
+ * run state shared by every trigger lives in hooks/useDealHealthRunner.js.
  *
  * Return value:
  *   { success: true, data: { run, snapshot } }   → pipeline succeeded
@@ -18,10 +23,12 @@
 
 import useSWR from "swr";
 import { useMemo } from "react";
+import { format, parseISO } from "date-fns";
 import { useAuth } from "hooks/useAuth";
 import { api } from "utils/axiosClient";
 import { tenantKey, revalidateMultiple } from "api/_swr";
 import { isValidUUID } from "utils/validators";
+import { computeIdempotencyKey } from "api/aiPipelines/activityExtraction";
 
 // ==============================|| ENDPOINTS ||============================== //
 
@@ -32,6 +39,134 @@ const endpoints = {
   snapshotList: (cycleId) =>
     `/decision_cycles/${cycleId}/health-snapshots/`,
 };
+
+// ==============================|| RUN CONSTANTS ||============================== //
+
+// Sprint « Deal health v2 », 5c: the polling window after a client timeout —
+// 36 x 5 s ≈ 3 min, the backend's POLLING_MAX_ATTEMPTS x
+// POLLING_INTERVAL_SECONDS (core/timeout_conventions.py), within which the
+// deal health call ends (DEAL_HEALTH_TIMEOUT_S).
+export const DEAL_HEALTH_POLL_CONFIG = {
+  intervalMs: 5000,
+  maxAttempts: 36,
+};
+
+// The labels and messages of a deal health run, shared by every trigger.
+export const DEAL_HEALTH_RUN_LABELS = {
+  RUN: "Run Deal Health",
+  RERUN: "Re-run",
+  HEADER: "Deal Health",
+  RUNNING: "Analysis in progress…",
+  DONE: "Deal health diagnostic completed",
+  // End of the polling window, no snapshot yet: information, not an error.
+  STILL_RUNNING:
+    "The analysis is taking longer than usual. The diagnostic will appear on this deal once it is ready — no need to run it again.",
+  TOOLTIP: "Run deal health diagnostic",
+  // Step 6, A10 — business rules, shown as INFORMATION (never red).
+  NOTHING_NEW: (date) => `Nothing new since the last analysis (${date})`,
+  CLOSED:
+    "This decision cycle is closed: its last diagnostic stays available, no new analysis is run.",
+  // 6b — the run is for an admin, a manager or the cycle's owner.
+  NOT_ALLOWED:
+    "Only an admin, a manager or the owner of this decision cycle can run its deal health.",
+};
+
+// Step 8 (PO decision of 20/11) — the freshness warning
+// (components/display/DealHealthFreshnessAlert.jsx): « new information to
+// analyse », never « stale ».
+export const DEAL_HEALTH_FRESHNESS_LABELS = {
+  NEW_INFO: (date) => `New information to analyse since ${date}`,
+  NO_ANALYSIS_YET: "No deal health yet",
+};
+
+// The reasons served by the backend (ai_pipelines/constants.py
+// DEAL_HEALTH_FRESHNESS_*).
+export const DEAL_HEALTH_FRESHNESS_REASONS = {
+  NO_ANALYSIS_YET: "NO_ANALYSIS_YET",
+  NEW_SOURCES: "NEW_SOURCES",
+  STEP_CHANGED: "STEP_CHANGED",
+};
+
+/**
+ * The text of the freshness warning, or null when nothing is to be shown
+ * (not applicable, or nothing new).
+ *
+ * @param {Object|null} freshness - { applies, has_new_info, last_analysis_at, reasons }.
+ * @returns {string|null}
+ */
+export function dealHealthFreshnessMessage(freshness) {
+  if (!freshness?.applies || !freshness?.has_new_info) return null;
+  if (!freshness.last_analysis_at) return DEAL_HEALTH_FRESHNESS_LABELS.NO_ANALYSIS_YET;
+  return DEAL_HEALTH_FRESHNESS_LABELS.NEW_INFO(
+    format(parseISO(freshness.last_analysis_at), LAST_ANALYSIS_DATE_FORMAT),
+  );
+}
+
+// Step 6, A10 — the INFO codes of a run stopped by a business rule (200,
+// no LLM call, no snapshot): backend ai_pipelines/constants.py.
+export const DEAL_HEALTH_INFO_CODES = {
+  NO_NEW_SOURCES: "DEAL_HEALTH_NO_NEW_SOURCES",
+  CYCLE_CLOSED: "DEAL_HEALTH_CYCLE_CLOSED",
+};
+
+// The date of the last analysis in the INFO (DCWorkspaceHeader.jsx:331).
+const LAST_ANALYSIS_DATE_FORMAT = "MMM d, yyyy";
+
+// 6c (PO): the outcomes that close a cycle for the deal health — the
+// backend's decision_cycles DEAL_HEALTH_CLOSED_OUTCOMES (= TERMINAL_OUTCOMES).
+// ON_HOLD is a pause, not a closure: the deal health runs there.
+export const DEAL_HEALTH_CLOSED_OUTCOMES = ["WON", "LOST", "NOT_QUALIFIED"];
+
+/**
+ * A closed decision cycle (won, lost, not qualified) is not analysed again
+ * (A10); ON_HOLD is not closed (6c).
+ *
+ * @param {Object} cycle - the decision cycle ({ outcome }).
+ * @returns {boolean}
+ */
+export function isDealHealthClosed(cycle) {
+  return DEAL_HEALTH_CLOSED_OUTCOMES.includes(cycle?.outcome);
+}
+
+/**
+ * 6b: may the current user run a deal health on this cycle (an admin, a
+ * manager or the cycle's owner)? Served by the server on the cycle payloads
+ * (can_run_deal_health — decision_cycles/services/deal_health_access.py);
+ * the server enforces it on the run (403). A payload without the flag is
+ * left to the server's guard.
+ *
+ * @param {Object} cycle - the decision cycle ({ can_run_deal_health }).
+ * @returns {boolean}
+ */
+export function canRunDealHealth(cycle) {
+  return cycle?.can_run_deal_health !== false;
+}
+
+/**
+ * Why the run triggers of this cycle are disabled — the hover info — or null
+ * when the run is possible: a closed cycle first (A10), then the right (6b).
+ *
+ * @param {{ closed: boolean, allowed: boolean }} state
+ * @returns {string|null}
+ */
+export function dealHealthBlockedReason({ closed, allowed }) {
+  if (closed) return DEAL_HEALTH_RUN_LABELS.CLOSED;
+  if (!allowed) return DEAL_HEALTH_RUN_LABELS.NOT_ALLOWED;
+  return null;
+}
+
+/**
+ * The INFO message of a run guard answer (A10).
+ *
+ * @param {string} code - one of DEAL_HEALTH_INFO_CODES.
+ * @param {string|null} lastAnalysisAt - ISO datetime of the last snapshot.
+ * @returns {string}
+ */
+export function dealHealthInfoMessage(code, lastAnalysisAt) {
+  if (code === DEAL_HEALTH_INFO_CODES.CYCLE_CLOSED) return DEAL_HEALTH_RUN_LABELS.CLOSED;
+  const date = lastAnalysisAt ? format(parseISO(lastAnalysisAt), LAST_ANALYSIS_DATE_FORMAT) : "";
+  return DEAL_HEALTH_RUN_LABELS.NOTHING_NEW(date);
+}
 
 // ==============================|| MUTATION ||============================== //
 
@@ -46,10 +181,22 @@ const endpoints = {
  * that a server-side snapshot created before a client timeout is picked up
  * when the Strategic tab mounts.
  *
+ * Step 6 (Redis, TD-50): a DETERMINISTIC Idempotency-Key, sha256(cycleId ::
+ * latestSnapshotId) (the activityExtraction.js R4 pattern) — a double click
+ * or a second tab on the same state is ONE operation server side: 202 while
+ * it runs (→ the caller polls, as after a client timeout), its answer
+ * replayed once done.
+ * A10: a run stopped by a business rule answers 200 + an INFO code
+ * (DEAL_HEALTH_INFO_CODES) → { success: true, code, data }.
+ *
  * @param {string} cycleId - UUID of the DecisionCycle.
- * @returns {Promise<Object>} { success, data } or { success, error, status, response }
+ * @param {Object} [opts]
+ * @param {string|null} [opts.previousSnapshotId] - the latest snapshot's id
+ *   (or null) — the state the key is computed on.
+ * @returns {Promise<Object>} { success, data, code? } or
+ *   { success, error, status, isTimeout, alreadyRunning, response }
  */
-export async function runDealHealth(cycleId) {
+export async function runDealHealth(cycleId, { previousSnapshotId = null } = {}) {
   if (!cycleId || !isValidUUID(cycleId)) {
     return {
       success: false,
@@ -60,19 +207,38 @@ export async function runDealHealth(cycleId) {
 
   const snapshotPrefix = `/decision_cycles/${cycleId}/health-snapshots/`;
 
+  const requestConfig = { profile: "bulk" };
+  try {
+    requestConfig.headers = {
+      "Idempotency-Key": await computeIdempotencyKey(cycleId, previousSnapshotId ?? ""),
+    };
+  } catch {
+    // crypto.subtle unavailable: the client's auto-injected random key
+    // (utils/axiosClient.js) — no dedup, the run still goes on.
+  }
+
   let result;
   try {
     result = await api.post(
       endpoints.dealHealthRun,
       { decision_cycle_id: cycleId },
-      { profile: "bulk" },
+      requestConfig,
     );
   } finally {
     revalidateMultiple([snapshotPrefix]);
   }
 
+  // The same operation is already running (another click / tab).
+  if (result.data?.__is202) {
+    return { success: false, alreadyRunning: true, status: 202 };
+  }
+
   if (result.success) {
-    const data = result.data?.data || result.data;
+    const body = result.data || {};
+    if (Object.values(DEAL_HEALTH_INFO_CODES).includes(body.code)) {
+      return { success: true, code: body.code, data: body.data || null };
+    }
+    const data = body.data || result.data;
     return { success: true, data };
   }
 
@@ -98,15 +264,20 @@ export async function runDealHealth(cycleId) {
  * @param {string|null} previousSnapshotId - id (or snapshot_date) of the
  *   snapshot present before the run, or null if there was none.
  * @param {Object} [opts]
- * @param {number} [opts.intervalMs=4000] - Delay between attempts.
- * @param {number} [opts.maxAttempts=5] - Maximum poll attempts.
+ * @param {number} [opts.intervalMs] - Delay between attempts
+ *   (default DEAL_HEALTH_POLL_CONFIG).
+ * @param {number} [opts.maxAttempts] - Maximum poll attempts
+ *   (default DEAL_HEALTH_POLL_CONFIG).
  * @returns {Promise<Object>} { success: true, data } on a new snapshot,
  *   otherwise { success: false, timedOut: true }.
  */
 export async function pollForNewSnapshot(
   cycleId,
   previousSnapshotId,
-  { intervalMs = 4000, maxAttempts = 5 } = {},
+  {
+    intervalMs = DEAL_HEALTH_POLL_CONFIG.intervalMs,
+    maxAttempts = DEAL_HEALTH_POLL_CONFIG.maxAttempts,
+  } = {},
 ) {
   if (!cycleId || !isValidUUID(cycleId)) {
     return { success: false, error: "Invalid cycle ID format" };
@@ -157,11 +328,11 @@ export async function getLatestSnapshotId(cycleId) {
  *
  * GET /decision_cycles/{cycleId}/health-snapshots/latest/
  *
- * Backend returns { success: true, data: <snapshot|null> }.
+ * Backend returns { success: true, data: <snapshot|null>, freshness }.
  * When no snapshot exists, data is null — this is NOT an error.
  *
  * @param {string} cycleId - UUID of the DecisionCycle.
- * @returns {Object} { snapshot, snapshotLoading, snapshotError, mutateSnapshot }
+ * @returns {Object} { snapshot, freshness, snapshotLoading, snapshotError, mutateSnapshot }
  */
 export function useGetDealHealthSnapshot(cycleId) {
   const { tenantId } = useAuth();
@@ -180,6 +351,9 @@ export function useGetDealHealthSnapshot(cycleId) {
   return useMemo(
     () => ({
       snapshot: data?.data ?? null,
+      // Step 8: computed at read time, served beside the snapshot (even
+      // without one) — { applies, has_new_info, last_analysis_at, reasons }.
+      freshness: data?.freshness ?? null,
       snapshotLoading: isLoading,
       snapshotError: error,
       mutateSnapshot: mutate,

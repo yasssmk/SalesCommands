@@ -72,8 +72,8 @@ def build_context_layer(input_pack, brief_mode):
     ctx_lines = ["PREP CONTEXT"]
     if ctx.get('account_name'):
         ctx_lines.append(f"Account: {ctx['account_name']}")
-    if ctx.get('decision_cycle_id'):
-        ctx_lines.append(f"Decision cycle: {ctx['decision_cycle_id']}")
+    # The decision cycle's UUID is NOT sent to the LLM (amendment A15): it
+    # carries no meaning for the model. The account name stays.
     if ctx.get('deal_value'):
         ctx_lines.append(f"Deal value: {ctx['deal_value']}")
 

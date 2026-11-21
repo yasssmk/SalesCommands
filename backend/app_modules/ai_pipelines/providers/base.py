@@ -157,6 +157,12 @@ class LLMProvider(ABC):
     # (transcript_signals.check_stage_schemas).
     SUPPORTS_RESPONSE_SCHEMA: bool = False
 
+    # Sub-step 5b: the environment variable holding this provider's API key
+    # (read by its SDK). Checked at load for an explicitly chosen provider
+    # (providers.provider_credentials_present) -- a clear configuration
+    # message instead of a failure at the first call. None: no check.
+    REQUIRED_ENV_KEY: str | None = None
+
     @abstractmethod
     def call(
         self,

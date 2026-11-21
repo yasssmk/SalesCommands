@@ -19,6 +19,8 @@ Each pipeline class reads its value from that dict via its AIPipelineType key.
 
 from django.conf import settings
 
+from .constants import DEAL_HEALTH_MAX_TOKENS, DEAL_HEALTH_TIMEOUT_S
+
 
 # =============================================================================
 # PROVIDER SELECTION — single point of switch
@@ -68,7 +70,8 @@ ACTIVE_PROVIDER = getattr(settings, 'AI_PIPELINES_ACTIVE_PROVIDER', 'openai')
 #                ('low' / 'medium' / 'high'): sent as reasoning_effort,
 #                temperature NOT sent, max_tokens sent as
 #                max_completion_tokens (providers, P0). This option -- never
-#                the model name -- decides the mode.
+#                the model name -- decides the mode. On Claude (5b) it is
+#                sent as output_config.effort.
 #
 # Override the whole dict in Django settings:
 #     AI_PIPELINES_PROVIDER_CONFIG = {...}
@@ -128,7 +131,52 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':         90,
         'max_tokens':        8192,
     },
+    # Sprint « Deal health v2 », step 5 -- the deal health's own entries
+    # (DEAL_HEALTH_LLM_PROVIDER below picks one), the NEXT_STEPS pattern
+    # above: Structured Outputs, a model chosen for quality (configurable:
+    # AI_PIPELINES_DEAL_HEALTH_MODEL; final choice at step 7), its own timeout.
+    'openai_deal_health': {
+        'provider':          'openai',
+        'model':             getattr(settings, 'AI_PIPELINES_DEAL_HEALTH_MODEL', 'gpt-5.6-terra'),
+        'reasoning_effort':  'medium',
+        'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
+        'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
+    },
+    # Step 7 -- the CHALLENGER of the deal health's model, DECLARED for the
+    # evaluation only (evals/deal_health: model Y of the format x model
+    # matrix) -- never wired: DEAL_HEALTH_LLM_PROVIDER picks openai or claude.
+    # gpt-5.4: the full model of the 5.4 line (gpt-5.4-mini is declared
+    # above), quality tier; same options as openai_deal_health.
+    'openai_deal_health_challenger': {
+        'provider':          'openai',
+        'model':             'gpt-5.4',
+        'reasoning_effort':  'medium',
+        'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
+        'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
+    },
+    # Sub-step 5b -- the deal health on Claude (DEAL_HEALTH_LLM_PROVIDER below
+    # = 'claude', ANTHROPIC_API_KEY set): a quality-tier model (configurable:
+    # AI_PIPELINES_DEAL_HEALTH_CLAUDE_MODEL), Structured Outputs through
+    # output_config.format, the effort sent as output_config.effort, no
+    # temperature; the same timeout and token budget as openai_deal_health.
+    'claude_deal_health': {
+        'provider':          'claude',
+        'model':             getattr(settings, 'AI_PIPELINES_DEAL_HEALTH_CLAUDE_MODEL', 'claude-opus-5-5'),
+        'reasoning_effort':  'medium',
+        'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
+        'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
+    },
 })
+
+
+# THE switch of the deal health's LLM provider (amendment A11 — ONE value in
+# the module's configuration, never an environment variable: the .env holds
+# the secrets only). 'openai' -> PROVIDER_CONFIG['openai_deal_health'],
+# 'claude' -> PROVIDER_CONFIG['claude_deal_health'] (constants
+# DEAL_HEALTH_PROVIDER_KEYS). 'claude' needs ANTHROPIC_API_KEY, checked at load
+# (pipelines/deal_health.check_deal_health_provider). Only the deal health
+# reads it. See README.md.
+DEAL_HEALTH_LLM_PROVIDER = 'openai'
 
 
 # =============================================================================

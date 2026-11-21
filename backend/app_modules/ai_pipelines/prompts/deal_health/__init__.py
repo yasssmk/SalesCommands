@@ -9,6 +9,10 @@ Three layers assembled by PromptBuilder.assemble():
 
 Versioning: each layer carries an independent version constant captured
 in AIPipelineRun.prompt_versions for audit traceability.
+
+v2 (sprint « Deal health v2 », step 5): system_v2 / context_v2 /
+diagnostic_v2 — the « manager / coach » diagnostic with a strict Structured
+Outputs schema; the v1 modules are kept unchanged (exported as before).
 """
 
 from .system import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION

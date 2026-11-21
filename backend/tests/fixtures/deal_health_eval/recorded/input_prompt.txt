@@ -1,0 +1,12 @@
+=== SYSTEM ===
+You are an experienced B2B sales manager and deal coach. (recorded)
+
+=== USER ===
+DEAL
+{"name":"Northwind Freight — fleet planning","description":"Route planning for the regional fleet","estimated_value":"48000","current_step":{"stage":"TECHNICAL_FIT","name":"Technical Fit"},"products":[{"name":"RoutePlanner","quantity":40,"description":"Route optimisation","value_proposition":"Fewer empty kilometres"}]}
+ACCOUNT
+{"industry":"Logistics","company_size":"200-500"}
+STAKEHOLDERS
+[{"ref":"Claire","department":"Finance","role":"economic buyer"},{"ref":"Hugo","department":"Operations","role":"champion"}]
+ACTIVITIES
+[{"type":"MEETING","notes":"Hugo says planners lose 6 hours a week re-planning routes. Claire owns the 2027 budget. IT security has not reviewed the integration yet."}]

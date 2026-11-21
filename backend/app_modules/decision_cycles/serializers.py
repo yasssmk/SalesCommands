@@ -314,7 +314,25 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
         return agg.get('effective_end_date')
 
 
-class DecisionCycleTimelineSerializer(TenantCurrencySerializerMixin,
+class DealHealthAccessFieldMixin(serializers.Serializer):
+    """
+    Sprint « Deal health v2 », 6b — ``can_run_deal_health``: may the
+    requester RUN a deal health on this cycle (admin, manager, or the cycle's
+    owner)? THE predicate of services/deal_health_access.py, computed at read
+    time from the request (context) and the instance — no queryset
+    annotation, so no get_object() can lose it. Read only; the run endpoint
+    enforces the same predicate.
+    """
+
+    can_run_deal_health = serializers.SerializerMethodField(read_only=True)
+
+    def get_can_run_deal_health(self, obj):
+        from .services.deal_health_access import can_run_deal_health
+        return can_run_deal_health(self.context.get('request'), obj)
+
+
+class DecisionCycleTimelineSerializer(DealHealthAccessFieldMixin,
+                                      TenantCurrencySerializerMixin,
                                       serializers.ModelSerializer):
     """
     Lightweight serializer for cycle list in by_account endpoint.
@@ -397,7 +415,9 @@ class DecisionCycleTimelineSerializer(TenantCurrencySerializerMixin,
             # Cycle-level insights
             'cycle_status', 'progress',
             'stalled_steps_count', 'is_at_risk',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at',
+            # 6b — the right to run a deal health (DealHealthAccessFieldMixin)
+            'can_run_deal_health',
         ]
         read_only_fields = fields
     
@@ -1221,7 +1241,8 @@ class DecisionCycleListSerializer(TenantCurrencySerializerMixin,
         return {'id': str(team.id), 'name': team.name} if team else None
 
 
-class DecisionCycleSerializer(TenantCurrencySerializerMixin,
+class DecisionCycleSerializer(DealHealthAccessFieldMixin,
+                              TenantCurrencySerializerMixin,
                               ClientScopeManager.SerializerMixin,
                               serializers.ModelSerializer):
     """
@@ -1271,7 +1292,9 @@ class DecisionCycleSerializer(TenantCurrencySerializerMixin,
             'steps', 'steps_count', 'validated_steps_count',
             'estimated_timeline_days', 'source_campaign_detail',
             'created_by', 'updated_by',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at',
+            # 6b — the right to run a deal health (DealHealthAccessFieldMixin)
+            'can_run_deal_health',
         ]
         read_only_fields = [
             'id', 'account_name', 'owner', 'owner_name', 'steps', 'steps_count',
@@ -1416,6 +1439,17 @@ class DecisionCycleUpdateSerializer(ClientScopeManager.SerializerMixin, serializ
 # DEAL HEALTH SNAPSHOT SERIALIZERS (read-only)
 # ============================================================================
 
+# Versioning fields of a DealHealthSnapshot (sprint « Deal health v2 », step 2)
+# — read-only, shared by the List and Detail serializers.
+DEAL_HEALTH_SNAPSHOT_VERSION_FIELDS = [
+    'schema_version',
+    'declared_step',
+    'estimated_step',
+    'estimated_step_reason',
+    'sources_cursor',
+    'prompt_versions',
+]
+
 class DealHealthSnapshotListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
     """
     Lightweight read-only serializer for DealHealthSnapshot list views.
@@ -1430,6 +1464,7 @@ class DealHealthSnapshotListSerializer(ClientScopeManager.SerializerMixin, seria
             'snapshot_date',
             'pipeline_run',
             'created_at',
+            *DEAL_HEALTH_SNAPSHOT_VERSION_FIELDS,
         ]
         read_only_fields = fields
 
@@ -1454,6 +1489,7 @@ class DealHealthSnapshotDetailSerializer(ClientScopeManager.SerializerMixin, ser
             'updated_by',
             'created_at',
             'updated_at',
+            *DEAL_HEALTH_SNAPSHOT_VERSION_FIELDS,
         ]
         read_only_fields = fields
 

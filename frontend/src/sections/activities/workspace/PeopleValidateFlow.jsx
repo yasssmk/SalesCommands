@@ -25,6 +25,8 @@ import PropTypes from "prop-types";
 import { useMemo, useState } from "react";
 
 // MUI
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -41,6 +43,11 @@ import ResolutionFlow, {
 } from "components/flows/ResolutionFlow";
 
 export const PEOPLE_RESOLUTION = { LINK: "LINK", CREATE: "CREATE" };
+
+// 5d (PO, « information completes itself when it does not contradict »):
+// linking a named signal to a stakeholder WITHOUT a name of its own (no name,
+// no contact) offers to give it the signal's name — the server keeps the guard.
+export const PEOPLE_NAME_STAKEHOLDER_LABEL = (name) => `Give this stakeholder the name ${name}`;
 
 const FLOW_STEPS = [
   { key: "resolution", label: "Resolution" },
@@ -63,6 +70,7 @@ function toCandidates(stakeholders, contacts) {
         s.contact ? null : "Not linked",
       ].filter(Boolean).join(" · "),
       proposed: Boolean(s.proposed),
+      nameless: !s.contact && !(s.full_name || "").trim(),
     })),
     ...contacts.map((c) => ({
       id: c.id,
@@ -83,6 +91,7 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
     String(signal.target_department?.id ?? signal.target_department ?? ""),
   );
   const [submitting, setSubmitting] = useState(false);
+  const [nameIt, setNameIt] = useState(true);
 
   const { stakeholders, contacts, candidatesLoading } = usePeopleResolutionCandidates(signal.id);
   const { standardDepartments } = useGetContactChoices();
@@ -94,6 +103,12 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
   const currentId = selectedId ?? candidates.find((c) => c.proposed)?.id ?? null;
   const selected = candidates.find((c) => c.id === currentId) ?? null;
   const createReady = Boolean(name.trim() || departmentId);
+  const signalName = (signal.full_name || "").trim();
+  const offerNaming =
+    choice === PEOPLE_RESOLUTION.LINK &&
+    selected?.kind === "stakeholder" &&
+    selected.nameless &&
+    Boolean(signalName);
 
   const resolve = async (resolution) => {
     setSubmitting(true);
@@ -115,8 +130,11 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
       if (departmentId) create.department_id = departmentId;
       return resolve({ create });
     }
+    if (selected.kind === "contact") return resolve({ contact_id: selected.id });
     return resolve(
-      selected.kind === "stakeholder" ? { stakeholder_id: selected.id } : { contact_id: selected.id },
+      offerNaming && nameIt
+        ? { stakeholder_id: selected.id, name_stakeholder: true }
+        : { stakeholder_id: selected.id },
     );
   };
 
@@ -168,27 +186,37 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
       )}
 
       {step === STEP.DETAILS && choice === PEOPLE_RESOLUTION.LINK && (
-        <CandidateList
-          index={STEP.DETAILS + 1}
-          title="Who is this person?"
-          candidates={candidates}
-          selectedId={currentId}
-          onSelect={setSelectedId}
-          isProposed={(c) => c.proposed}
-          getAriaLabel={(c) => `Select ${c.label}`}
-          testId="people-candidates"
-          candidateTestIdPrefix="people-candidate-"
-          renderCandidate={(c) => (
-            <Stack spacing={0.25}>
-              <Typography variant="body2" sx={{ fontWeight: "medium" }}>
-                {c.label}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {c.caption}
-              </Typography>
-            </Stack>
+        <Stack spacing={1}>
+          <CandidateList
+            index={STEP.DETAILS + 1}
+            title="Who is this person?"
+            candidates={candidates}
+            selectedId={currentId}
+            onSelect={setSelectedId}
+            isProposed={(c) => c.proposed}
+            getAriaLabel={(c) => `Select ${c.label}`}
+            testId="people-candidates"
+            candidateTestIdPrefix="people-candidate-"
+            renderCandidate={(c) => (
+              <Stack spacing={0.25}>
+                <Typography variant="body2" sx={{ fontWeight: "medium" }}>
+                  {c.label}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {c.caption}
+                </Typography>
+              </Stack>
+            )}
+          />
+          {offerNaming && (
+            <FormControlLabel
+              control={
+                <Checkbox size="small" checked={nameIt} onChange={(e) => setNameIt(e.target.checked)} />
+              }
+              label={PEOPLE_NAME_STAKEHOLDER_LABEL(signalName)}
+            />
           )}
-        />
+        </Stack>
       )}
 
       {step === STEP.DETAILS && choice === PEOPLE_RESOLUTION.CREATE && (

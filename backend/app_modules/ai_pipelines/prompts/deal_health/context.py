@@ -8,11 +8,18 @@ previous snapshot reading (if any).
 
 This does NOT reuse _build_session_block from transcript_signals —
 there is no Activity; the context is cycle-level.
+
+v1.1 (sprint « Deal health v2 », step 3b): + the static context sent every
+run — deal description, origin campaign (type, objective), account
+(industry, size), products' description and value proposition — and the
+FULL previous diagnostic when it is v2 (its global reading when v1).
 """
+
+import json
 
 __all__ = ['CONTEXT_VERSION', 'build_context_layer']
 
-CONTEXT_VERSION = 'v1'
+CONTEXT_VERSION = 'v1.1'
 
 
 def build_context_layer(pack):
@@ -29,11 +36,29 @@ def build_context_layer(pack):
 
     # -- Deal identity --
     cycle = pack['cycle']
-    sections.append(
-        f"DEAL CONTEXT\n"
-        f"Deal name: {cycle['name']}\n"
-        f"Estimated value: {cycle['estimated_value']}"
-    )
+    deal_lines = [
+        "DEAL CONTEXT",
+        f"Deal name: {cycle['name']}",
+        f"Estimated value: {cycle['estimated_value']}",
+    ]
+    if cycle.get('description'):
+        deal_lines.append(f"Deal description: {cycle['description']}")
+    campaign = cycle.get('source_campaign')
+    if campaign:
+        deal_lines.append(f"Origin campaign: {campaign['type']}")
+        if campaign.get('objective'):
+            deal_lines.append(f"  Campaign objective: {campaign['objective']}")
+    sections.append('\n'.join(deal_lines))
+
+    # -- Account (static) --
+    account = pack.get('account') or {}
+    account_lines = [
+        f"{label}: {account[key]}"
+        for key, label in (('industry', 'Industry'), ('company_size', 'Company size'))
+        if account.get(key)
+    ]
+    if account_lines:
+        sections.append('\n'.join(["ACCOUNT"] + account_lines))
 
     # -- Current step --
     step = cycle.get('current_step')
@@ -59,6 +84,10 @@ def build_context_layer(pack):
         product_lines = ["Products:"]
         for p in products:
             product_lines.append(f"  - {p['name']} (qty: {p['quantity']})")
+            if p.get('description'):
+                product_lines.append(f"    Description: {p['description']}")
+            if p.get('value_proposition'):
+                product_lines.append(f"    Value proposition: {p['value_proposition']}")
         sections.append('\n'.join(product_lines))
 
     # -- Readiness --
@@ -84,10 +113,9 @@ def build_context_layer(pack):
             dept = ''
             if q.get('target_department'):
                 dept = f" [{q['target_department']['name']}]"
-            contact_name = ''
-            if q.get('target_contact'):
-                c = q['target_contact']
-                contact_name = f" {c.get('first_name', '')} {c.get('last_name', '')}".strip()
+            # The llm_people label set by the evidence builder (first name
+            # only; homonyms "P1 Marc (Finance)") — never a last name.
+            contact_name = q.get('name') or ''
             people_lines.append(
                 f"  - {q['role_display']}{dept}{' — ' + contact_name if contact_name else ''}"
                 f" (influence: {q.get('influence_display') or 'unknown'})"
@@ -101,9 +129,16 @@ def build_context_layer(pack):
     # -- Previous snapshot --
     prev = pack.get('previous_snapshot')
     if prev:
-        sections.append(
-            f"Previous diagnostic ({prev['snapshot_date']}):\n"
-            f"  {prev['global_reading']}"
-        )
+        if prev.get('diagnostic'):
+            # v2: the full previous diagnostic (compact JSON).
+            sections.append(
+                f"Previous diagnostic ({prev['snapshot_date']}):\n"
+                f"{json.dumps(prev['diagnostic'], ensure_ascii=False, separators=(',', ':'))}"
+            )
+        else:
+            sections.append(
+                f"Previous diagnostic ({prev['snapshot_date']}):\n"
+                f"  {prev['global_reading']}"
+            )
 
     return '\n\n'.join(sections)

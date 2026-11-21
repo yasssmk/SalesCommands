@@ -1,0 +1,28 @@
+{
+  "real_step": "SOLUTION_VALIDATION",
+  "missing_info": {
+    "level": "DEPARTMENT",
+    "any_of": [
+      "quantif",
+      "savings",
+      "gain",
+      "roi",
+      "measured"
+    ]
+  },
+  "hidden_objection": {
+    "description": "A competitor quoted a lower price.",
+    "any_of": [
+      "lower price",
+      "cheaper",
+      "competitor",
+      "other vendor",
+      "price"
+    ]
+  },
+  "decision_maker": "Nadia",
+  "planted_last_names": [
+    "Castellano",
+    "Okonkwo"
+  ]
+}

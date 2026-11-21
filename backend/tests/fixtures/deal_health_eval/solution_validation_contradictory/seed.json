@@ -1,0 +1,87 @@
+{
+  "case": "solution_validation_contradictory",
+  "fictitious": true,
+  "description": "SOLUTION_VALIDATION with contradictory evidence: an enthusiastic champion, an unconvinced finance lead.",
+  "account": {
+    "company_name": "Harbor & Pine Furniture",
+    "company_size": "500-1000"
+  },
+  "cycle": {
+    "name": "Harbor & Pine — warehouse slotting",
+    "description": "Slotting optimisation for two warehouses."
+  },
+  "declared_step": "SOLUTION_VALIDATION",
+  "people": [
+    {
+      "first_name": "Liam",
+      "last_name": "Castellano",
+      "job_title": "Warehouse manager",
+      "role": "CHAMPION"
+    },
+    {
+      "first_name": "Nadia",
+      "last_name": "Okonkwo",
+      "job_title": "Finance director",
+      "role": "ECONOMIC_BUYER"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "CALL",
+      "status": "COMPLETED",
+      "days_ago": 40,
+      "title": "Discovery",
+      "outcome_notes": "Liam: pickers walk too much; two warehouses, peak season in November."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 25,
+      "title": "Technical workshop",
+      "outcome_notes": "Integration with the WMS confirmed feasible by their IT."
+    },
+    {
+      "stage": "SOLUTION_VALIDATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 4,
+      "title": "Demo to Liam and Nadia",
+      "transcript": "Liam: This is exactly what we need, the team loved it. Nadia: I am not convinced yet. The other vendor quoted a lower price and I have not seen how the savings are measured. Liam: We can run a test on one aisle."
+    },
+    {
+      "stage": "SOLUTION_VALIDATION",
+      "type": "MEETING",
+      "status": "PLANNED",
+      "days_ago": -6,
+      "title": "Pilot scoping"
+    }
+  ],
+  "signals": {
+    "pain": [
+      {
+        "summary": "Pickers walk too far between locations",
+        "what": "OPS",
+        "dimension": "TIME",
+        "source_quote": "pickers walk too much"
+      }
+    ],
+    "blocker": [
+      {
+        "summary": "The finance director has not seen how the savings are measured"
+      }
+    ]
+  },
+  "manager_notes": [
+    "Liam is enthusiastic but Nadia decides; do not mistake the champion for the buyer."
+  ],
+  "products": [
+    {
+      "name": "SlotWise",
+      "description": "Warehouse slotting optimisation",
+      "value_proposition": "Shorter picking routes",
+      "quantity": 2
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback } from "react";
+import { useState } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
@@ -12,6 +12,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
@@ -23,16 +24,15 @@ import {
 
 // Project imports
 import {
+  DEAL_HEALTH_RUN_LABELS,
+  canRunDealHealth,
+  dealHealthBlockedReason,
+  isDealHealthClosed,
   useGetDealHealthSnapshot,
-  runDealHealth,
-  pollForNewSnapshot,
 } from "api/aiPipelines/dealHealth";
 import { useGetReadiness } from "api/accounts/decisionCycles";
-import {
-  displaySuccessSnackbar,
-  displayErrorSnackbar,
-  displayWarningSnackbar,
-} from "utils/displayError";
+import useDealHealthRunner from "hooks/useDealHealthRunner";
+import DealHealthFreshnessAlert from "components/display/DealHealthFreshnessAlert";
 
 // Section imports
 import ReadinessScoreGauge from "./ReadinessScoreGauge";
@@ -42,50 +42,28 @@ import ThemesView from "./ThemesView";
 // ==============================|| STRATEGIC TAB ||============================== //
 
 export default function StrategicTab({ cycleId, accountId, cycle }) {
-  const { snapshot, snapshotLoading, snapshotError, mutateSnapshot } =
+  const { snapshot, freshness, snapshotLoading, snapshotError } =
     useGetDealHealthSnapshot(cycleId);
   const { readiness, readinessLoading } = useGetReadiness(cycleId);
 
   const [subTab, setSubTab] = useState("deal-health");
-  const [runLoading, setRunLoading] = useState(false);
-  const [polling, setPolling] = useState(false);
 
-  const busy = runLoading || polling;
-
-  const handleRun = useCallback(async () => {
-    const previousSnapshotId = snapshot?.id ?? snapshot?.snapshot_date ?? null;
-
-    setRunLoading(true);
-    const result = await runDealHealth(cycleId);
-    setRunLoading(false);
-
-    if (result.success) {
-      displaySuccessSnackbar("Deal health diagnostic completed");
-      mutateSnapshot();
-      return;
-    }
-
-    // The pipeline is synchronous server-side but can outlast the client
-    // timeout. On a timeout the snapshot may still have been written — poll
-    // for a new one before surfacing an error.
-    if (result.isTimeout || result.status === 408) {
-      setPolling(true);
-      const polled = await pollForNewSnapshot(cycleId, previousSnapshotId);
-      setPolling(false);
-
-      if (polled.success) {
-        displaySuccessSnackbar("Deal health diagnostic completed");
-        mutateSnapshot();
-      } else {
-        displayWarningSnackbar(
-          "Analysis is taking longer than expected — please retry in a moment.",
-        );
-      }
-      return;
-    }
-
-    displayErrorSnackbar(result);
-  }, [cycleId, snapshot?.id, snapshot?.snapshot_date, mutateSnapshot]);
+  // The run and its « in progress » state are shared with the DC header's
+  // button (hooks/useDealHealthRunner.js, sprint « Deal health v2 », 5c): a
+  // run that outlasts the client timeout keeps every trigger disabled until
+  // the new snapshot arrives (the view refreshes, no reload) or the polling
+  // window ends (INFO).
+  const { run: handleRun, running: busy } = useDealHealthRunner(cycleId);
+  // Step 8: « new information to analyse » next to Run / Re-run — the
+  // server's freshness (read with the latest snapshot), a warning, never red.
+  // Step 6 (A10): a closed cycle is not analysed again; 6b: only an admin, a
+  // manager or the cycle's owner runs it — the triggers are disabled with the
+  // reason on hover; the last diagnostic stays readable.
+  const blockedReason = dealHealthBlockedReason({
+    closed: isDealHealthClosed(cycle),
+    allowed: canRunDealHealth(cycle),
+  });
+  const blocked = Boolean(blockedReason);
 
   // Loading
   if (snapshotLoading || readinessLoading) {
@@ -140,24 +118,29 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             </Typography>
           </Stack>
 
-          <Button
-            variant="contained"
-            startIcon={
-              busy ? (
-                <CircularProgress size={14} />
-              ) : (
-                <ExperimentOutlined style={{ fontSize: 14 }} />
-              )
-            }
-            onClick={handleRun}
-            disabled={busy}
-          >
-            {polling
-              ? "Analysis still running…"
-              : runLoading
-                ? "Running diagnostic…"
-                : "Run Deal Health"}
-          </Button>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <DealHealthFreshnessAlert freshness={freshness} />
+            <Tooltip title={blockedReason ?? ""}>
+              <span>
+                <Button
+                  variant="contained"
+                  startIcon={
+                    busy ? (
+                      <CircularProgress size={14} />
+                    ) : (
+                      <ExperimentOutlined style={{ fontSize: 14 }} />
+                    )
+                  }
+                  onClick={handleRun}
+                  disabled={busy || blocked}
+                >
+                  {busy
+                    ? DEAL_HEALTH_RUN_LABELS.RUNNING
+                    : DEAL_HEALTH_RUN_LABELS.RUN}
+                </Button>
+              </span>
+            </Tooltip>
+          </Stack>
         </Stack>
       </Box>
     );
@@ -193,21 +176,30 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
             sx={{ minHeight: 36, py: 0, textTransform: "none" }}
           />
         </Tabs>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={
-            busy ? (
-              <CircularProgress size={12} />
-            ) : (
-              <ExperimentOutlined style={{ fontSize: 12 }} />
-            )
-          }
-          onClick={handleRun}
-          disabled={busy}
-        >
-          {polling ? "Analysis still running…" : runLoading ? "Running…" : "Re-run"}
-        </Button>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <DealHealthFreshnessAlert freshness={freshness} />
+          <Tooltip title={blockedReason ?? ""}>
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={
+                  busy ? (
+                    <CircularProgress size={12} />
+                  ) : (
+                    <ExperimentOutlined style={{ fontSize: 12 }} />
+                  )
+                }
+                onClick={handleRun}
+                disabled={busy || blocked}
+              >
+                {busy
+                  ? DEAL_HEALTH_RUN_LABELS.RUNNING
+                  : DEAL_HEALTH_RUN_LABELS.RERUN}
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
       </Stack>
 
       {/* Sub-tab content */}
@@ -226,5 +218,7 @@ StrategicTab.propTypes = {
   accountId: PropTypes.string.isRequired,
   cycle: PropTypes.shape({
     readiness_score: PropTypes.number,
+    outcome: PropTypes.string,
+    can_run_deal_health: PropTypes.bool,
   }),
 };

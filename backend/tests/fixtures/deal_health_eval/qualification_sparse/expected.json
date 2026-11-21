@@ -1,0 +1,24 @@
+{
+  "real_step": "QUALIFICATION",
+  "missing_info": {
+    "level": "BUSINESS",
+    "any_of": [
+      "budget"
+    ]
+  },
+  "hidden_objection": {
+    "description": "A previous planning tool was rejected by the drivers (adoption risk).",
+    "any_of": [
+      "rejected",
+      "adoption",
+      "previous tool",
+      "tried a planning tool",
+      "two years ago"
+    ]
+  },
+  "decision_maker": "Sofia",
+  "planted_last_names": [
+    "Okafor",
+    "Brennan"
+  ]
+}
