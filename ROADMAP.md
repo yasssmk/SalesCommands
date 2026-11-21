@@ -1563,6 +1563,40 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
 - **Dette** : **RESOLVED** (archivée) **TD-289** (obsolète, décision PO : une seule analyse par pipeline) ; **MAJ** **TD-120** (partielle : `ConfirmDialog` livrée ; restent `PainCard.jsx:81` et `AlertActivityCancel` → leurs surfaces), **TD-11** (archive : le rejeu 409 n'existe plus), **TD-111** (description corrigée : `Activity.transcript` est persisté), **TD-223**, **TD-225** (plus de champ note dans les modales) ; **NOUVEAUX** **TD-315** (throttling T1 → T8) et **TD-316** (sécurité des `@action`, chantier G1) — tous deux **bloquants pour la mise en production**.
 - **Prochain jalon** : le **chantier prep call** (confirmé PO).
 
+### Sprint « Deal health v2 » ✅ LIVRÉ (chantier Game Plan — sprint 1) — diagnostic v2 « manager / coach », sources complètes, profils des stakeholders, Claude prêt, garde-fous, permissions, fraîcheur et outil d'évaluation (branche `feat/deal-health-v2`, `f50c9004`→`e6c3cc3b`, 19 commits, **✅ MERGÉ, PR #173**, merge `723037a4`)
+- **Objectif** : faire du deal health un **rapport stratégique de manager / coach** fiable, nourri de **toutes les sources** du DC, qui enregistre ce qui convainc chaque stakeholder pour le **Game Plan** (sprint 2).
+- **Décisions PO verrouillées** :
+  - **Prénoms seulement** envoyés au LLM pour les personnes structurées (homonymes : réf + prénom + département) ; **aucun masquage dans les textes** (A15) ; l'UUID du DC n'est plus envoyé.
+  - **Sources nouvelles seulement** depuis le dernier snapshot (curseur), contexte statique à **chaque** run ; plafonds 50 000 caractères par source / 200 000 au total (les transcriptions les plus anciennes coupées d'abord).
+  - **Le deal ne change jamais d'étape** : l'IA donne l'**étape estimée** et sa raison à côté de l'étape déclarée.
+  - **Profils des stakeholders** par champ, avec la source (IA / IA modifiée / manuel) ; **l'IA n'écrase jamais une saisie manuelle** ; pas d'exposition API ni de PATCH du profil (A7).
+  - **Règles métier = INFO**, jamais rouge, jamais 400 : « rien de nouveau depuis la dernière analyse », DC **clôturé** (WON / LOST / NOT_QUALIFIED ; **ON_HOLD n'est pas clôturé**).
+  - **Lancer un deal health = admin, manager ou propriétaire du DC** ; portée manager **tenant-wide** (comme les notes manager) ; la lecture des snapshots ne change pas.
+  - **Fournisseur IA** : OpenAI par défaut, **Claude prêt** ; le choix est **une valeur du module** (`ai_pipelines/config.py` `DEAL_HEALTH_LLM_PROVIDER`), le `.env` ne porte que les **clés**.
+  - **Fraîcheur** = « nouvelles infos à analyser », jamais « périmé » ; à partir de TECHNICAL_FIT ; un DC sans étape déclarée → non applicable.
+  - **Ton** : coach qui veut gagner le deal ; plan d'action « qui / quoi / pour obtenir quoi », sans script (le rôle du Game Plan) ; `top_arguments` = une **donnée** (besoin + valeur, pour qui), jamais une tâche ; garde-fous internes ; summary « What is won / What blocks / What comes next ».
+  - **Format A + gpt-5.6-terra** retenus après l'évaluation réelle (déjà les défauts).
+- **Livré** (chaque étape : ROUGE par le vrai chemin d'abord, puis VERT, non-vacuité par mutation, régression ; STOP + validation PO) :
+  - **1** — un brief prep call ne compte plus comme une analyse (`ANALYSIS_PIPELINE_TYPES`).
+  - **2** — snapshot versionné : `schema_version`, étape déclarée, étape estimée + raison, curseur des sources, versions des prompts.
+  - **3a** — helper central « prénoms seulement » (`services/llm_people.py`) branché partout ; **3b** — toutes les sources (notes manager, emails, métriques d'Impact, concurrents, contexte statique, TechStack portée + discontinued) mais **seulement les nouvelles**, plafonds tracés dans le run.
+  - **4** — `Stakeholder.profile` + service central (`stakeholder_service.apply_ai_profile` / `apply_manual_profile`).
+  - **5** — diagnostic v2 (Structured Outputs strict, entrée de modèle dédiée, BANT `{status, reason}`, conclusion stratégique, info manquante par niveau, arguments, profils écrits) ; **5c** — un profil ne va qu'au stakeholder que son libellé désigne ; un run long garde tous ses déclencheurs « en cours » jusqu'au résultat ; **5d** — « donner un nom au stakeholder » au rattachement d'un People (case cochée par défaut, garde serveur).
+  - **5b** — **Claude prêt** : SDK anthropic 0.49 → 1.17, Structured Outputs via `output_config`, pas de température sur les modèles qui la refusent, repli automatique sur refus, contrôle au chargement avec la clé ; la bascule = la clé dans `backend/salescommands/.env` + `DEAL_HEALTH_LLM_PROVIDER = 'claude'` dans `config.py` (README `ai_pipelines/`, `backend/.env.example`).
+  - **6** — Redis (TD-50) : `start_op` / `complete_op` / `fail_op`, clé déterministe côté front (double clic, second onglet = une seule opération) ; INFO « rien de nouveau » et DC clôturé ; **6c** — contexte statique modifié = nouveau (empreinte dans le curseur), ON_HOLD autorisé ; **6b** — permissions (prédicat central `can_run_deal_health`, 403, droit servi au front, déclencheurs désactivés avec l'info au survol).
+  - **7** — prompt v2.1 (ton) + outil d'évaluation `evals/deal_health` (5 cas fictifs, matrice format × modèle, contrôles automatiques, rapport côte à côte, dry run hors ligne) ; **7b** — prompt diagnostic v2.2 (niveaux de la grille clarifiés, summary structuré), possessifs anglais dans le contrôle des noms, relance ciblée.
+  - **8** — fraîcheur calculée à la lecture (`deal_health_freshness`, servie avec le dernier snapshot, requêtes d'existence bornées) + bandeau d'avertissement réutilisable `DealHealthFreshnessAlert` dans l'onglet Strategic.
+- **Migrations** : `decision_cycles/0026` (`0026_deal_health_snapshot_versioning`), `decision_cycles/0027` (`0027_stakeholder_profile`).
+- **Validation (régression finale)** : **pytest** `tests/activities` + `tests/signals` + `tests/decision_cycles` + `tests/ai_pipelines` + `tests/campaigns` = **2545 / 2549**, **4 échecs de référence** (`test_create_requires_rigidity` — **TD-247** ; `test_callback_date_reschedule` ×3 — **TD-293**) ; `tests/integration` identique à main ; **vitest 239 fichiers / 2170 tests verts**, code de sortie 0, aucune erreur ; **évaluation réelle 5/5** (format A + gpt-5.6-terra).
+- **Dette** : **RESOLVED** (archivées) **TD-49** (obsolète, décision PO : le Game Plan prend tous les participants) et **TD-288** (5b : `ClaudeProvider` supporte les Structured Outputs) ; **MAJ** **TD-111** (renvoi vers TD-317) ; **MAJ** **TD-50** et **TD-314** (deal health fait ; reste le prep call → sprint 2), **TD-219** (le deal health lit les champs saisis ; l'émission par l'IA → sprint 2), **TD-46** et **TD-48** (sprint 2 : tous les participants, un angle par personne), **TD-29** (le deal health lit les notes manager ; la conversation → Surface DC), **TD-27** et **TD-316** (portée manager tenant-wide aussi pour le deal health ; resolve People est une `@action`) ; **NOUVEAUX** **TD-317** (⚠️ RGPD, **bloquant pour la mise en production**), **TD-318** (curseur), **TD-319** (variable de fournisseur à étendre), **TD-320** (bloquer les appels réels aux providers en test), **TD-321** (⚠️ `--timeout 12` de gunicorn face aux runs IA synchrones, **bloquant pour la mise en production**).
+- **Prochain jalon** : **sprint 2 du chantier Game Plan** (fiche « Sprint Game Plan — précisions PO »).
+
+#### Suite de la surface Activity (ordre PO, clôture Deal health v2)
+1. ✅ **Sprint Source / Notes** — LIVRÉ.
+2. **Chantier Game Plan** (fiche « Sprint Game Plan — précisions PO ») : ✅ **sprint 1 Deal health v2** — LIVRÉ (fiche ci-dessus) ; **sprint 2 Game Plan** — **prochain jalon**.
+3. **Passe UI finale Activity** — **avant la Surface DC** (fiche dans « Nouveaux sprints »).
+4. **Surface DC** (fiche « Sprint Workspace / DC »).
+
 ---
 
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
@@ -1653,7 +1687,9 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
   montée en charge multi-tenant.
 - **Prérequis de mise en production** (NOUVEAU 2026-11, clôture Source / Notes) :
   **`DEBUG=False`** (défaut `True` aujourd'hui), **throttling** (**TD-315**),
-  **sécurité des `@action` personnalisées** (**TD-316**, chantier G1), **Redis**.
+  **sécurité des `@action` personnalisées** (**TD-316**, chantier G1), **Redis**,
+  **délai du worker web** face aux runs IA synchrones (**TD-321**, clôture
+  Deal health v2).
 - **Sprint test** (NOUVEAU 2026-08-21) — smoke PO de bout en bout de TOUTE la
   chaîne visible, **sur un environnement AVEC Redis**. Voir la fiche « Sprint
   test » dans « Nouveaux sprints ». DERNIER avant déploiement.
@@ -1914,6 +1950,11 @@ possibles) :
     `SignalClusterDetailDrawer`, ex-TD-239) ; « Raised by » sans repli
     participant côté DC (**TD-254**).
   - **Re-smoke** des étapes du sprint qui touchent l'écran DC.
+- **Notes (clôture Deal health v2, 2026-11)** :
+  - **Affichage du diagnostic v2** (résumé, axes, BANT, plan d'action, info manquante, arguments) et **écart étape déclarée / estimée**.
+  - **Édition des profils des stakeholders** avec **« revenir à la valeur IA »** ; **report des profils vers le Contact**.
+  - **Notes manager en conversation dans les deux sens** (**TD-29**).
+  - **Portée manager par équipe** (**TD-27** ; aujourd'hui tenant-wide, notes manager et deal health).
 
 #### Sprint Objectifs — Vue (NOUVEAU 2026-08-21)
 - **Position** : **3ter** de l'ordre cible, **APRÈS** le sprint Workspace / DC.
@@ -2119,7 +2160,7 @@ possibles) :
 - **Question ouverte** : **lier un signal à un contact existant**.
 - **Matière d'entrée** : l'inventaire People ↔ Contact (60 opérations, 37 incohérences, `fichier:ligne`) — [`docs/PEOPLE_CONTACT_INVENTORY.md`](docs/PEOPLE_CONTACT_INVENTORY.md) ; dette **TD-307** (« Modèle Personnes »), reliée à **TD-211** (réconciliation), **TD-213** (influence), **TD-231** (rôle DC empilé), **TD-277** / **TD-278** / **TD-280** (People du DC), **TD-287** (rattachement à 3 états), **TD-7** / **TD-298** (personnes du next step).
 
-#### Sprint Prep call — précisions PO (2026-10, clôture Next steps)
+#### Sprint Game Plan (ex-« Prep call ») — précisions PO (2026-10, clôture Next steps ; renommé à la clôture Deal health v2)
 - **Position** : sprint « Transcript & notes + Preparation / Email generation + Prep call » (étape 4 de la suite de la surface Activity), après « Cycle de vie des contacts ».
 - **Objectif, critère de succès et sujets plus orientés VENTE** : l'**approche du meeting**, le **résultat à obtenir pour avancer le deal**, les **métriques importantes pour le prospect si elles sont connues**.
 - **Dans le sprint, pas en fine-tuning** (décision PO).
@@ -2127,6 +2168,21 @@ possibles) :
 - **Position (clôture Source / Notes)** : **prochain jalon** (confirmé PO).
 - **Ajouts (clôture Source / Notes)** : **Regenerate** du brief **ignore le verrou de l'activité** (possible sur COMPLETED / CANCELLED) ; le brief pourrait **lire les notes des calls précédents** ; **visibilité de la bande Préparation pendant le call** (voir « Passe UI finale Activity »).
 - **Ajouts (clôture Cycle de vie des contacts)** : **TD-46** (brief multi-contact), **TD-47** (boucle visé / réalisé), **TD-49** (`Activity.primary_contact`), **TD-219** (la section « How is success measured? » existe ; l'IA n'émet ni `success_criteria` ni `notes`, `target_date` seulement depuis le prompt v2) ; **TechStack** : portée + « discontinued » (passé = *no longer used*, futur = sortie planifiée) — **TD-314**.
+- **Renommage (clôture Deal health v2)** : la feature s'appelle **« Game Plan »** (call / meeting / démo) ; pour un email ou un message LinkedIn : **« AI email draft · by Game Plan »**.
+- **Le chantier (clôture Deal health v2)** = **sprint 1 Deal health v2** (✅ LIVRÉ, fiche « Sprint « Deal health v2 » ✅ ») + **sprint 2 Game Plan** (**prochain jalon**).
+- **Sprint 2 — contenu (clôture Deal health v2)** :
+  - **Fiche entreprise vendeuse** (validée PO).
+  - **Placeholders guidés** sur la **description** et la **proposition de valeur** des produits.
+  - Garde-fou **« ne jamais inventer »**.
+  - **Émission par l'IA** de `success_criteria` / `notes` de l'Objective (**TD-219**).
+  - **Verrou** : générer **seulement sur PLANNED / ON_HOLD**.
+  - **Tous les participants**, avec **un angle par personne** (**TD-46**, **TD-48** ; TD-49 archivée).
+  - **Email / LinkedIn dans la langue du prospect**.
+  - **UI en sections**.
+  - **Réutilisation du bandeau de fraîcheur** (`components/display/DealHealthFreshnessAlert.jsx`, deal health étape 8).
+  - **DÉFINITION des événements qui déclenchent le bandeau** — **distincts du droit de relancer**.
+  - **Calcul unique de l'étape** dans le prep call (la dérivation partagée `decision_steps_state`).
+  - **Redis côté prep call** (**TD-50**) ; TechStack portée + discontinued côté prep call (**TD-314**).
 
 #### Sprint Surface Campaign (NOUVEAU 2026-10 — décision PO, clôture Next steps)
 - **Règle produit** : **le but d'une campagne est de créer des DC** ; la **séquence** sert quand les gens **ne répondent pas** ; **pas de next step si et seulement si la séquence est encore active**.
@@ -2174,6 +2230,10 @@ possibles) :
   non sur une péremption constatée. Un smoke sans Redis validerait à VIDE.
 - **Contenu** : reprise groupée des smokes différés des sprints précédents, dont
   celui d'`expected_close_date` (voir Sprint Workspace / DC).
+- **Ajouts (clôture Deal health v2, 2026-11)** :
+  - **Test réel OpenAI ET Claude** du deal health : vraie clé Anthropic, **modèle réellement utilisé** (`module_ai_pipelines_run.model_name`), **repli automatique** sur refus.
+  - **Smoke général campagne → DC → Account**, dont le rattachement **« donner un nom au stakeholder »** et le **double clic avec Redis** (une seule opération).
+  - **Délai maximal du serveur en production** : le run du deal health est **synchrone** (jusqu'à environ 60 s) — ⚠️ `backend/Procfile` lance gunicorn avec `--timeout 12` : à aligner avant la mise en production (**TD-321**, bloquant ; le front attend déjà le snapshot jusqu'à ~3 min après un timeout client).
 
 ---
 
@@ -2628,6 +2688,9 @@ campagnes. **Le chip est la référence.**
   Sprint C.)
 - **Problématique / Solution / Validation** : à cadrer. Frontière avec
   Sprint B (overview produit) à clarifier.
+- **Notes (clôture Deal health v2, 2026-11)** :
+  - **Champs qui comptent pour l'IA** et leur importance (description, proposition de valeur — lus par le deal health et le Game Plan).
+  - **Règle générale** : l'UI **signale les champs utilisés par les analyses IA** et **comment bien les remplir** (alerte ou placeholder).
 
 ### S10 — Tech Catalogue (conception approfondie)
 À cadrer.
@@ -2732,9 +2795,17 @@ campagnes. **Le chip est la référence.**
   relisible ; un prep call peut être enrichi de cycles similaires.
 - **Note** : à implémenter seulement quand les structures commerciales sont
   stables (post-S13) pour éviter des snapshots incohérents entre eux.
+- **Futur (clôture Deal health v2, 2026-11)** :
+  - **Deal History** pour l'**analyse des DC clos**.
+  - **IA aphoriQ** qui **génère les argumentaires** par **type de compte × département × profil** à partir de toute la donnée des DC.
 
 ### S14 — Deal Health · S15 — Campaign UX
 À cadrer.
+
+> **↪ Deal Health (clôture Deal health v2, 2026-11)** — **livré** par le
+> sprint « Deal health v2 » (fiche « Sprint « Deal health v2 » ✅ »). Reste
+> à faire sur la Surface DC : l'affichage du diagnostic v2 et l'édition des
+> profils (fiche « Sprint Workspace / DC »).
 
 > **↪ Recadrage (clôture Next steps, 2026-10)** — le volet campagne est cadré
 > dans la fiche « Sprint Surface Campaign » (« Nouveaux sprints ») : règle
@@ -2825,6 +2896,9 @@ campagnes. **Le chip est la référence.**
   stratégie cohérente (stockage UTC, affichage local, saisie de dates dans
   le fuseau du user). À cadrer proprement à un moment, probablement avant ou
   pendant le Go-Live.
+- **Fin de projet — un fichier de configuration unique** pour tout le projet
+  (clôture Deal health v2) : réunir les réglages aujourd'hui répartis (par
+  exemple le choix du fournisseur IA par pipeline, **TD-319**).
 
 ---
 
