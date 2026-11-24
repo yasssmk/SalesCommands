@@ -84,6 +84,18 @@ THE FOUR USAGES
    The field checks the tenant only; the account (which depends on another
    field) is checked in ``validate()`` with usage 4.
 
+   For a ModelSerializer whose FKs are AUTO-generated from ``Meta.fields``,
+   ``TenantScopedRelationsMixin`` makes every auto FK / M2M towards a
+   tenant model a TenantScopedPrimaryKeyRelatedField (a FK towards a global
+   list such as StandardDepartment keeps DRF's field) — present and future
+   fields alike::
+
+       class MySignalCreateSerializer(TenantScopedRelationsMixin,
+                                      serializers.ModelSerializer):
+           class Meta:
+               model = MySignal
+               fields = ['account', 'contact', 'people']
+
 4. The safety net on already-resolved instances — ``check_resolved_scope``
    walks the validated ``attrs`` (instances and lists of instances), no
    query: tenant of every instance, then account (``skip`` the reference
@@ -333,3 +345,17 @@ class TenantScopedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
             client_id=context_client_id(self.context),
             account_id=ACCOUNT_NOT_APPLICABLE,
         )
+
+
+class TenantScopedRelationsMixin:
+    """ModelSerializer mixin (usage 3): every AUTO-generated FK / M2M field
+    towards a model carrying a tenant is a TenantScopedPrimaryKeyRelatedField;
+    one towards a global list keeps DRF's PrimaryKeyRelatedField. Explicitly
+    declared fields are untouched."""
+
+    def build_relational_field(self, field_name, relation_info):
+        field_class, field_kwargs = super().build_relational_field(field_name, relation_info)
+        if (field_class is serializers.PrimaryKeyRelatedField
+                and tenant_lookup(relation_info.related_model, client_id=None) is not None):
+            field_class = TenantScopedPrimaryKeyRelatedField
+        return field_class, field_kwargs

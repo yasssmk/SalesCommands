@@ -720,8 +720,13 @@ class TestNextStepStructuredFieldsAPI:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        # Another tenant's object is indistinguishable from a missing id.
-        assert _error_text(response) == str(CoreErrorMessages.OBJECT_NOT_FOUND)
+        # Another tenant's object is indistinguishable from a missing id: it is
+        # refused AT RESOLUTION by the tenant-scoped field (core/tenant_fk.py),
+        # so the standard message is carried by the field itself — the very
+        # body a missing id gets (test_signals_fk_no_existence_oracle.py).
+        assert response.json() == {
+            'suggested_people': [str(CoreErrorMessages.OBJECT_NOT_FOUND)],
+        }
         assert list(ns.suggested_people.all()) == []
 
     def test_people_of_another_account_is_refused(

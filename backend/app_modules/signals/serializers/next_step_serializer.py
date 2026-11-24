@@ -408,7 +408,7 @@ class NextStepSignalUpdateSerializer(BaseSignalUpdateSerializer):
       - the structured proposal (_STRUCTURED_WRITE_FIELDS): date text, DC
         step (must be a step of the next step's own cycle), topics, success
         criterion, carried_by_prospect, People (same tenant AND account —
-        base _validate_fk_scope), unresolved / internal names (lists of
+        base check_resolved_scope), unresolved / internal names (lists of
         strings), advice rationale.
 
     Not writable here: attached_activity (link service, bloc 2).

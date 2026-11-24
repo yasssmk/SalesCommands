@@ -24,7 +24,9 @@ from core.constants import ACCOUNT_NOT_APPLICABLE
 from core.error_messages import ContactErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from core.tenant_fk import (
+    TenantScopedManyRelatedField,
     TenantScopedPrimaryKeyRelatedField,
+    TenantScopedRelationsMixin,
     check_resolved_scope,
     resolve_in_tenant,
     resolve_one_in_tenant,
@@ -300,3 +302,27 @@ class TestTenantScopedField:
         s = _LinkSerializer(data={'contact': str(contact.id)}, context={})
         assert not s.is_valid()
         assert NOT_FOUND in str(s.errors)
+
+
+def test_relations_mixin_scopes_tenant_fks_and_leaves_global_ones():
+    """Auto FK / M2M towards a tenant model -> the scoped field (M2M in one
+    query); towards a global list (StandardDepartment) -> DRF's own field."""
+    from app_modules.signals.models import NextStepSignal, ObjectiveSignal
+
+    class _Objective(TenantScopedRelationsMixin, serializers.ModelSerializer):
+        class Meta:
+            model = ObjectiveSignal
+            fields = ['account', 'target_contact', 'target_department']
+
+    class _NextStep(TenantScopedRelationsMixin, serializers.ModelSerializer):
+        class Meta:
+            model = NextStepSignal
+            fields = ['suggested_contacts']
+
+    objective = _Objective().fields
+    assert type(objective['account']) is TenantScopedPrimaryKeyRelatedField
+    assert type(objective['target_contact']) is TenantScopedPrimaryKeyRelatedField
+    assert type(objective['target_department']) is serializers.PrimaryKeyRelatedField
+    many = _NextStep().fields['suggested_contacts']
+    assert type(many) is TenantScopedManyRelatedField
+    assert type(many.child_relation) is TenantScopedPrimaryKeyRelatedField
