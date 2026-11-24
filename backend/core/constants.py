@@ -128,3 +128,16 @@ INDUSTRIES = [
 # served unfiltered (see ClientScopeManager.ViewMixin.filter_queryset_by_client
 # in core/client_scope.py).
 TENANT_SCOPE_EXEMPT_ATTR = 'tenant_scope_exempt_reason'
+
+
+class _AccountNotApplicable:
+    """Type of ACCOUNT_NOT_APPLICABLE (a single, named sentinel)."""
+
+    def __repr__(self):
+        return 'ACCOUNT_NOT_APPLICABLE'
+
+
+# Explicit "no account check" for the write-side FK helper (core/tenant_fk.py):
+# its ``account_id`` argument is mandatory and takes either the reference
+# account or this sentinel — never None, never guessed.
+ACCOUNT_NOT_APPLICABLE = _AccountNotApplicable()

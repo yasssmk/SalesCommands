@@ -18,6 +18,37 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _has_db_field(model, field_name):
+    """A real DB field (not a Python property) — _meta.get_field()."""
+    try:
+        model._meta.get_field(field_name)
+        return True
+    except Exception:
+        return False
+
+
+def tenant_lookup(model, client_id):
+    """
+    THE rule of which field carries the tenant of a model — the single source
+    shared by the tenant filter of the views (filter_queryset_by_client) and
+    the write-side FK helper (core/tenant_fk.py).
+
+    Returns the ``filter(**lookup)`` kwargs scoping ``model`` to ``client_id``,
+    or None when the model carries no tenant at all (a global reference list
+    such as StandardDepartment):
+      - the tenant ROOT (``IS_TENANT_ROOT``, ClientAccount): its own pk;
+      - end_users models: the ``client_account`` ForeignKey;
+      - app_modules models: the ``client_id`` UUID field.
+    """
+    if getattr(model, 'IS_TENANT_ROOT', False):
+        return {'pk': client_id}
+    if _has_db_field(model, 'client_account_id') or _has_db_field(model, 'client_account'):
+        return {'client_account_id': client_id}
+    if _has_db_field(model, 'client_id'):
+        return {'client_id': client_id}
+    return None
+
+
 class ClientScopeManager:
     """
     Comprehensive manager for client scoping functionality.
@@ -199,25 +230,10 @@ class ClientScopeManager:
             """Apply client_id filtering with additional validation"""
             client_id = self.get_client_id()
             model = queryset.model
-            
-            # Check for actual database fields (not properties)
-            # Use _meta.get_field() to detect real DB fields vs Python properties
-            def has_db_field(model, field_name):
-                try:
-                    field = model._meta.get_field(field_name)
-                    return True
-                except Exception:
-                    return False
-            
-            if getattr(model, 'IS_TENANT_ROOT', False):
-                # The tenant root (ClientAccount): its own id IS the tenant.
-                filtered_queryset = queryset.filter(pk=client_id)
-            elif has_db_field(model, 'client_account_id') or has_db_field(model, 'client_account'):
-                # end_users models use client_account ForeignKey
-                filtered_queryset = queryset.filter(client_account_id=client_id)
-            elif has_db_field(model, 'client_id'):
-                # app_modules models use direct client_id UUID field
-                filtered_queryset = queryset.filter(client_id=client_id)
+            lookup = tenant_lookup(model, client_id)
+
+            if lookup is not None:
+                filtered_queryset = queryset.filter(**lookup)
             elif (getattr(self, TENANT_SCOPE_EXEMPT_ATTR, None) or '').strip():
                 # Explicit, justified opt-out declared on the view (no live
                 # view uses it today — locked by
