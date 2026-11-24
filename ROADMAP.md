@@ -29,6 +29,20 @@ résultats et causalité), sans sur-structurer pour un usage hypothétique.
   2026-10)** : tout audit de sprint vérifie que **chaque FK écrite** (FK et M2M
   reçues dans un payload) est **contrôlée tenant + account**, sur le pattern
   des modules de base (voir TD-246).
+  **Complément (audit sécurité 2026-11-23, décision PO)** : toute **nouvelle**
+  FK écrite passe par le **helper central de contrôle des FK** de `core`
+  (livré au Lot 0 sécurité, à partir de `_validate_fk_scope` de signals) ;
+  chaque sprint module corrige, dans une **sous-étape séparée** (repro ROUGE
+  par le vrai endpoint, deux tenants), les trous C2 / F1 des fichiers qu'il
+  touche — **F1** → Activity / Game Plan, **C2-1** (et C2-7) → DC, **C2-3 à
+  C2-5** → Campaign, **C2-6** → Account (inventaire dans TD-246) ; ce qui
+  reste est traité en **G1**.
+- **Legacy `backend/apps/` (doctrine corrigée, audit 2026-11-23)** : il n'est
+  PAS mort — **encore routé** (8 includes, `salescommands/urls.py:83-93`),
+  installé et **importé par du code vivant** (`BaseModelApp`, signaux
+  sales-plan, vues accounts). Règle : **on ne s'appuie jamais dessus** (ni
+  nouvel import, ni nouvelle route) ; ses routes sont **débranchées en G1**
+  (**TD-324**).
 - **Citer l'existant avant de coder** : ouvrir le fichier de référence, le
   citer, mesurer l'écart, PUIS coder. Ne pas réinventer un pattern qui
   existe.
@@ -1540,7 +1554,7 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
 #### Suite de la surface Activity (ordre PO, clôture Cycle de vie des contacts)
 1. ✅ **Sprint « Cycle de vie des contacts »** — LIVRÉ (fiche ci-dessus).
 2. ✅ **Sprint Source / Notes** — LIVRÉ (fiche ci-dessous).
-3. **Chantier prep call** — **TD-46**, **TD-47**, **TD-49**, **TD-219**, TechStack « discontinued » (**TD-314**) (fiche « Sprint Prep call — précisions PO »).
+3. **Chantier prep call** — **TD-46**, **TD-47**, **TD-219**, TechStack « discontinued » (**TD-314**) (fiche « Sprint Prep call — précisions PO »).
 4. **Passe UI finale Activity** — **avant la Surface DC**, pour un visuel validé (fiche dans « Nouveaux sprints »).
 5. **Surface DC** (fiche « Sprint Workspace / DC »).
 
@@ -1591,11 +1605,49 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
 - **Dette** : **RESOLVED** (archivées) **TD-49** (obsolète, décision PO : le Game Plan prend tous les participants) et **TD-288** (5b : `ClaudeProvider` supporte les Structured Outputs) ; **MAJ** **TD-111** (renvoi vers TD-317) ; **MAJ** **TD-50** et **TD-314** (deal health fait ; reste le prep call → sprint 2), **TD-219** (le deal health lit les champs saisis ; l'émission par l'IA → sprint 2), **TD-46** et **TD-48** (sprint 2 : tous les participants, un angle par personne), **TD-29** (le deal health lit les notes manager ; la conversation → Surface DC), **TD-27** et **TD-316** (portée manager tenant-wide aussi pour le deal health ; resolve People est une `@action`) ; **NOUVEAUX** **TD-317** (⚠️ RGPD, **bloquant pour la mise en production**), **TD-318** (curseur), **TD-319** (variable de fournisseur à étendre), **TD-320** (bloquer les appels réels aux providers en test), **TD-321** (⚠️ `--timeout 12` de gunicorn face aux runs IA synchrones, **bloquant pour la mise en production**).
 - **Prochain jalon** : **sprint 2 du chantier Game Plan** (fiche « Sprint Game Plan — précisions PO »).
 
-#### Suite de la surface Activity (ordre PO, clôture Deal health v2)
+#### Suite de la surface Activity (ordre PO, clôture Deal health v2 ; MAJ audit sécurité 2026-11-23)
 1. ✅ **Sprint Source / Notes** — LIVRÉ.
-2. **Chantier Game Plan** (fiche « Sprint Game Plan — précisions PO ») : ✅ **sprint 1 Deal health v2** — LIVRÉ (fiche ci-dessus) ; **sprint 2 Game Plan** — **prochain jalon**.
-3. **Passe UI finale Activity** — **avant la Surface DC** (fiche dans « Nouveaux sprints »).
-4. **Surface DC** (fiche « Sprint Workspace / DC »).
+2. **Lot 0 sécurité (avant les sprints modules)** — **À FAIRE, prochain jalon** (décision PO 2026-11-23, fiche ci-dessous).
+3. **Chantier Game Plan** (fiche « Sprint Game Plan — précisions PO ») : ✅ **sprint 1 Deal health v2** — LIVRÉ (fiche ci-dessus) ; **sprint 2 Game Plan** — **après le Lot 0 sécurité**.
+4. **Passe UI finale Activity** — **avant la Surface DC** (fiche dans « Nouveaux sprints »).
+5. **Surface DC** (fiche « Sprint Workspace / DC »).
+
+### Lot 0 sécurité (avant les sprints modules) — À FAIRE (décision PO 2026-11-23)
+- **Origine** : audit read-only des protections multi-tenant du 2026-11-23
+  (`main` @ `6ca4322`). Constat central : `ClientAccountViewSet` est ouvert
+  en lecture, écriture, suppression en cascade et création **inter-tenant**,
+  quel que soit le rôle (**TD-322**), parce que le filtre central est
+  **fail-open** et que rien ne détecte un `get_queryset` redéfini hors socle
+  (**TD-323**). Le reste de l'audit (FK inter-tenant, legacy, rôles, tests,
+  config de production) est tracé en **TD-246** (MAJ), **TD-324 → TD-329** et
+  rattaché à **G1**.
+- **Position** : MAINTENANT, **avant** le sprint 2 Game Plan et tous les
+  sprints modules (Game Plan / Activity, DC, Account…).
+- **Contenu** (un défaut = un commit, repro ROUGE d'abord par le vrai
+  endpoint, deux tenants, rôles paramétrés) :
+  - **a. ClientAccount en lecture seule de son propre tenant** (**TD-322**) :
+    `retrieve` + `seats` limités au tenant courant ; `list`, `create`,
+    `update`, `destroy`, `stats` et `users-summary` retirés ; les deux tests
+    qui figent la fuite réécrits
+    (`tests/end_users/test_client_accounts_count_equivalence.py`,
+    `test_client_accounts_list_nplus1_baseline.py`) ; `TestRateLimitButton`
+    adapté ou retiré. Le seul consommateur front (`SeatsSummary`, son propre
+    tenant) reste servi. La gestion des tenants par le product_admin →
+    **TD-329**.
+  - **b. Filtre central en fail-closed + test garde-fou** (**TD-323**) :
+    `filter_queryset_by_client` (`core/client_scope.py:217-226`) ne renvoie
+    plus jamais un queryset non filtré (opt-out explicite et nommé pour les
+    modèles racine) ; un test échoue sur toute vue `BaseAPIView` dont le
+    `get_queryset` ne passe pas par le socle, sauf allowlist explicite. Audit
+    d'impact avant le flip.
+  - **c. Helper central de contrôle des FK dans `core`** (**TD-246**) : à
+    partir de `_validate_fk_scope` (`signals/serializers/base_serializer.py:373-413`),
+    tenant PUIS account. Les trous existants ne sont PAS corrigés ici : ils le
+    sont module par module (règle permanente des « Principes transverses »),
+    le reste en G1.
+- **Hors Lot 0** : legacy `apps/` (**TD-324**), contournements de rôle
+  (**TD-326**), trous de tests (**TD-327**, hors garde-fou b), config de
+  production (**TD-328**) → **G1**.
 
 ---
 
@@ -1677,6 +1729,11 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
   signals ✅ ») ; les autres modules ne sont PAS prouvés. Dette : **TD-246**
   (+ **TD-257** : `create_with_entities`, contacts non filtrés par account —
   même famille, relié TD-246).
+  **MAJ (audit sécurité 2026-11-23)** : les autres modules sont désormais
+  audités — inventaire des trous (F1, C2-1 → C2-10) dans **TD-246** ; plan :
+  helper central au **Lot 0 sécurité**, trous corrigés par les sprints
+  modules, reste en **G1**. Également bloquants : **TD-322** / **TD-323**
+  (Lot 0), **TD-324** (legacy routé) et **TD-328** (config de production).
 - **Gestion des erreurs** (#5 ci-dessus) — audit complet des vues d'erreur.
 - **Doublons de requêtes + efficacité cache** — TD principal existant, déjà
   marqué « pré-launch » dans sa fiche (« Sprint — Doublons de requêtes +
@@ -1907,6 +1964,11 @@ possibles) :
 - **Objectif** : interface d'administration de gestion des tenants — suivi de
   CONSOMMATION, LIMITATIONS, etc.
 - **Lien** : rattaché à **G3 — Provisioning des tenants** (voir phase Go-Live).
+- **MAJ (audit sécurité 2026-11-23)** : une fois `ClientAccountViewSet`
+  fermé (Lot 0, **TD-322**), renommer un tenant, changer `max_users` ou
+  supprimer un tenant n'ont plus de chemin : à concevoir ici (endpoints
+  product_admin dédiés, suppression qui traite les lignes app_modules
+  orphelines) — **TD-329**.
 
 #### Sprint Workspace / DC (NOUVEAU 2026-08-21)
 - **Position** : **3bis** de l'ordre cible, juste après le bloc « Modèle
@@ -2170,6 +2232,7 @@ possibles) :
 - **Ajouts (clôture Cycle de vie des contacts)** : **TD-46** (brief multi-contact), **TD-47** (boucle visé / réalisé), **TD-49** (`Activity.primary_contact`), **TD-219** (la section « How is success measured? » existe ; l'IA n'émet ni `success_criteria` ni `notes`, `target_date` seulement depuis le prompt v2) ; **TechStack** : portée + « discontinued » (passé = *no longer used*, futur = sortie planifiée) — **TD-314**.
 - **Renommage (clôture Deal health v2)** : la feature s'appelle **« Game Plan »** (call / meeting / démo) ; pour un email ou un message LinkedIn : **« AI email draft · by Game Plan »**.
 - **Le chantier (clôture Deal health v2)** = **sprint 1 Deal health v2** (✅ LIVRÉ, fiche « Sprint « Deal health v2 » ✅ ») + **sprint 2 Game Plan** (**prochain jalon**).
+- **Position (MAJ audit sécurité 2026-11-23)** : le sprint 2 Game Plan vient **après le Lot 0 sécurité** ; il inclut une **sous-étape FK** dédiée : **F1** (`create-with-entities` écrit dans le cycle d'un autre tenant, **TD-246**) corrigé via le helper central du Lot 0.
 - **Sprint 2 — contenu (clôture Deal health v2)** :
   - **Fiche entreprise vendeuse** (validée PO).
   - **Placeholders guidés** sur la **description** et la **proposition de valeur** des produits.
@@ -2939,6 +3002,21 @@ campagnes. **Le chip est la référence.**
 Durcissement avant exposition client : permissions, isolation multi-tenant
 bout-en-bout, secrets, headers, logs, chiffrement. Pas la certif SOC 2, s'en
 rapprocher au maximum. Prérequis absolu avant tout accès client.
+- **0. Audit de sécurité complet du projet (EN PREMIER — décision PO
+  2026-11-23)**, read-only, toutes les couches et tous les endpoints :
+  isolation en lecture ET en écriture (FK / M2M reçues), rôles et scopes,
+  legacy `apps/` encore routé, authentification / JWT / cookies, headers,
+  secrets, logs, configuration de production, dépendances. Puis **correction
+  de tout ce qu'il trouve** (un défaut = un commit, repro ROUGE d'abord).
+  Point de départ : l'**audit multi-tenant du 2026-11-23** (`main` @
+  `6ca4322`), dont le **Lot 0 sécurité** (**TD-322**, **TD-323**, helper FK de
+  **TD-246**) est traité AVANT les sprints modules. Restent pour G1 :
+  **TD-246** (trous FK non couverts par les sprints modules), **TD-324**
+  (débranchement des 8 routes legacy, L1 → L8), **TD-325** (account non
+  contrôlé, oracles d'existence), **TD-326** (contournements de rôle
+  intra-tenant, avec **TD-250** / **TD-316**), **TD-327** (tests d'isolation :
+  test qui parcourt les URL, vrai JWT), **TD-328** (DEBUG, `/admin/`,
+  `/ops/sleep/`, clés JWT par origin, coût LLM — avec **TD-315**).
 - **Durcissement permissions & modules** :
   - **Supprimer les modules FANTÔMES** : plusieurs modules ont été
     anticipés dans les settings/config alors qu'ils n'existeront pas.
@@ -3065,6 +3143,9 @@ IA (pipelines signaux, prep call). Métering + plafonds par tenant.
 
 ### Rappel dette critique (renvoi TECH_DEBT.md)
 TD critiques non traités :
+- ⚠️ **Lot 0 sécurité (audit 2026-11-23)** : **TD-322** (`ClientAccountViewSet`
+  inter-tenant), **TD-323** (filtre central fail-open), helper FK de
+  **TD-246** — AVANT les sprints modules. Puis G1 : **TD-324 → TD-328**.
 - **build-health : ✅ FERMÉ (PR #102, TD-18 résolu)** — deps déclarées, casses
   d'import traitées, `@mui/x-tree-view` `^6`→`^8` (pas `^7`) ;
   `@dnd-kit/sortable`/`utilities` étaient une cible inexacte (importés nulle
