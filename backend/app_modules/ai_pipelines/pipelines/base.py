@@ -292,6 +292,27 @@ class BasePipeline(ABC):
         run.save()
         return run
 
+    def _finalize_hard_crash(self, run, exc):
+        """
+        The hard-crash path (an unexpected exception, the caller re-raises
+        it): mark the run LLM_ERROR « hard crash: … » — only when the run
+        EXISTS. A crash while the run itself was being created leaves
+        nothing to finalise, and must not replace the original error
+        (sprint 2 Game Plan, S4).
+
+        Args:
+            run: AIPipelineRun, or None when it was never created.
+            exc: the original exception.
+        """
+        if run is None:
+            return
+        self._finalize_run(
+            run,
+            status=AIPipelineStatus.LLM_ERROR,
+            created_signals_count=0,
+            error_message=f'hard crash: {str(exc)[:1000]}',
+        )
+
     # =========================================================================
     # LLM CALL HELPER (with one retry on parse failure)
     # =========================================================================

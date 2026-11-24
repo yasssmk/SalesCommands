@@ -110,6 +110,9 @@ class PrepCallPipeline(BasePipeline):
             )
             return existing
 
+        # Bound before the try: a crash inside _create_run leaves no run to
+        # finalise (S4 — was an UnboundLocalError hiding the original error).
+        run = None
         try:
             with transaction.atomic():
                 run = self._create_run(
@@ -197,12 +200,7 @@ class PrepCallPipeline(BasePipeline):
             return {'run': final_run, 'snapshot': snapshot}
 
         except Exception as exc:
-            self._finalize_run(
-                run,
-                status=AIPipelineStatus.LLM_ERROR,
-                created_signals_count=0,
-                error_message=f'hard crash: {str(exc)[:1000]}',
-            )
+            self._finalize_hard_crash(run, exc)
             raise
 
     # =========================================================================
