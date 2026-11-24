@@ -13,6 +13,9 @@ guide/To_IMPLEMENT/signals_journey.md §3.2.
 import logging
 
 from app_modules.ai_pipelines.constants import people_role_for_prompt
+from app_modules.ai_pipelines.services.deal_health_evidence_builder import (
+    DealHealthEvidenceBuilder,
+)
 from app_modules.ai_pipelines.services.llm_people import cycle_roster
 from app_modules.signals.constants import SignalStatus
 
@@ -158,14 +161,8 @@ class PrepInputPackAssembler:
 
     @staticmethod
     def _get_last_snapshot_date(dc):
-        from app_modules.decision_cycles.models import DealHealthSnapshot
-
-        snapshot = (
-            DealHealthSnapshot.objects
-            .filter(decision_cycle=dc)
-            .order_by('-snapshot_date', '-created_at')
-            .first()
-        )
+        # The canonical reader, inside the tenant (sprint 2 Game Plan, S3).
+        snapshot = DealHealthEvidenceBuilder.latest_snapshot(dc)
         if not snapshot or not snapshot.snapshot_date:
             return None
         return snapshot.snapshot_date.isoformat()
@@ -185,14 +182,8 @@ class PrepInputPackAssembler:
         if not dc:
             return None
 
-        from app_modules.decision_cycles.models import DealHealthSnapshot
-
-        snapshot = (
-            DealHealthSnapshot.objects
-            .filter(decision_cycle=dc)
-            .order_by('-snapshot_date', '-created_at')
-            .first()
-        )
+        # The canonical reader, inside the tenant (sprint 2 Game Plan, S3).
+        snapshot = DealHealthEvidenceBuilder.latest_snapshot(dc)
         if not snapshot:
             return None
 
