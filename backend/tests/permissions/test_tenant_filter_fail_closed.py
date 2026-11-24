@@ -26,7 +26,6 @@ DB: Postgres.
 import logging
 
 import pytest
-from django.urls import URLPattern, URLResolver, get_resolver
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from app_modules.core_modules.models import StandardDepartment
@@ -157,25 +156,13 @@ class TestScopedModelsUnchanged:
         }
 
 
-def _live_view_classes():
-    def walk(patterns):
-        for p in patterns:
-            if isinstance(p, URLResolver):
-                yield from walk(p.url_patterns)
-            elif isinstance(p, URLPattern):
-                cls = getattr(p.callback, 'cls', None) or getattr(p.callback, 'view_class', None)
-                if cls is not None:
-                    yield cls
-    return set(walk(get_resolver().url_patterns))
-
-
-def test_no_live_view_opts_out_of_the_tenant_filter():
+def test_no_live_view_opts_out_of_the_tenant_filter(live_view_classes):
     """The opt-out exists for a justified exception; today none is
     justified (0.2 inventory). A new one must be a deliberate, reviewed
     change of this test."""
     exempt = sorted(
         f'{cls.__module__}.{cls.__name__}'
-        for cls in _live_view_classes()
+        for cls in live_view_classes
         if issubclass(cls, ClientScopeManager.ViewMixin)
         and getattr(cls, TENANT_SCOPE_EXEMPT_ATTR, None)
     )
