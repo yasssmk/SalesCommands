@@ -17,6 +17,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Name of the ONLY opt-out of the fail-closed tenant filter: a view attribute
+# holding a non-empty justification of why its queryset may legitimately be
+# served unfiltered (see ClientScopeManager.ViewMixin.filter_queryset_by_client).
+TENANT_SCOPE_EXEMPT_ATTR = 'tenant_scope_exempt_reason'
+
 class ClientScopeManager:
     """
     Comprehensive manager for client scoping functionality.
@@ -217,16 +222,32 @@ class ClientScopeManager:
             elif has_db_field(model, 'client_id'):
                 # app_modules models use direct client_id UUID field
                 filtered_queryset = queryset.filter(client_id=client_id)
-            else:
-                # Fallback: no client scoping field found
-                logger.warning(
-                    "no_client_scope_field",
+            elif (getattr(self, TENANT_SCOPE_EXEMPT_ATTR, None) or '').strip():
+                # Explicit, justified opt-out declared on the view (no live
+                # view uses it today — locked by
+                # tests/permissions/test_tenant_filter_fail_closed.py).
+                logger.info(
+                    "tenant_scope_exempt",
                     extra={
                         'model': model.__name__,
+                        'view': self.__class__.__name__,
                         'event': 'client_scope_filter'
                     }
                 )
                 filtered_queryset = queryset
+            else:
+                # FAIL CLOSED (TD-323): a model with no tenant field cannot be
+                # scoped, so it is never served — an empty queryset, and an
+                # ERROR to surface the misconfigured view.
+                logger.error(
+                    "no_client_scope_field",
+                    extra={
+                        'model': model.__name__,
+                        'view': self.__class__.__name__,
+                        'event': 'client_scope_filter'
+                    }
+                )
+                filtered_queryset = queryset.none()
                 
             # Add debugging for development
             if settings.DEBUG:
