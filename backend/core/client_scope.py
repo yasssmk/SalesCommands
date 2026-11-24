@@ -6,6 +6,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from core.error_messages import CoreErrorMessages, AuthErrorMessages
+from core.constants import TENANT_SCOPE_EXEMPT_ATTR
 from rest_framework.response import Response
 from rest_framework import views, status
 from core.exceptions import (
@@ -16,11 +17,6 @@ from core.exceptions import (
 import logging
 
 logger = logging.getLogger(__name__)
-
-# Name of the ONLY opt-out of the fail-closed tenant filter: a view attribute
-# holding a non-empty justification of why its queryset may legitimately be
-# served unfiltered (see ClientScopeManager.ViewMixin.filter_queryset_by_client).
-TENANT_SCOPE_EXEMPT_ATTR = 'tenant_scope_exempt_reason'
 
 class ClientScopeManager:
     """

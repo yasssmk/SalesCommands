@@ -117,3 +117,14 @@ INDUSTRIES = [
 
     ('OTHER', _('Other')),
 ]
+
+
+# =============================================================================
+# TENANT SCOPING
+# =============================================================================
+
+# Name of the ONLY opt-out of the fail-closed tenant filter: a view attribute
+# holding a non-empty justification of why its queryset may legitimately be
+# served unfiltered (see ClientScopeManager.ViewMixin.filter_queryset_by_client
+# in core/client_scope.py).
+TENANT_SCOPE_EXEMPT_ATTR = 'tenant_scope_exempt_reason'

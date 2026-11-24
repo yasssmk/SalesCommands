@@ -31,7 +31,8 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from app_modules.core_modules.models import StandardDepartment
 from core.apps_shared_methods import BaseAPIView
-from core.client_scope import ClientScopeManager, TENANT_SCOPE_EXEMPT_ATTR
+from core.client_scope import ClientScopeManager
+from core.constants import TENANT_SCOPE_EXEMPT_ATTR
 from end_users.models import ClientAccount, User
 
 from tests.signals.conftest import (  # noqa: F401
