@@ -1,29 +1,37 @@
 # backend/tests/end_users/test_client_accounts_list_nplus1_baseline.py
 """
-RE-MEASURE (GREEN) — Sprint Timeout / Fil accounts.
+RE-MEASURE (GREEN) — Sprint Timeout / Fil accounts (re-pointed by TD-322).
 
-GET /client/client-accounts/ (ClientAccountViewSet.list) used to be N+1 on
-the serializer: get_users_count did obj.users.filter(is_active=True).count(),
-reopening a fresh queryset per row (1 COUNT / row) and wasting the users
-prefetch. The graved RED baseline (commit b8267608):
+The client-account serializer used to be N+1: get_users_count did
+obj.users.filter(is_active=True).count(), reopening a fresh queryset per
+serialized row (1 COUNT / row) and wasting the users prefetch. The graved RED
+baseline (commit b8267608, on the former list endpoint):
 
     page_size=10 -> 14 queries
     page_size=20 -> 24 queries
     slope        -> 1 query / row  (users_count)
 
-The fix moves both counts into the main query as annotations on the
-list/retrieve queryset (views/client_account_viewset.py):
+The fix moves both counts into the main query as annotations on the view's
+queryset (views/client_account_viewset.py):
 
     users_count_annotated         = Count('users', filter=Q(users__is_active=True), distinct=True)
     organizations_count_annotated = Count('organizations', distinct=True)
 
 and the serializer reads those annotations (with a direct-count fallback for
-un-annotated callers). The per-row COUNTs and both prefetch queries are gone.
+un-annotated callers).
 
-This module now GUARDS the fixed behaviour: the query count is FLAT across
-page sizes (slope 0), with zero per-row users/organizations COUNT queries and
-zero prefetch queries. If the annotation is reverted to a per-row .count(),
-the slope climbs back to 1 and these tests fail (non-vacuity).
+Since TD-322 the endpoint is read-only on the requester's OWN tenant: the list
+is gone, so the per-row slope no longer exists. What this module now GUARDS on
+GET /client/client-accounts/<own id>/ and .../seats/:
+
+- the query count does NOT grow with the tenant's volume (a tenant with many
+  users and organizations costs exactly as many queries as a small one);
+- zero separate users / organizations COUNT queries and zero prefetch
+  queries: the counts come from the annotations of the main query;
+- the counted values are the expected, realistic numbers.
+
+If the annotation is reverted to a per-serialization .count(), separate COUNT
+queries reappear and these tests fail (non-vacuity).
 
 DB: Postgres.
 """
@@ -33,9 +41,9 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from end_users.models import ClientAccount, Organization, User
+from end_users.models import Organization, User
 
-# Fixtures: authenticated DRF client + one seed tenant (Tenant A Co).
+# Fixtures: authenticated DRF client on the seed tenant (Tenant A Co).
 from tests.signals.conftest import (  # noqa: F401
     api,
     authenticate,
@@ -46,60 +54,36 @@ from tests.signals.conftest import (  # noqa: F401
     authed_api_a,
 )
 
-# Volume: enough accounts to fully fill a page of 20 (plus the seed tenant),
-# each carrying several ACTIVE users (+ an inactive one, so the is_active
-# filter is non-trivial) and multiple organizations, so both counted values
-# are realistic and non-zero.
-N_ACCOUNTS = 24
-ACTIVE_USERS_PER = 3
-INACTIVE_USERS_PER = 1
-ORGS_PER = 2
-
-PAGE_SMALL = 10
-PAGE_LARGE = 20
+# Volume added to the requester's tenant for the "large" measurement: several
+# ACTIVE users (+ inactive ones, so the is_active filter is non-trivial) and
+# multiple organizations, so both counted values are realistic and non-zero.
+EXTRA_ACTIVE_USERS = 12
+EXTRA_INACTIVE_USERS = 4
+EXTRA_ORGS = 7
 
 
-@pytest.fixture
-def many_accounts(db, client_account_a):
-    """Create N_ACCOUNTS client accounts, each with active + inactive users
-    and organizations. Returns the list of created ClientAccount rows."""
-    accounts = []
-    for i in range(N_ACCOUNTS):
-        ca = ClientAccount.objects.create(
-            name=f"Acct-{i:02d}",
-            is_b2b=True,
-            max_users=20,
-        )
-        for u in range(ACTIVE_USERS_PER):
-            User.objects.create(
-                email=f"active-{i:02d}-{u}@acct.test",
-                client_account=ca,
-                role=None,
-                is_active=True,
-            )
-        for u in range(INACTIVE_USERS_PER):
-            User.objects.create(
-                email=f"inactive-{i:02d}-{u}@acct.test",
-                client_account=ca,
-                role=None,
-                is_active=False,
-            )
-        for o in range(ORGS_PER):
-            Organization.objects.create(name=f"Org-{i:02d}-{o}", client_account=ca)
-        accounts.append(ca)
-    return accounts
+def _grow_tenant(ca):
+    for u in range(EXTRA_ACTIVE_USERS):
+        User.objects.create(email=f"active-{u}@acct.test", client_account=ca,
+                            role=None, is_active=True)
+    for u in range(EXTRA_INACTIVE_USERS):
+        User.objects.create(email=f"inactive-{u}@acct.test", client_account=ca,
+                            role=None, is_active=False)
+    for o in range(EXTRA_ORGS):
+        Organization.objects.create(name=f"Org-{o}", client_account=ca)
 
 
-def _list(authed_api_a, page_size):
-    url = reverse('client:client-account-list')
-    resp = authed_api_a.get(f"{url}?page_size={page_size}")
+def _get(authed_api_a, route, pk):
+    resp = authed_api_a.get(reverse(route, kwargs={'pk': pk}))
     assert resp.status_code == 200, resp.content
     return resp
 
 
 def _classify(captured):
-    """Split a captured SQL trace into per-row COUNT queries and prefetch
-    queries, by table + shape."""
+    """Split a captured SQL trace into separate users / organizations COUNT
+    queries and prefetch queries, by table + shape. The main query reads
+    FROM "client_accounts" (annotations are joins on it), so it is never
+    classified here."""
     users_count, orgs_count, users_prefetch, orgs_prefetch = [], [], [], []
     for q in captured:
         sql = q["sql"].lower()
@@ -117,82 +101,63 @@ def _classify(captured):
     return users_count, orgs_count, users_prefetch, orgs_prefetch
 
 
-@pytest.mark.django_db
-class TestClientAccountsListBounded:
+ROUTES = ('client:client-account-detail', 'client:client-account-seats')
 
-    def test_query_count_is_flat_across_page_sizes(self, many_accounts, authed_api_a):
-        """The list query count no longer grows with the page: slope 0.
-        (RED baseline b8267608 was +1 query/row.)"""
+
+@pytest.mark.django_db
+class TestClientAccountQueriesBounded:
+
+    @pytest.mark.parametrize('route', ROUTES)
+    def test_query_count_independent_of_tenant_volume(
+        self, route, client_account_a, authed_api_a
+    ):
+        """A big tenant costs exactly as many queries as a small one."""
         with CaptureQueriesContext(connection) as cap_small:
-            resp_small = _list(authed_api_a, PAGE_SMALL)
+            _get(authed_api_a, route, client_account_a.id)
         q_small = len(cap_small.captured_queries)
-        rows_small = len(resp_small.data["results"])
+
+        _grow_tenant(client_account_a)
 
         with CaptureQueriesContext(connection) as cap_large:
-            resp_large = _list(authed_api_a, PAGE_LARGE)
+            _get(authed_api_a, route, client_account_a.id)
         q_large = len(cap_large.captured_queries)
-        rows_large = len(resp_large.data["results"])
 
-        slope = (q_large - q_small) / (rows_large - rows_small)
-
-        print("\n" + "=" * 66)
-        print("GREEN RE-MEASURE — GET /client/client-accounts/ (annotated)")
-        print("=" * 66)
-        print(f"  RED baseline (b8267608): page10=14  page20=24  slope=1/row")
-        print(f"  page_size={PAGE_SMALL:>2}  rows={rows_small:>2}  queries={q_small}")
-        print(f"  page_size={PAGE_LARGE:>2}  rows={rows_large:>2}  queries={q_large}")
-        print(f"  slope (extra queries per extra row) : {slope}")
-        print("=" * 66 + "\n")
-
-        # Full pages both times (volume is realistic).
-        assert rows_small == PAGE_SMALL
-        assert rows_large == PAGE_LARGE
-        # THE GREEN: query count is independent of the number of rows.
+        print(f"\n{route}: small tenant={q_small} queries, "
+              f"large tenant={q_large} queries")
         assert q_large == q_small, (
-            f"query count still scales with rows: {q_small} vs {q_large}"
+            f"query count grows with the tenant's volume: {q_small} vs {q_large}"
         )
-        assert slope == 0.0
 
-    def test_no_per_row_count_or_prefetch_queries(self, many_accounts, authed_api_a):
-        """No per-row users/organizations COUNT queries survive, and the two
-        prefetch queries are gone (the counts come from annotations)."""
+    @pytest.mark.parametrize('route', ROUTES)
+    def test_no_separate_count_or_prefetch_queries(
+        self, route, client_account_a, authed_api_a
+    ):
+        """No separate users / organizations COUNT query and no prefetch:
+        the counts come from the main query's annotations."""
+        _grow_tenant(client_account_a)
         with CaptureQueriesContext(connection) as cap:
-            resp = _list(authed_api_a, PAGE_LARGE)
-        rows = len(resp.data["results"])
+            _get(authed_api_a, route, client_account_a.id)
         users_count, orgs_count, users_prefetch, orgs_prefetch = _classify(
             cap.captured_queries
         )
-
-        print("\n" + "=" * 66)
-        print("GREEN RE-MEASURE — no per-row COUNT, no prefetch (page of 20)")
-        print("=" * 66)
-        print(f"  rows returned                       : {rows}")
-        print(f"  users_count   COUNT queries         : {len(users_count)}")
-        print(f"  organizations COUNT queries         : {len(orgs_count)}")
-        print(f"  users        prefetch queries       : {len(users_prefetch)}")
-        print(f"  organizations prefetch queries      : {len(orgs_prefetch)}")
-        print("=" * 66 + "\n")
-
-        assert rows == PAGE_LARGE
-        assert len(users_count) == 0, "a per-row users COUNT survived"
-        assert len(orgs_count) == 0, "a per-row organizations COUNT survived"
+        assert len(users_count) == 0, "a separate users COUNT survived"
+        assert len(orgs_count) == 0, "a separate organizations COUNT survived"
         assert len(users_prefetch) == 0, "users prefetch not removed"
         assert len(orgs_prefetch) == 0, "organizations prefetch not removed"
 
     def test_counted_values_are_the_expected_realistic_numbers(
-        self, many_accounts, authed_api_a
+        self, client_account_a, authed_api_a
     ):
         """The counts are non-trivial AND not inflated by a cartesian product:
-        each seeded account reports ACTIVE_USERS_PER active users (inactive
-        excluded) and ORGS_PER organizations — 3 and 2, not 6."""
-        resp = _list(authed_api_a, PAGE_LARGE)
-        by_id = {row["id"]: row for row in resp.data["results"]}
-        seen = 0
-        for ca in many_accounts:
-            row = by_id.get(str(ca.id))
-            if row is None:
-                continue  # not on this page (ordering) — skip
-            seen += 1
-            assert row["users_count"] == ACTIVE_USERS_PER
-            assert row["organizations_count"] == ORGS_PER
-        assert seen >= 1, "no seeded account landed on the measured page"
+        active users only (the requester + the extra ones), all organizations."""
+        _grow_tenant(client_account_a)
+        expected_active = 1 + EXTRA_ACTIVE_USERS  # user_a is active
+
+        detail = _get(authed_api_a, ROUTES[0], client_account_a.id).data
+        assert detail["users_count"] == expected_active
+        assert detail["organizations_count"] == EXTRA_ORGS
+
+        seats = _get(authed_api_a, ROUTES[1], client_account_a.id).data["data"]
+        assert seats["seats_used"] == expected_active
+        assert seats["seats"] == client_account_a.max_users
+        assert seats["seats_left"] == max(0, client_account_a.max_users - expected_active)

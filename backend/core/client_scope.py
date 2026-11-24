@@ -208,7 +208,10 @@ class ClientScopeManager:
                 except Exception:
                     return False
             
-            if has_db_field(model, 'client_account_id') or has_db_field(model, 'client_account'):
+            if getattr(model, 'IS_TENANT_ROOT', False):
+                # The tenant root (ClientAccount): its own id IS the tenant.
+                filtered_queryset = queryset.filter(pk=client_id)
+            elif has_db_field(model, 'client_account_id') or has_db_field(model, 'client_account'):
                 # end_users models use client_account ForeignKey
                 filtered_queryset = queryset.filter(client_account_id=client_id)
             elif has_db_field(model, 'client_id'):

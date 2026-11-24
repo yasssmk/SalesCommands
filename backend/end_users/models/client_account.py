@@ -8,6 +8,12 @@ class ClientAccount(BaseModel):
     """
     Compte client - reste avec BaseModel car c'est le point d'entrée du multi-tenant
     """
+
+    # Tenant ROOT marker, read by the shared tenant filter
+    # (core.client_scope.ClientScopeManager.ViewMixin.filter_queryset_by_client):
+    # this model has no client_account / client_id field because its own id IS
+    # the tenant, so it is scoped on ``pk = <tenant of the token>``.
+    IS_TENANT_ROOT = True
     name = models.CharField(
         max_length=255, 
         unique=True, 

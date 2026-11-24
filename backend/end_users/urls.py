@@ -34,20 +34,13 @@ urlpatterns = [
     path('user/', UserCurrentView.as_view(), name='current-user'),
     
     # =========================================================================
-    # CLIENT ACCOUNTS MANAGEMENT - Niveau root du multi-tenant
+    # CLIENT ACCOUNT - the requester's OWN tenant, read-only (TD-322).
+    # No list / create / update / delete / stats / users-summary on the
+    # client side: tenant management belongs to the product admin (TD-329).
     # =========================================================================
-    
-    # Client Accounts CRUD
-    path('client-accounts/', ClientAccountViewSet.as_view({
-        'get': 'list',
-        'post': 'create'
-    }), name='client-account-list'),
-    
+
     path('client-accounts/<uuid:pk>/', ClientAccountViewSet.as_view({
         'get': 'retrieve',
-        'put': 'update',
-        'patch': 'partial_update',
-        'delete': 'destroy'
     }), name='client-account-detail'),
 
     path('users/<uuid:pk>/soft/', UserViewSet.as_view({
@@ -58,19 +51,10 @@ urlpatterns = [
         'get': 'deactivation_preview'
     }), name='user-deactivation-preview'),
 
-    # Client Account Actions
     path('client-accounts/<uuid:pk>/seats/', ClientAccountViewSet.as_view({
         'get': 'seats'
     }), name='client-account-seats'),
 
-    path('client-accounts/<uuid:pk>/stats/', ClientAccountViewSet.as_view({
-        'get': 'stats'
-    }), name='client-account-stats'),
-
-    path('client-accounts/<uuid:pk>/users-summary/', ClientAccountViewSet.as_view({
-        'get': 'users_summary'
-    }), name='client-account-users-summary'),
-    
     
     # =========================================================================
     # USER ROLES MANAGEMENT - Gestion des rôles et permissions
