@@ -15,9 +15,13 @@ This service ensures FK-safe order:
 
 from django.db import transaction
 
+from core.constants import ACCOUNT_NOT_APPLICABLE
 from core.logging import get_logger
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages, ActivityErrorMessages, AccountErrorMessages
+from core.error_messages import (
+    AccountErrorMessages, ActivityErrorMessages, ContactErrorMessages, CoreErrorMessages,
+)
+from core.tenant_fk import resolve_one_in_tenant
 
 from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
@@ -134,9 +138,12 @@ class ActivityCreationService:
             
             # Track IDs to link
             contact_ids = list(activity_data.get('contact_ids', []))
-            cycle_id = activity_data.get('decision_cycle_id')
-            step_id = activity_data.get('decision_step_id')
-            source_activity_id = activity_data.get('source_activity_id')
+            # F1 (TD-246): the cycle, step and source activity received are
+            # resolved inside the tenant and on the activity's account
+            # (core/tenant_fk.py) BEFORE anything reads them.
+            cycle_id, step_id, source_activity_id = self._resolve_received_fks(
+                activity_data, account,
+            )
 
             # Next step: its own cycle when none is sent (nor created inline).
             if next_step_signal and not cycle_id and not inline_cycle:
@@ -392,6 +399,38 @@ class ActivityCreationService:
                 ActivityErrorMessages.CONTACT_CREATION_FAILED
             )
     
+    def _resolve_received_fks(self, activity_data, account):
+        """
+        F1 (TD-246) — the FKs of the payload, resolved by the central helper
+        (core/tenant_fk.py, usage 1: raw ids handed to a service).
+
+        * decision_cycle_id, source_activity_id: tenant, then the activity's
+          account (explicit).
+        * decision_step_id: tenant (a step carries no account of its own),
+          then the account of its cycle — the same INVALID_ACCOUNT refusal.
+
+        An unknown, foreign or malformed id is the helper's single 400
+        OBJECT_NOT_FOUND (no existence oracle). An empty value means « none ».
+
+        Returns:
+            (cycle_id, step_id, source_activity_id) as str, or None each.
+        """
+        cycle = resolve_one_in_tenant(
+            DecisionCycle, activity_data.get('decision_cycle_id') or None,
+            client_id=self.client_id, account_id=account,
+        )
+        step = resolve_one_in_tenant(
+            DecisionStep, activity_data.get('decision_step_id') or None,
+            client_id=self.client_id, account_id=ACCOUNT_NOT_APPLICABLE,
+        )
+        if step is not None and step.cycle.account_id != account.id:
+            raise StandardizedValidationError(ContactErrorMessages.INVALID_ACCOUNT)
+        source = resolve_one_in_tenant(
+            Activity, activity_data.get('source_activity_id') or None,
+            client_id=self.client_id, account_id=account,
+        )
+        return tuple(str(obj.id) if obj is not None else None for obj in (cycle, step, source))
+
     def _campaign_of(self, source_activity_id):
         """The campaign of the activity this one is created FROM, or None.
 
