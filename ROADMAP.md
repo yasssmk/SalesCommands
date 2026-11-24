@@ -30,8 +30,11 @@ résultats et causalité), sans sur-structurer pour un usage hypothétique.
   reçues dans un payload) est **contrôlée tenant + account**, sur le pattern
   des modules de base (voir TD-246).
   **Complément (audit sécurité 2026-11-23, décision PO)** : toute **nouvelle**
-  FK écrite passe par le **helper central de contrôle des FK** de `core`
-  (livré au Lot 0 sécurité, à partir de `_validate_fk_scope` de signals) ;
+  FK écrite passe par le **helper central de contrôle des FK**
+  **`core/tenant_fk.py`** (✅ livré au Lot 0 sécurité, merge `0f1bc4d7` —
+  **son docstring est le mode d'emploi** : ids bruts d'un service,
+  `validate_<champ>`, champ relationnel / mixin, filet `check_resolved_scope` ;
+  `account_id` toujours explicite) ;
   chaque sprint module corrige, dans une **sous-étape séparée** (repro ROUGE
   par le vrai endpoint, deux tenants), les trous C2 / F1 des fichiers qu'il
   touche — **F1** → Activity / Game Plan, **C2-1** (et C2-7) → DC, **C2-3 à
@@ -1605,14 +1608,44 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
 - **Dette** : **RESOLVED** (archivées) **TD-49** (obsolète, décision PO : le Game Plan prend tous les participants) et **TD-288** (5b : `ClaudeProvider` supporte les Structured Outputs) ; **MAJ** **TD-111** (renvoi vers TD-317) ; **MAJ** **TD-50** et **TD-314** (deal health fait ; reste le prep call → sprint 2), **TD-219** (le deal health lit les champs saisis ; l'émission par l'IA → sprint 2), **TD-46** et **TD-48** (sprint 2 : tous les participants, un angle par personne), **TD-29** (le deal health lit les notes manager ; la conversation → Surface DC), **TD-27** et **TD-316** (portée manager tenant-wide aussi pour le deal health ; resolve People est une `@action`) ; **NOUVEAUX** **TD-317** (⚠️ RGPD, **bloquant pour la mise en production**), **TD-318** (curseur), **TD-319** (variable de fournisseur à étendre), **TD-320** (bloquer les appels réels aux providers en test), **TD-321** (⚠️ `--timeout 12` de gunicorn face aux runs IA synchrones, **bloquant pour la mise en production**).
 - **Prochain jalon** : **sprint 2 du chantier Game Plan** (fiche « Sprint Game Plan — précisions PO »).
 
-#### Suite de la surface Activity (ordre PO, clôture Deal health v2 ; MAJ audit sécurité 2026-11-23)
+#### Suite de la surface Activity (ordre PO, clôture Deal health v2 ; MAJ audit sécurité 2026-11-23 ; MAJ clôture Lot 0 2026-11-24)
 1. ✅ **Sprint Source / Notes** — LIVRÉ.
-2. **Lot 0 sécurité (avant les sprints modules)** — **À FAIRE, prochain jalon** (décision PO 2026-11-23, fiche ci-dessous).
-3. **Chantier Game Plan** (fiche « Sprint Game Plan — précisions PO ») : ✅ **sprint 1 Deal health v2** — LIVRÉ (fiche ci-dessus) ; **sprint 2 Game Plan** — **après le Lot 0 sécurité**.
+2. ✅ **Lot 0 sécurité (avant les sprints modules)** — LIVRÉ (merge `0f1bc4d7`, PR #176, fiche ci-dessous).
+3. **Chantier Game Plan** (fiche « Sprint Game Plan — précisions PO ») : ✅ **sprint 1 Deal health v2** — LIVRÉ (fiche ci-dessus) ; **sprint 2 Game Plan** — **prochain jalon** (sous-étape FK : **F1** via `core/tenant_fk.py`).
 4. **Passe UI finale Activity** — **avant la Surface DC** (fiche dans « Nouveaux sprints »).
 5. **Surface DC** (fiche « Sprint Workspace / DC »).
 
-### Lot 0 sécurité (avant les sprints modules) — À FAIRE (décision PO 2026-11-23)
+### Lot 0 sécurité (avant les sprints modules) — ✅ LIVRÉ (décision PO 2026-11-23 ; branche `fix/security-lot0`, `87639c9d`→`ccf6f459`, **✅ MERGÉ, PR #176**, merge `0f1bc4d7`)
+- **Livré** (un défaut = un commit, repro ROUGE par le vrai endpoint, non-vacuité
+  par mutation, régression complète identique à `main` node id par node id —
+  aucun nouvel échec) :
+  - **a. ClientAccount (0.1, `87639c9d`)** — lecture seule du tenant courant
+    (`retrieve` + `seats`), `list` / `create` / `update` / `destroy` / `stats` /
+    `users-summary` retirés, token sans tenant → 403, tests réécrits ;
+    `TestRateLimitButton` supprimé (smoke PO Admin › Utilisateurs + encart
+    Places OK). **TD-322 RESOLVED**.
+  - **b. Filtre central fail-closed (0.2, `a9733e33`, `453cc7f6`) + garde-fou
+    (0.3, `9a20309b`)** — un modèle sans champ tenant n'est plus jamais servi
+    (`none()` + erreur loguée, opt-out justifié `tenant_scope_exempt_reason`,
+    inutilisé) ; un test parcourt les URL et exige que tout `get_queryset`
+    redéfini passe par le socle (allowlist justifiée : 3 vues DC, à vider au
+    sprint DC). **TD-323 RESOLVED**.
+  - **c. Helper central des FK (0.4, `7393d2fd`, `ccf6f459`)** —
+    `core/tenant_fk.py` (`resolve_in_tenant`, `resolve_one_in_tenant`,
+    `check_resolved_scope`, `TenantScopedPrimaryKeyRelatedField`,
+    `TenantScopedRelationsMixin`) ; **signals** l'utilise et son **oracle
+    d'existence** est corrigé. **TD-246** reste OPEN (trous des modules).
+- **Mode d'emploi (règle permanente)** : **toute nouvelle FK écrite passe par
+  `core/tenant_fk.py` (docstring = mode d'emploi)**. Les trous existants sont
+  corrigés par les sprints modules (F1 → Game Plan ; C2-1, C2-2, C2-7 → DC ;
+  C2-3 à C2-5 → Campaign ; C2-6 → Account ; C2-8 à C2-10 → G1 — table dans
+  TD-246).
+- **Découvertes hors périmètre** (non corrigées) → **TD-330** (handlers
+  génériques de `BaseAPIView`), **TD-331** (401 au lieu de 403 sans tenant),
+  **TD-332** (`Team.organization` référencée), MAJ **TD-327** (couverture du
+  filtre `client_account`) et **TD-328** (`count()` du log de debug).
+
+_Fiche d'origine (cadrage du 2026-11-23), conservée :_
 - **Origine** : audit read-only des protections multi-tenant du 2026-11-23
   (`main` @ `6ca4322`). Constat central : `ClientAccountViewSet` est ouvert
   en lecture, écriture, suppression en cascade et création **inter-tenant**,
@@ -1732,8 +1765,10 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
   **MAJ (audit sécurité 2026-11-23)** : les autres modules sont désormais
   audités — inventaire des trous (F1, C2-1 → C2-10) dans **TD-246** ; plan :
   helper central au **Lot 0 sécurité**, trous corrigés par les sprints
-  modules, reste en **G1**. Également bloquants : **TD-322** / **TD-323**
-  (Lot 0), **TD-324** (legacy routé) et **TD-328** (config de production).
+  modules, reste en **G1**. Également bloquants : **TD-324** (legacy routé)
+  et **TD-328** (config de production). **MAJ (clôture Lot 0, 2026-11-24)** :
+  **TD-322** / **TD-323** RESOLVED et helper central livré (Lot 0, merge
+  `0f1bc4d7`) ; signals sans oracle d'existence.
 - **Gestion des erreurs** (#5 ci-dessus) — audit complet des vues d'erreur.
 - **Doublons de requêtes + efficacité cache** — TD principal existant, déjà
   marqué « pré-launch » dans sa fiche (« Sprint — Doublons de requêtes +
@@ -1973,6 +2008,16 @@ possibles) :
 #### Sprint Workspace / DC (NOUVEAU 2026-08-21)
 - **Position** : **3bis** de l'ordre cible, juste après le bloc « Modèle
   Decision Cycle » (#3).
+- **Sous-étape sécurité (MAJ clôture Lot 0, 2026-11-24)** — dans une sous-étape
+  séparée, repro ROUGE par le vrai endpoint (deux tenants), via
+  `core/tenant_fk.py` (**TD-246**) : **C2-1** (`contact_ids` du PATCH d'étape,
+  `decision_cycles/serializers.py:1099-1101`, `:1125`), **C2-2** (nettoyage du
+  `contact_ids` mort du Create, `:1044`), **C2-7** (`product_catalog_entry` de
+  DealProduct, `:1597-1638`) ; et **vider l'allowlist** du garde-fou
+  (`GET_QUERYSET_TENANT_FILTER_ALLOWLIST`,
+  `tests/permissions/test_get_queryset_through_tenant_filter.py`) en faisant
+  passer DealProduct, DealHealthSnapshot et ManagerNote par
+  `super().get_queryset()`.
 - **Objectif** : **édition complète de l'overview DC** — rendre éditables depuis
   le workspace les champs que le rep doit pouvoir corriger là où il travaille,
   et non seulement depuis la modale de création.
@@ -2233,6 +2278,7 @@ possibles) :
 - **Renommage (clôture Deal health v2)** : la feature s'appelle **« Game Plan »** (call / meeting / démo) ; pour un email ou un message LinkedIn : **« AI email draft · by Game Plan »**.
 - **Le chantier (clôture Deal health v2)** = **sprint 1 Deal health v2** (✅ LIVRÉ, fiche « Sprint « Deal health v2 » ✅ ») + **sprint 2 Game Plan** (**prochain jalon**).
 - **Position (MAJ audit sécurité 2026-11-23)** : le sprint 2 Game Plan vient **après le Lot 0 sécurité** ; il inclut une **sous-étape FK** dédiée : **F1** (`create-with-entities` écrit dans le cycle d'un autre tenant, **TD-246**) corrigé via le helper central du Lot 0.
+- **MAJ (clôture Lot 0, 2026-11-24)** : Lot 0 ✅ livré (merge `0f1bc4d7`) → le sprint 2 Game Plan est le **prochain jalon**. La sous-étape **F1** utilise `core/tenant_fk.py` : `decision_cycle_id`, `decision_step_id`, `source_activity_id` de `activity_creation_service.py:137-139` résolus par `resolve_one_in_tenant` (account explicite), repro ROUGE par le vrai endpoint `create-with-entities`.
 - **Sprint 2 — contenu (clôture Deal health v2)** :
   - **Fiche entreprise vendeuse** (validée PO).
   - **Placeholders guidés** sur la **description** et la **proposition de valeur** des produits.
@@ -3009,14 +3055,19 @@ rapprocher au maximum. Prérequis absolu avant tout accès client.
   secrets, logs, configuration de production, dépendances. Puis **correction
   de tout ce qu'il trouve** (un défaut = un commit, repro ROUGE d'abord).
   Point de départ : l'**audit multi-tenant du 2026-11-23** (`main` @
-  `6ca4322`), dont le **Lot 0 sécurité** (**TD-322**, **TD-323**, helper FK de
-  **TD-246**) est traité AVANT les sprints modules. Restent pour G1 :
+  `6ca4322`), dont le **Lot 0 sécurité** est ✅ **LIVRÉ** (merge `0f1bc4d7` :
+  **TD-322** et **TD-323** RESOLVED, helper FK `core/tenant_fk.py` de
+  **TD-246**). Restent pour G1 :
   **TD-246** (trous FK non couverts par les sprints modules), **TD-324**
   (débranchement des 8 routes legacy, L1 → L8), **TD-325** (account non
   contrôlé, oracles d'existence), **TD-326** (contournements de rôle
   intra-tenant, avec **TD-250** / **TD-316**), **TD-327** (tests d'isolation :
   test qui parcourt les URL, vrai JWT), **TD-328** (DEBUG, `/admin/`,
-  `/ops/sleep/`, clés JWT par origin, coût LLM — avec **TD-315**).
+  `/ops/sleep/`, clés JWT par origin, coût LLM, `count()` du log de debug —
+  avec **TD-315**), **TD-330** (handlers génériques de `BaseAPIView`
+  atteignables hors mapping, avec **TD-250** / **TD-316**), **TD-331** (401 au
+  lieu de 403 pour un token sans tenant), **TD-332** (`Team.organization`
+  encore référencée).
 - **Durcissement permissions & modules** :
   - **Supprimer les modules FANTÔMES** : plusieurs modules ont été
     anticipés dans les settings/config alors qu'ils n'existeront pas.
@@ -3143,9 +3194,9 @@ IA (pipelines signaux, prep call). Métering + plafonds par tenant.
 
 ### Rappel dette critique (renvoi TECH_DEBT.md)
 TD critiques non traités :
-- ⚠️ **Lot 0 sécurité (audit 2026-11-23)** : **TD-322** (`ClientAccountViewSet`
-  inter-tenant), **TD-323** (filtre central fail-open), helper FK de
-  **TD-246** — AVANT les sprints modules. Puis G1 : **TD-324 → TD-328**.
+- ⚠️ **Sécurité (audit 2026-11-23 ; Lot 0 ✅ livré, merge `0f1bc4d7`)** :
+  **TD-246** (trous FK des modules, corrigés sprint par sprint) puis G1 :
+  **TD-324 → TD-328**, **TD-330**, **TD-331**, **TD-332**.
 - **build-health : ✅ FERMÉ (PR #102, TD-18 résolu)** — deps déclarées, casses
   d'import traitées, `@mui/x-tree-view` `^6`→`^8` (pas `^7`) ;
   `@dnd-kit/sortable`/`utilities` étaient une cible inexacte (importés nulle
