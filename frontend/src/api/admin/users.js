@@ -25,8 +25,6 @@ const endpoints = {
   roles: "/client/roles/",
   clientAccountSeats: (clientId) =>
     `/client/client-accounts/${clientId}/seats/`,
-  clientAccountStats: (clientId) =>
-    `/client/client-accounts/${clientId}/stats/`,
 };
 
 // ==============================|| DEBOUNCED REVALIDATION (1.4) ||============================== //

@@ -46,7 +46,6 @@ import CheckCircleFilled from '@ant-design/icons/CheckCircleFilled';
 
 //TEST
 import TestErrorButton from 'components/ErrorTest/TestErrorButton';
-import TestRateLimitButton from 'components/ErrorTest/TestRateLimitButton'
 import TestTimeoutButton from 'components/ErrorTest/TestTimeoutButton';
 import TestMultiSnackbar from 'components/ErrorTest/TestMultiSnackbar';
 
@@ -651,8 +650,6 @@ const filters = useMemo(() => {
 
       {/* <TestMultiSnackbar />  */}
 
-      {/* Test Error Button (dev only) */}
-      {/* {process.env.NODE_ENV === 'development' && <TestRateLimitButton/>} */}
       {/* <TestTimeoutButton /> */}
     </>
   );

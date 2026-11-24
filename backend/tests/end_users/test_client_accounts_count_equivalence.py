@@ -1,6 +1,6 @@
 # backend/tests/end_users/test_client_accounts_count_equivalence.py
 """
-BUSINESS EQUIVALENCE — Sprint Timeout / Fil accounts.
+BUSINESS EQUIVALENCE — Sprint Timeout / Fil accounts (re-pointed by TD-322).
 
 The N+1 fix moved users_count / organizations_count from per-row .count()
 calls to queryset annotations (Count(..., distinct=True)). These tests lock
@@ -10,11 +10,15 @@ that the fix changed HOW the counts are computed, never WHAT they are:
   code produced (active users only; all organizations);
 - the counts are NOT inflated by a cartesian product — annotating two Count()
   over different relations WITHOUT distinct=True would make each equal
-  active_users * organizations; we prove they stay separate (3 and 2, not 6);
+  active_users * organizations; we prove they stay separate (3 and 4, not 12);
 - the is_active filter is respected: inactive users never counted;
-- the annotated path (list/retrieve) and the fallback path (serializer on an
+- the annotated path (retrieve) and the fallback path (serializer on an
   un-annotated instance, e.g. the product_admin create path) return the SAME
   numbers.
+
+Since TD-322 the client-account endpoint is read-only on the requester's OWN
+tenant (no list any more): the measured row is the requester's tenant,
+fetched through GET /client/client-accounts/<own id>/.
 
 DB: Postgres.
 """
@@ -43,9 +47,11 @@ ORGS = 4
 
 
 @pytest.fixture
-def account_with_mix(db, client_account_a):
-    ca = ClientAccount.objects.create(name="Mix Co", is_b2b=True, max_users=20)
-    for u in range(ACTIVE_USERS):
+def account_with_mix(db, client_account_a, user_a):
+    """The requester's own tenant (A), seeded with the asymmetric mix. The
+    requester (user_a, active) is the first of the ACTIVE_USERS."""
+    ca = client_account_a
+    for u in range(ACTIVE_USERS - 1):
         User.objects.create(email=f"act-{u}@mix.test", client_account=ca,
                             role=None, is_active=True)
     for u in range(INACTIVE_USERS):
@@ -57,13 +63,11 @@ def account_with_mix(db, client_account_a):
 
 
 def _endpoint_row(authed_api_a, account_id):
-    url = reverse('client:client-account-list')
-    resp = authed_api_a.get(f"{url}?page_size=100")
+    url = reverse('client:client-account-detail', kwargs={'pk': account_id})
+    resp = authed_api_a.get(url)
     assert resp.status_code == 200, resp.content
-    for row in resp.data["results"]:
-        if row["id"] == str(account_id):
-            return row
-    raise AssertionError("account not found in list response")
+    assert resp.data["id"] == str(account_id)
+    return resp.data
 
 
 @pytest.mark.django_db
@@ -103,7 +107,7 @@ class TestCountEquivalence:
 
     def test_annotated_path_matches_fallback_path(self, account_with_mix,
                                                   authed_api_a):
-        """The annotated list/retrieve path and the un-annotated fallback path
+        """The annotated retrieve path and the un-annotated fallback path
         (serializer on a plain instance, as in the product_admin create
         response) return identical numbers."""
         ca = account_with_mix

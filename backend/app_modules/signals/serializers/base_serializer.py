@@ -47,12 +47,11 @@ canonical pattern).
 
 from rest_framework import serializers
 
-from django.db import models
-from django.db.models import QuerySet
-
 from core.client_scope import ClientScopeManager
-from core.error_messages import ContactErrorMessages, CoreErrorMessages
+from core.constants import ACCOUNT_NOT_APPLICABLE
+from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
+from core.tenant_fk import TenantScopedRelationsMixin, check_resolved_scope
 
 
 # =============================================================================
@@ -370,50 +369,8 @@ class BaseSignalDetailSerializer(BaseSignalListSerializer):
 # CREATE SERIALIZER
 # =============================================================================
 
-def _validate_fk_scope(attrs, client_id, account_id):
-    """
-    Tenant + account scope of every FK / M2M instance written by a signal
-    serializer. Single write-side guard shared by the Create and Update base
-    serializers — same "post-resolution check on the resolved instance"
-    pattern as decision_cycles/serializers.py (tenant) and
-    campaigns/serializers/campaign_contact_serializer.py (account coherence).
-
-    Rule 1 (tenant, first): every instance carrying `client_id` must belong
-    to the current client → else OBJECT_NOT_FOUND, so an object of another
-    tenant is indistinguishable from a non-existent id.
-
-    Rule 2 (account, second): every instance other than `account` itself
-    carrying `account_id` must belong to the signal's account → else
-    INVALID_ACCOUNT. Skipped when no reference account is known.
-
-    Instances without `client_id` (StandardDepartment — global list) are out
-    of scope by construction. M2M values arrive as lists of instances.
-    """
-    resolved = []
-    for name, value in attrs.items():
-        if isinstance(value, models.Model):
-            resolved.append((name, value))
-        elif isinstance(value, (list, tuple, QuerySet)):
-            resolved.extend(
-                (name, item) for item in value if isinstance(item, models.Model)
-            )
-
-    # Rule 1 — tenant.
-    for _name, obj in resolved:
-        if hasattr(obj, 'client_id') and str(obj.client_id) != str(client_id):
-            raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
-
-    # Rule 2 — account coherence.
-    if account_id is None:
-        return
-    for name, obj in resolved:
-        if name == 'account':
-            continue
-        if hasattr(obj, 'account_id') and str(obj.account_id) != str(account_id):
-            raise StandardizedValidationError(ContactErrorMessages.INVALID_ACCOUNT)
-
-
 class BaseSignalCreateSerializer(
+    TenantScopedRelationsMixin,
     ClientScopeManager.SerializerMixin,
     serializers.ModelSerializer,
 ):
@@ -493,18 +450,22 @@ class BaseSignalCreateSerializer(
 
     def validate(self, attrs):
         """
-        Inject client_id from JWT context, then scope every written FK to
-        the current tenant and to the signal's account (_validate_fk_scope).
+        Inject client_id from JWT context, then re-check every written FK
+        (core/tenant_fk.py check_resolved_scope, no query): tenant, then the
+        signal's account — the `account` field itself excluded. The FKs were
+        already resolved INSIDE the tenant by TenantScopedRelationsMixin
+        (unknown, foreign or malformed id → the same OBJECT_NOT_FOUND).
 
         Concrete serializers enforce their own contextual rules in their
         own validate() and delegate here via super().validate().
         """
         attrs['client_id'] = self._get_client_id_from_context()
         account = attrs.get('account')
-        _validate_fk_scope(
+        check_resolved_scope(
             attrs,
             client_id=attrs['client_id'],
-            account_id=account.pk if account is not None else None,
+            account_id=account.pk if account is not None else ACCOUNT_NOT_APPLICABLE,
+            skip=('account',),
         )
         return attrs
 
@@ -514,6 +475,7 @@ class BaseSignalCreateSerializer(
 # =============================================================================
 
 class BaseSignalUpdateSerializer(
+    TenantScopedRelationsMixin,
     ClientScopeManager.SerializerMixin,
     serializers.ModelSerializer,
 ):
@@ -570,10 +532,12 @@ class BaseSignalUpdateSerializer(
         Scope every written FK to the current tenant and to the signal's
         (immutable) account — same guard as the Create path.
         """
-        _validate_fk_scope(
+        check_resolved_scope(
             attrs,
             client_id=self._get_client_id_from_context(),
-            account_id=self.instance.account_id if self.instance is not None else None,
+            account_id=(self.instance.account_id if self.instance is not None
+                        else ACCOUNT_NOT_APPLICABLE),
+            skip=('account',),
         )
         return attrs
 
