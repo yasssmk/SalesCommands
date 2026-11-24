@@ -7,7 +7,8 @@ Endpoint:
     POST /module-ai-pipelines/prep-call/run/
 
 Request:
-    { "activity_id": "<uuid>", "contact_id": "<uuid> (optional)" }
+    { "activity_id": "<uuid>" }
+    (no contact_id — sprint 2 Game Plan, S2: a contact_id sent is ignored)
 
 Response (201 Created):
     {
@@ -70,8 +71,10 @@ class PrepCallRunView(BaseAPIView):
         validated = input_serializer.validated_data
 
         activity = validated['activity']
-        target_contact = validated['target_contact']
         client_id = validated['client_id']
+        # No contact received any more (S2, C2-11 / TD-325): the people of the
+        # brief come from the activity itself (Game Plan roster, sub-step G4).
+        target_contact = None
 
         # Idempotence layer 1 (Redis) intentionally omitted — matches
         # DealHealth pattern. Layer 2 (DB hash dedup in the pipeline)

@@ -33,13 +33,16 @@ class PrepCallRunInputSerializer(
 
     Expected payload:
         {
-            "activity_id": "<uuid>",
-            "contact_id": "<uuid>"  // optional
+            "activity_id": "<uuid>"
         }
+
+    No `contact_id` (sprint 2 Game Plan, S2 — C2-11 / TD-325, PO decision
+    Q8): the people of the brief come from the activity itself, server-side
+    (TD-46 / TD-48); a `contact_id` sent is ignored — no FK received.
+    PrepCallSnapshot.target_contact stays, to read the v1 snapshots.
 
     Post-validation (.validated_data):
         * activity:       Activity instance (tenant-scoped).
-        * target_contact: Contact instance or None.
         * client_id:      UUID of the tenant.
     """
 
@@ -48,17 +51,10 @@ class PrepCallRunInputSerializer(
         write_only=True,
         help_text='UUID of the Activity to prepare for.',
     )
-    contact_id = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        write_only=True,
-        help_text='UUID of the primary Contact for the brief (optional).',
-    )
 
     def validate(self, attrs):
         client_id = self._get_client_id_from_context()
         activity_id = attrs.pop('activity_id')
-        contact_id = attrs.pop('contact_id', None)
 
         try:
             activity = (
@@ -76,20 +72,7 @@ class PrepCallRunInputSerializer(
                 'Activity type must be CALL, MEETING, or DEMO.'
             )
 
-        target_contact = None
-        if contact_id:
-            from app_modules.contacts.models import Contact
-            try:
-                target_contact = Contact.objects.get(
-                    id=contact_id, client_id=client_id,
-                )
-            except Contact.DoesNotExist:
-                raise StandardizedValidationError(
-                    'The specified contact does not exist or is not accessible.'
-                )
-
         attrs['activity'] = activity
-        attrs['target_contact'] = target_contact
         attrs['client_id'] = client_id
         return attrs
 
