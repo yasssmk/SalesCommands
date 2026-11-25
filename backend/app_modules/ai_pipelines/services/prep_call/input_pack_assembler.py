@@ -149,15 +149,22 @@ class PrepInputPackAssembler:
 
     @staticmethod
     def _find_current_step(dc):
-        steps = dc.steps.select_related('previous_step').order_by('order')
-        for step in steps:
-            if step.is_current:
-                return {
-                    'name': step.name,
-                    'goal': step.goal or '',
-                    'criterias': step.criterias or [],
-                }
-        return None
+        """The cycle's current step, derived ONCE for the whole cycle
+        (current_decision_step — the shared definition of
+        DecisionStep.is_current) instead of one is_current per step, each
+        re-deriving the cycle (sprint 2 Game Plan, S5; the deal health's
+        evidence builder does the same)."""
+        from app_modules.activities.services.next_step_materialization import (
+            current_decision_step,
+        )
+        step = current_decision_step(dc)
+        if step is None:
+            return None
+        return {
+            'name': step.name,
+            'goal': step.goal or '',
+            'criterias': step.criterias or [],
+        }
 
     @staticmethod
     def _get_last_snapshot_date(dc):
