@@ -25,6 +25,11 @@ axis the catalogue never had:
 `canonical_key` is dropped from the tech evidence: TechStack is not
 clusterable, so it was always None.
 
+Since then (deal health step 3b; prep call sprint 2 Game Plan, S6 — TD-314):
+`is_to_replace` is no longer read by either pack; both carry the usage scope
+and the discontinuation, the prep-call pack through the deal health's own
+TechStack rows.
+
 Fixture imports mirror tests/ai_pipelines/test_deal_health_evidence_builder.py
 (:29-49) and test_prep_call_input_pack.py (:11-33), which both re-export
 the decision_cycles conftest fixtures.
@@ -296,29 +301,33 @@ class TestDealHealthPromptRendering:
 
 class TestPrepCallTechSerialization:
 
-    def test_serialized_tech_carries_name_and_to_replace_only(
-        self, cycle, user_a,
+    def test_the_pack_reuses_the_deal_health_tech_rows(
+        self, activity_with_cycle, contact, cycle, user_a,
     ):
-        from app_modules.signals.models import TechStackSignal
-
+        """Sprint 2 Game Plan, S6 (TD-314): the prep-call pack carries the
+        deal health's own TechStack rows (step 3b) — is_to_replace is no
+        longer read, the usage and the discontinuation are."""
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Salesforce',
             is_to_replace=True,
         )
 
-        rows = PrepInputPackAssembler._serialize_techstack_signals(
-            TechStackSignal.objects.filter(decision_cycle=cycle)
+        pack = PrepInputPackAssembler().build(
+            activity=activity_with_cycle, target_contact=contact,
+            brief_mode='CONVICTION',
         )
+        rows = pack['competitive_context']['incumbents']
 
         assert len(rows) == 1
-        assert rows[0]['tech_name'] == 'Salesforce'
-        assert rows[0]['is_to_replace'] is True
-        # is_competitor is NO LONGER surfaced: the competitor facet is the
-        # CompetitorSignal now, and the manual tech flag has been retired.
-        assert 'is_competitor' not in rows[0]
-        # is_integration is NOT surfaced either (retired earlier; TECHNICAL
-        # constraint captures a required integration).
+        assert rows[0]['tool'] == 'Salesforce'
+        assert 'is_to_replace' not in rows[0]
+        assert set(rows[0]) == {
+            'tool', 'usage_scope', 'usage_departments', 'discontinued',
+            'discontinued_date',
+        }
+        # is_integration is NOT surfaced (retired earlier; TECHNICAL
+        # constraint captures a required integration), nor the catalogue keys.
         assert 'is_integration' not in rows[0]
         assert 'catalog_name' not in rows[0]
         assert 'is_integration_target' not in rows[0]
@@ -355,13 +364,12 @@ class TestPrepCallCompetitiveContext:
         assert [c['tool'] for c in comp['incumbents']] == ['Notion']
         assert comp['competing_on_deal'] == []
 
-    def test_to_replace_tools_are_surfaced_as_their_own_bucket(
+    def test_to_replace_is_no_longer_a_bucket(
         self, activity_with_cycle, contact, cycle, user_a,
     ):
-        """
-        The qualification the catalogue never carried: a tool the account
-        intends to drop is an open door, whether or not we compete with it.
-        """
+        """S6 (TD-314): is_to_replace is no longer read (always False on
+        extraction; the deal health dropped it at its step 3b) — the tool is
+        an incumbent like any other."""
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Zendesk', is_to_replace=True,
@@ -369,30 +377,28 @@ class TestPrepCallCompetitiveContext:
 
         comp = self._pack(activity_with_cycle, contact)['competitive_context']
 
-        assert [c['tool'] for c in comp['to_replace']] == ['Zendesk']
+        assert 'to_replace' not in comp
+        assert [c['tool'] for c in comp['incumbents']] == ['Zendesk']
 
-    def test_a_tool_can_be_competitor_and_to_replace(
+    def test_a_tool_can_be_competitor_and_incumbent(
         self, activity_with_cycle, contact, cycle, user_a,
     ):
-        # The competitor facet is a CompetitorSignal; the to_replace facet
-        # stays on the techstack row. The same tool can be both.
+        # The competitor facet is a CompetitorSignal; the incumbent is the
+        # techstack row. The same tool can be both.
         _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
-        _create_tech(
-            cycle, user_a, cycle.client_id,
-            tech_name='Salesforce', is_to_replace=True,
-        )
+        _create_tech(cycle, user_a, cycle.client_id, tech_name='Salesforce')
 
         comp = self._pack(activity_with_cycle, contact)['competitive_context']
 
         assert [c['tool'] for c in comp['competing_on_deal']] == ['Salesforce']
-        assert [c['tool'] for c in comp['to_replace']] == ['Salesforce']
+        assert [c['tool'] for c in comp['incumbents']] == ['Salesforce']
 
     def test_empty_when_no_tech_signals(self, activity_with_cycle, contact):
         comp = self._pack(activity_with_cycle, contact)['competitive_context']
 
         assert comp['incumbents'] == []
         assert comp['competing_on_deal'] == []
-        assert comp['to_replace'] == []
+        assert 'to_replace' not in comp
 
 
 class TestPrepCallPromptRendering:
@@ -408,7 +414,7 @@ class TestPrepCallPromptRendering:
             build_context_layer,
         )
 
-        # Competitor facet -> CompetitorSignal; incumbents/to_replace -> techstack.
+        # Competitor facet -> CompetitorSignal; incumbents -> techstack.
         _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
         _create_tech(cycle, user_a, cycle.client_id, tech_name='Notion')
         _create_tech(
@@ -425,7 +431,9 @@ class TestPrepCallPromptRendering:
 
         assert 'Competitor on deal: Salesforce' in rendered
         assert 'Incumbent: Notion' in rendered
-        assert 'To replace: Zendesk' in rendered
+        # S6 (TD-314): is_to_replace is no longer read — Zendesk is an incumbent.
+        assert 'Incumbent: Zendesk' in rendered
+        assert 'To replace' not in rendered
         assert 'unknown' not in rendered
 
 

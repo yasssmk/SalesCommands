@@ -39,6 +39,8 @@ from app_modules.ai_pipelines.constants import (
     DEAL_HEALTH_TRUNCATION_MARKER,
     DEAL_HEALTH_TRUNCATION_PER_SOURCE,
     PEOPLE_ROLE_TO_QUALIFY,
+    TECHSTACK_NO_LONGER_USED,
+    TECHSTACK_PLANNED_EXIT,
     people_role_for_prompt,
 )
 from app_modules.ai_pipelines.services.llm_people import cycle_roster, stakeholder_for
@@ -537,6 +539,13 @@ class DealHealthEvidenceBuilder:
         ]
 
     @staticmethod
+    def serialize_techstack_signals(qs, competitor_norms=frozenset()):
+        """The TechStack rows of the AI packs (step 3b, TD-314) — public for
+        the prep-call / Game Plan pack (sprint 2, S6), which reuses them as
+        they are. `qs` should prefetch `usage_departments`."""
+        return DealHealthEvidenceBuilder._serialize_techstack_signals(qs, competitor_norms)
+
+    @staticmethod
     def _serialize_techstack_signals(qs, competitor_norms=frozenset()):
         """
         Tech evidence, read entirely off the signal (S10).
@@ -578,8 +587,9 @@ class DealHealthEvidenceBuilder:
                 'usage_scope': s.get_usage_scope_display() if s.usage_scope else None,
                 'discontinued': (
                     None if not s.is_discontinued
-                    else 'no longer used' if (s.discontinued_date is None or s.discontinued_date <= today)
-                    else 'planned exit'
+                    else TECHSTACK_NO_LONGER_USED
+                    if (s.discontinued_date is None or s.discontinued_date <= today)
+                    else TECHSTACK_PLANNED_EXIT
                 ),
                 'discontinued_date': (
                     s.discontinued_date.isoformat() if s.is_discontinued and s.discontinued_date else ''

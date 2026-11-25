@@ -162,17 +162,12 @@ def build_context_layer(input_pack, brief_mode):
     comp = input_pack.get('competitive_context', {})
     incumbents = comp.get('incumbents', [])
     competing = comp.get('competing_on_deal', [])
-    # S10: new bucket, fed by TechStackSignal.is_to_replace. Overlaps
-    # with the two above by design — see _build_competitive_context.
-    to_replace = comp.get('to_replace', [])
-    if incumbents or competing or to_replace:
+    if incumbents or competing:
         comp_lines = ["COMPETITIVE CONTEXT"]
         for inc in incumbents:
-            comp_lines.append(f"  Incumbent: {inc.get('tool', 'unknown')}")
+            comp_lines.append(f"  Incumbent: {_incumbent_text(inc)}")
         for c in competing:
             comp_lines.append(f"  Competitor on deal: {c.get('tool', 'unknown')}")
-        for r in to_replace:
-            comp_lines.append(f"  To replace: {r.get('tool', 'unknown')}")
         sections.append('\n'.join(comp_lines))
 
     # -- Evidence scope --
@@ -185,6 +180,23 @@ def build_context_layer(input_pack, brief_mode):
     )
 
     return '\n\n'.join(sections)
+
+
+def _incumbent_text(inc):
+    """One tool of the pack, as given (TD-314, S6): name, usage (scope and
+    using departments), discontinuation and its date — nothing derived here."""
+    text = inc.get('tool', 'unknown')
+    usage = inc.get('usage_scope')
+    departments = inc.get('usage_departments') or []
+    if usage or departments:
+        text += f" — usage: {usage or 'unknown'}"
+        if departments:
+            text += f" ({', '.join(departments)})"
+    if inc.get('discontinued'):
+        text += f" — {inc['discontinued']}"
+        if inc.get('discontinued_date'):
+            text += f" ({inc['discontinued_date']})"
+    return text
 
 
 def _applicable_modulations(input_pack):

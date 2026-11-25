@@ -221,6 +221,15 @@ class PrepInputPackAssembler:
 
         validated = SignalStatus.VALIDATED
 
+        # The deal's competitors, ONE query: their names for the competitor
+        # facet below, their normalised names for the TechStack rows'
+        # competitor marker (S6).
+        competitors = list(
+            CompetitorSignal.objects.filter(
+                decision_cycle=dc, status=validated,
+            ).values('competitor_name', 'competitor_name_normalized')
+        )
+
         return {
             # Multi-department scope (sub-step 2b): read WHO the pain concerns
             # off the target_departments M2M, not the legacy FK. A
@@ -268,13 +277,16 @@ class PrepInputPackAssembler:
                     decision_cycle=dc, status=validated,
                 ).prefetch_related('target_departments')
             ],
-            # S10: tech identity lives on the signal's own columns, so
-            # the catalogue FK is no longer joined. usage_department is
-            # not read by _serialize_techstack_signals either.
-            'techstack': self._serialize_techstack_signals(
+            # TD-314 (sprint 2 Game Plan, S6): the deal health's own TechStack
+            # rows (step 3b) — tool, usage scope + departments, discontinuation
+            # (« no longer used » / « planned exit », ai_pipelines/constants.py),
+            # competitor marker — reused as they are, not re-serialised here.
+            # `is_to_replace` is no longer read (as the deal health).
+            'techstack': DealHealthEvidenceBuilder.serialize_techstack_signals(
                 TechStackSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                )
+                ).prefetch_related('usage_departments'),
+                frozenset(c['competitor_name_normalized'] for c in competitors),
             ),
             'blocker': self._serialize_blocker_signals(
                 BlockerSignal.objects.filter(
@@ -306,11 +318,9 @@ class PrepInputPackAssembler:
             # detached CompetitorSignal (DC-scoped + VALIDATED), cloned on
             # the ConstraintSignal read above — NOT from TechStackSignal
             # .is_competitor. Each row is a competitor on this deal.
-            'competitor': list(
-                CompetitorSignal.objects.filter(
-                    decision_cycle=dc, status=validated,
-                ).values('competitor_name')
-            ),
+            'competitor': [
+                {'competitor_name': c['competitor_name']} for c in competitors
+            ],
             'people': self._serialize_people_signals(
                 PeopleSignal.objects.filter(
                     decision_cycle=dc, status=validated,
@@ -331,30 +341,6 @@ class PrepInputPackAssembler:
             'competitor': [],
             'people': [],
         }
-
-    @staticmethod
-    def _serialize_techstack_signals(qs):
-        """
-        Tech rows, read entirely off the signal (S10).
-
-        Was: label from str(tech_catalog_entry), flags from that
-        catalogue row. The extractor no longer sets the FK, so every row
-        came out {None, False, False} and _build_competitive_context
-        below produced tools named "unknown" in the prompt.
-
-        `is_to_replace` is new here — the catalogue had no equivalent.
-        """
-        # is_integration is intentionally NOT surfaced here: it was never
-        # consumed by _build_competitive_context (which reads is_competitor /
-        # is_to_replace only), and integration requirements are now TECHNICAL
-        # constraints (surfaced through the constraint signals, not the tech row).
-        return [
-            {
-                'tech_name': s.tech_name or '',
-                'is_to_replace': s.is_to_replace,
-            }
-            for s in qs
-        ]
 
     @staticmethod
     def _serialize_blocker_signals(qs, roster):
@@ -522,26 +508,32 @@ class PrepInputPackAssembler:
             can now be both an incumbent (it is in place) and a competitor (a
             CompetitorSignal names it): the three buckets are non-exclusive by
             design.
-          * `to_replace` is UNCHANGED — still fed by TechStackSignal.is_to_replace.
+          * TD-314 (sprint 2 Game Plan, S6): each incumbent carries its usage
+            (`usage_scope`, `usage_departments`) and its discontinuation
+            (`discontinued`: None / « no longer used » / « planned exit »,
+            `discontinued_date`) — straight from the deal health's TechStack
+            rows. The `to_replace` bucket is gone: is_to_replace is no longer
+            read (always False on extraction; the deal health dropped it at
+            its step 3b).
 
-        The prep-call prompt reads only the `tool` of each entry (see
-        prompts/prep_call/context.py), so the entry shape stays {'tool': ...}.
+        prompts/prep_call/context.py only prints what these entries give.
         """
         techstack = signals.get('techstack', [])
         competitors = signals.get('competitor', [])
         return {
             'incumbents': [
-                {'tool': t['tech_name']}
+                {
+                    'tool': t['tech_name'],
+                    'usage_scope': t.get('usage_scope'),
+                    'usage_departments': t.get('usage_departments', []),
+                    'discontinued': t.get('discontinued'),
+                    'discontinued_date': t.get('discontinued_date', ''),
+                }
                 for t in techstack
             ],
             'competing_on_deal': [
                 {'tool': c['competitor_name']}
                 for c in competitors
-            ],
-            'to_replace': [
-                {'tool': t['tech_name']}
-                for t in techstack
-                if t.get('is_to_replace')
             ],
         }
 

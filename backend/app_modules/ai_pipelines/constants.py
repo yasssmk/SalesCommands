@@ -201,6 +201,20 @@ HARD_CRASH_ERROR_MAX_CHARS = 1000
 
 
 # =============================================================================
+# TECHSTACK — discontinuation, as the AI packs say it (TD-314)
+# =============================================================================
+#
+# A discontinued TechStackSignal (is_discontinued + discontinued_date): a date
+# today or in the past = the tool is no longer used; a future date = a planned
+# exit (TechStackSignal.discontinued_date help text). Emitted in the AI packs
+# by DealHealthEvidenceBuilder.serialize_techstack_signals (deal health step
+# 3b), reused by the prep-call / Game Plan pack (sprint 2, S6). The usage
+# scope labels are signals.constants.UsageScope's own.
+TECHSTACK_NO_LONGER_USED = 'no longer used'
+TECHSTACK_PLANNED_EXIT = 'planned exit'
+
+
+# =============================================================================
 # SAFETY FILTER THRESHOLDS
 # =============================================================================
 #
