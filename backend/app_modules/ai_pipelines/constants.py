@@ -189,6 +189,18 @@ PIPELINE_TEMPERATURES = {
 
 
 # =============================================================================
+# HARD CRASH — the error kept on the run
+# =============================================================================
+#
+# An unexpected exception during a run (the « hard crash » path, re-raised to
+# the view) is stored on AIPipelineRun.error_message as
+# « hard crash: <str(exc)> », the exception text cut to this length
+# (BasePipeline._finalize_hard_crash and the pipelines' own hard-crash
+# blocks). Never sent to the client.
+HARD_CRASH_ERROR_MAX_CHARS = 1000
+
+
+# =============================================================================
 # SAFETY FILTER THRESHOLDS
 # =============================================================================
 #

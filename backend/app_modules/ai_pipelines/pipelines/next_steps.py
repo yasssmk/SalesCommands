@@ -124,6 +124,7 @@ TranscriptSignalExtractor).
 from ..constants import (
     AIPipelineStatus,
     AIPipelineType,
+    HARD_CRASH_ERROR_MAX_CHARS,
     PIPELINE_CONFIDENCE_MIN,
     PIPELINE_DROP_INFERRED,
     PIPELINE_TEMPERATURES,
@@ -343,7 +344,7 @@ class NextStepsPipeline(BasePipeline):
                 run,
                 status=AIPipelineStatus.LLM_ERROR,
                 created_signals_count=0,
-                error_message=f'hard crash: {str(exc)[:1000]}',
+                error_message=f'hard crash: {str(exc)[:HARD_CRASH_ERROR_MAX_CHARS]}',
             )
             raise
 

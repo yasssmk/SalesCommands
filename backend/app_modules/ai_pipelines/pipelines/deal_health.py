@@ -202,6 +202,9 @@ class DealHealthPipeline(BasePipeline):
         self._pack_truncation = pack.get('truncation') if isinstance(pack, dict) else None
         input_text = json.dumps(pack, default=str)
 
+        # Bound before the try: a crash inside _create_run leaves no run to
+        # finalise (S4b — was an UnboundLocalError hiding the original error).
+        run = None
         try:
             with transaction.atomic():
                 run = self._create_run(
@@ -302,12 +305,7 @@ class DealHealthPipeline(BasePipeline):
             return {'run': final_run, 'snapshot': snapshot}
 
         except Exception as exc:
-            self._finalize_run(
-                run,
-                status=AIPipelineStatus.LLM_ERROR,
-                created_signals_count=0,
-                error_message=f'hard crash: {str(exc)[:1000]}',
-            )
+            self._finalize_hard_crash(run, exc)
             raise
 
     # =========================================================================

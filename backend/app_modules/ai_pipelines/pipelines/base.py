@@ -88,7 +88,7 @@ import logging
 
 from .. import config as ai_config
 from ..config import ACTIVE_PROVIDER, get_active_provider_config
-from ..constants import AIPipelineStatus
+from ..constants import AIPipelineStatus, HARD_CRASH_ERROR_MAX_CHARS
 from ..models import AIPipelineRun
 from ..prompts.base import PromptBuilder, PromptParseError
 from ..providers import get_active_provider, get_provider
@@ -310,7 +310,7 @@ class BasePipeline(ABC):
             run,
             status=AIPipelineStatus.LLM_ERROR,
             created_signals_count=0,
-            error_message=f'hard crash: {str(exc)[:1000]}',
+            error_message=f'hard crash: {str(exc)[:HARD_CRASH_ERROR_MAX_CHARS]}',
         )
 
     # =========================================================================
