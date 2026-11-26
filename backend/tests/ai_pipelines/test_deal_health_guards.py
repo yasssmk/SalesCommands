@@ -259,7 +259,11 @@ def test_c_a_new_source_afterwards_runs_again(
     _feed(cycle, activity, user_a, 'Finance wants faster closing.')
     assert _post(authed_api_a, cycle).status_code == 201
 
-    _feed(cycle, activity, user_a, 'Finance wants faster closing. Budget owner met.')
+    # A counted source (sprint 2 Game Plan, S7: an edited activity is not
+    # one any more — tests/ai_pipelines/test_deal_health_new_info_sources.py).
+    from app_modules.decision_cycles.models import ManagerNote
+    ManagerNote(decision_cycle=cycle, content='Budget owner met.').save(
+        user=user_a, client_id=cycle.client_id)
     resp = _post(authed_api_a, cycle)
 
     assert resp.status_code == 201, resp.content

@@ -17,8 +17,11 @@ Never « stale »: « new information to analyse ».
 Served beside the latest snapshot (GET .../health-snapshots/latest/ —
 `freshness`), with or without a snapshot: what the Strategic tab reads.
 
-  (a) TECHNICAL_FIT + a snapshot, then an activity's notes changed →
-      NEW_SOURCES, last_analysis_at = the snapshot's date;
+  (a) TECHNICAL_FIT + a snapshot, then an activity's notes changed → NOT
+      new (sprint 2 Game Plan, S7: a typed note is never new information —
+      the analysed activities count, tests/ai_pipelines/
+      test_deal_health_new_info_sources.py), last_analysis_at = the
+      snapshot's date;
   (b) the same with nothing new → has_new_info false;
   (c) QUALIFICATION → applies false;
   (d) TECHNICAL_FIT, no snapshot → NO_ANALYSIS_YET, last_analysis_at None;
@@ -107,7 +110,7 @@ def _run(api, cycle):
 # (a) / (b) — new sources since the last snapshot
 # =============================================================================
 
-def test_a_changed_activity_notes_are_new_information(authed_api_a, technical_fit, provider):
+def test_a_changed_activity_notes_are_not_new_information(authed_api_a, technical_fit, provider):
     cycle, meeting = technical_fit['cycle'], technical_fit['meeting']
     snapshot = _run(authed_api_a, cycle)
 
@@ -116,9 +119,10 @@ def test_a_changed_activity_notes_are_new_information(authed_api_a, technical_fi
     assert resp.status_code == 200, resp.content
     fresh = _freshness(authed_api_a, cycle)
 
+    # S7: a typed note is never new information.
     assert fresh['applies'] is True
-    assert fresh['has_new_info'] is True
-    assert fresh['reasons'] == [NEW_SOURCES]
+    assert fresh['has_new_info'] is False
+    assert fresh['reasons'] == []
     assert fresh['last_analysis_at'] == snapshot.snapshot_date.isoformat()
 
 
@@ -266,7 +270,7 @@ def test_h_the_number_of_queries_does_not_grow_with_the_sources(
     few = count()
     for i in range(6):
         planned_activity_on_step(steps[1], transcript='x' * 5000, outcome_notes=f'Note {i}')
-    _run(authed_api_a, cycle)                         # analysed: nothing new again
+    # S7: activities merely written (not analysed) are not new — no re-run.
     many = count()
 
     assert len(many) == len(few), [q['sql'] for q in many.captured_queries]

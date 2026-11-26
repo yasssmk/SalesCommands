@@ -15,7 +15,9 @@ prompts (tests/ai_pipelines/conftest.py).
       test_deal_health_guards.py);
   (c) a ManagerNote added after the snapshot: only it;
   (d) the notes of a NON-analysed activity changed after the snapshot
-      (through the real notes endpoint): present;
+      (through the real notes endpoint): alone, NOT new — no re-run (sprint 2
+      Game Plan, S7); once a counted source arrives, the re-run's prompt
+      carries the updated notes;
   (e) above the input bound, the OLDEST transcript is cut first, traced in
       the run's sub_calls;
   (f) the snapshot carries a non-empty sources_cursor;
@@ -37,6 +39,8 @@ from app_modules.ai_pipelines.constants import (
     DEAL_HEALTH_CURSOR_SIGNALS,
     DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
     DEAL_HEALTH_TRUNCATION_INPUT_BUDGET,
+    DEAL_HEALTH_CURSOR_STAKEHOLDERS,
+    DEAL_HEALTH_NO_NEW_SOURCES_CODE,
 )
 from app_modules.ai_pipelines.models import AIPipelineRun
 from app_modules.signals.constants import (
@@ -232,6 +236,16 @@ def test_d_notes_of_a_non_analysed_activity_changed_after_the_snapshot(
     )
     assert resp.status_code == 200, resp.content
 
+    # S7: a typed note alone is not new — the re-run is refused (INFO).
+    refused = authed_api_a.post(RUN_URL, {'decision_cycle_id': str(cycle.id)}, format='json')
+    assert refused.status_code == 200, refused.content
+    assert refused.data['code'] == DEAL_HEALTH_NO_NEW_SOURCES_CODE
+
+    # A counted source: the re-run happens, and the prompt still reads the
+    # activity changed since the cursor — the updated notes included.
+    from app_modules.decision_cycles.models import ManagerNote
+    ManagerNote(decision_cycle=cycle, content='Push for the CFO meeting.').save(
+        user=user_a, client_id=cycle.client_id)
     prompt, _ = _run(authed_api_a, cycle, provider)
     assert 'Updated notes: budget owner is the COO.' in prompt
 
@@ -273,12 +287,15 @@ def test_f_the_snapshot_carries_a_sources_cursor(authed_api_a, rich_cycle, provi
     _, snapshot = _run(authed_api_a, rich_cycle, provider)
 
     cursor = snapshot['sources_cursor']
-    # 6c: + the fingerprint of the static context (a sha256).
+    # 6c: + the fingerprint of the static context (a sha256); S7: + the
+    # fingerprint of the stakeholders (a sha256).
     assert set(cursor) == {
         DEAL_HEALTH_CURSOR_ACTIVITIES, DEAL_HEALTH_CURSOR_SIGNALS,
         DEAL_HEALTH_CURSOR_MANAGER_NOTES, DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
+        DEAL_HEALTH_CURSOR_STAKEHOLDERS,
     }
     assert len(cursor[DEAL_HEALTH_CURSOR_STATIC_CONTEXT]) == 64
+    assert len(cursor[DEAL_HEALTH_CURSOR_STAKEHOLDERS]) == 64
 
 
 # =============================================================================

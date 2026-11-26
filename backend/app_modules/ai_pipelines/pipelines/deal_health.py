@@ -195,7 +195,11 @@ class DealHealthPipeline(BasePipeline):
         # A10 — nothing changed since the last snapshot (sources and static
         # context): no LLM call.
         previous = getattr(builder, 'previous_snapshot', None)
-        if previous is not None and not builder.has_new_sources(decision_cycle, previous):
+        # S7: THE predicate the freshness reads too — no reason, no run.
+        current_step = (pack.get('cycle') or {}).get('current_step') or {}
+        if previous is not None and not builder.new_info_reasons(
+            decision_cycle, previous, current_step.get('stage'),
+        ):
             return self._blocked(DEAL_HEALTH_NO_NEW_SOURCES_CODE, previous)
 
         # The input bounds applied (step 3b) — traced on success AND failure.

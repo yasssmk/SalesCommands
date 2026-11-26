@@ -17,7 +17,10 @@ import json
 
 import pytest
 
-from app_modules.ai_pipelines.constants import DEAL_HEALTH_CURSOR_STATIC_CONTEXT
+from app_modules.ai_pipelines.constants import (
+    DEAL_HEALTH_CURSOR_STAKEHOLDERS,
+    DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
+)
 from app_modules.ai_pipelines.pipelines.deal_health import DealHealthPipeline
 from app_modules.ai_pipelines.services.deal_health_evidence_builder import (
     DealHealthEvidenceBuilder,
@@ -105,9 +108,11 @@ def test_the_snapshot_records_the_declared_step_and_its_versions(
         assert served['prompt_versions']                      # non-empty
         assert served['estimated_step'] == _VALID_DIAGNOSTIC['estimated_step']['step']
         assert served['estimated_step_reason'] == _VALID_DIAGNOSTIC['estimated_step']['reason']
-        # No source on this cycle: no timestamp — only the fingerprint of
-        # its static context (6c).
-        assert set(served['sources_cursor']) == {DEAL_HEALTH_CURSOR_STATIC_CONTEXT}
+        # No source on this cycle: no timestamp — only the fingerprints of
+        # its static context (6c) and of its stakeholders (S7).
+        assert set(served['sources_cursor']) == {
+            DEAL_HEALTH_CURSOR_STATIC_CONTEXT, DEAL_HEALTH_CURSOR_STAKEHOLDERS,
+        }
 
 
 def test_a_cycle_without_steps_has_no_declared_step(authed_api_a, cycle, deal_health_provider):

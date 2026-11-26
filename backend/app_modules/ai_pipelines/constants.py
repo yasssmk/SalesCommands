@@ -374,6 +374,12 @@ DEAL_HEALTH_CURSOR_MANAGER_NOTES = 'manager_notes'
 # description / value proposition) and the account fields. Another
 # fingerprint than the last snapshot's is new: the run happens.
 DEAL_HEALTH_CURSOR_STATIC_CONTEXT = 'static_context'
+# Sprint 2 Game Plan, S7 (PO Q4): the fingerprint (sha256) of the cycle's
+# stakeholders — their ids and the role of their current signal — so a
+# stakeholder added, REMOVED (what a timestamp cursor cannot see, TD-318) or
+# whose role changed is new information (STAKEHOLDERS_CHANGED). Absent from
+# the snapshots taken before S7: never compared then.
+DEAL_HEALTH_CURSOR_STAKEHOLDERS = 'stakeholders'
 
 # =============================================================================
 # DEAL HEALTH — RUN GUARDS (Sprint « Deal health v2 », step 6, amendment A10)
@@ -402,12 +408,18 @@ DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS = 10
 # reasons[]) — never « stale »:
 #   NO_ANALYSIS_YET — the cycle has no snapshot;
 #   NEW_SOURCES     — a source changed since the cursor, or another static
-#                     context fingerprint (has_new_sources);
+#                     context fingerprint (new_info_reasons — S7: an
+#                     ANALYSED activity, never a mere activity edit);
 #   STEP_CHANGED    — the current declared step differs from the last
 #                     snapshot's declared_step (ignored when NULL — v1).
 DEAL_HEALTH_FRESHNESS_NO_ANALYSIS_YET = 'NO_ANALYSIS_YET'
 DEAL_HEALTH_FRESHNESS_NEW_SOURCES = 'NEW_SOURCES'
 DEAL_HEALTH_FRESHNESS_STEP_CHANGED = 'STEP_CHANGED'
+#   STAKEHOLDERS_CHANGED — the cycle's stakeholders (ids + the role of their
+#                     current signal) differ from the last snapshot's
+#                     fingerprint (sprint 2 Game Plan, S7 — PO Q4); a snapshot
+#                     without that fingerprint (before S7) is no reason.
+DEAL_HEALTH_FRESHNESS_STAKEHOLDERS_CHANGED = 'STAKEHOLDERS_CHANGED'
 
 # Input bounds (amendment A3), in characters of the source texts. A single
 # transcript / email above DEAL_HEALTH_MAX_CHARS_PER_SOURCE is cut to it (the

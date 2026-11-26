@@ -17,10 +17,13 @@ deal_health_snapshot_views.py latest) and the Game Plan will reuse
                  current declared step before DEAL_HEALTH_MIN_STEP (order of
                  PIPELINE_STEPS_ORDER), or no declared step at all;
   has_new_info — « new information to analyse », never « stale »:
-                 NO_ANALYSIS_YET (no snapshot), NEW_SOURCES (the run guard's
-                 own predicate, DealHealthEvidenceBuilder.has_new_sources),
-                 STEP_CHANGED (declared step ≠ the snapshot's declared_step,
-                 ignored when that one is NULL — the v1 snapshots).
+                 the reasons of THE predicate the run guard reads too,
+                 DealHealthEvidenceBuilder.new_info_reasons (sprint 2 Game
+                 Plan, S7) — NO_ANALYSIS_YET, NEW_SOURCES (an analysed
+                 activity, a validated signal, a manager note, the static
+                 context; never a typed note nor a mere activity edit),
+                 STEP_CHANGED, STAKEHOLDERS_CHANGED. A reason is present <=>
+                 a re-run is accepted.
 
 Cost: existence queries only (no pack, no transcript read) — a constant
 number of queries whatever the number of sources.
@@ -33,11 +36,6 @@ from app_modules.decision_cycles.constants import (
     PIPELINE_STEPS_ORDER,
 )
 
-from ..constants import (
-    DEAL_HEALTH_FRESHNESS_NEW_SOURCES,
-    DEAL_HEALTH_FRESHNESS_NO_ANALYSIS_YET,
-    DEAL_HEALTH_FRESHNESS_STEP_CHANGED,
-)
 from .deal_health_evidence_builder import DealHealthEvidenceBuilder
 
 
@@ -61,13 +59,7 @@ def deal_health_freshness(cycle):
         return {'applies': False, 'has_new_info': False,
                 'last_analysis_at': last_at, 'reasons': []}
 
-    reasons = []
-    if last is None:
-        reasons.append(DEAL_HEALTH_FRESHNESS_NO_ANALYSIS_YET)
-    else:
-        if builder.has_new_sources(cycle, last):
-            reasons.append(DEAL_HEALTH_FRESHNESS_NEW_SOURCES)
-        if last.declared_step and last.declared_step != stage:
-            reasons.append(DEAL_HEALTH_FRESHNESS_STEP_CHANGED)
+    # THE predicate, shared with the run guard (S7).
+    reasons = builder.new_info_reasons(cycle, last, stage)
     return {'applies': True, 'has_new_info': bool(reasons),
             'last_analysis_at': last_at, 'reasons': reasons}

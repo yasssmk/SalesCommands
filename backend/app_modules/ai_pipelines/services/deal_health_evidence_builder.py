@@ -27,7 +27,12 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from app_modules.ai_pipelines.constants import (
+    DEAL_HEALTH_CURSOR_STAKEHOLDERS,
     DEAL_HEALTH_CURSOR_STATIC_CONTEXT,
+    DEAL_HEALTH_FRESHNESS_NEW_SOURCES,
+    DEAL_HEALTH_FRESHNESS_NO_ANALYSIS_YET,
+    DEAL_HEALTH_FRESHNESS_STAKEHOLDERS_CHANGED,
+    DEAL_HEALTH_FRESHNESS_STEP_CHANGED,
     DEAL_HEALTH_CURSOR_ACTIVITIES,
     DEAL_HEALTH_CURSOR_MANAGER_NOTES,
     DEAL_HEALTH_CURSOR_SIGNALS,
@@ -95,7 +100,7 @@ class DealHealthEvidenceBuilder:
 
         previous = self._latest_snapshot(dc)
         # Kept for the run guard (step 6, A10): with a previous snapshot and
-        # nothing new (has_new_sources), the run stops before the LLM.
+        # nothing new (new_info_reasons, S7), the run stops before the LLM.
         self.previous_snapshot = previous
         since = self._parse_cursor(previous.sources_cursor if previous else None)
 
@@ -115,6 +120,9 @@ class DealHealthEvidenceBuilder:
         sources_cursor[DEAL_HEALTH_CURSOR_STATIC_CONTEXT] = self.static_fingerprint(
             cycle_context, account_context,
         )
+        # S7 (PO Q4): the stakeholders — a removal included, which no
+        # timestamp cursor can see.
+        sources_cursor[DEAL_HEALTH_CURSOR_STAKEHOLDERS] = self.stakeholders_fingerprint(dc)
 
         return {
             'cycle': cycle_context,
@@ -137,7 +145,7 @@ class DealHealthEvidenceBuilder:
     # -- THE filters of the new sources (one source of truth, step 8) --------
     # The prompt's reads (_build_signals / _build_activities /
     # _build_manager_notes) and the « is there anything new? » test
-    # (has_new_sources: the run guard A10 and the read-time freshness) use
+    # (new_info_reasons: the run guard A10 and the read-time freshness) use
     # these querysets, never a copy of their filters.
 
     @staticmethod
@@ -180,18 +188,56 @@ class DealHealthEvidenceBuilder:
         qs = ManagerNote.objects.filter(decision_cycle=dc, client_id=dc.client_id)
         return qs.filter(created_at__gt=since) if since is not None else qs
 
-    def has_new_sources(self, dc, previous):
+    def new_info_reasons(self, dc, previous, current_stage):
         """
-        Step 6 (A10) / step 8: anything new since `previous` (the last
-        snapshot)? A source changed since its cursor — an activity, a
-        validated signal (any type), a manager note — or (6c) another
-        static-context fingerprint. EXISTENCE queries on the prompt's own
-        querysets (no pack, no transcript read): bounded, whatever the
-        number of sources.
+        THE « is there new information? » predicate of a deal health (sprint
+        2 Game Plan, S7) — read by the run guard (A10: no reason, no run) AND
+        by the read-time freshness (the DC banner), never two copies, so a
+        reason is present <=> the re-run is accepted.
+
+        Args:
+            dc:            the DecisionCycle.
+            previous:      its last DealHealthSnapshot, or None.
+            current_stage: the stage of its current step (or None).
+
+        Returns:
+            [reasons], in this order:
+              NO_ANALYSIS_YET      — no previous snapshot;
+              NEW_SOURCES          — since the snapshot: an ANALYSED activity
+                                     (a successful extraction), a validated
+                                     signal, a manager note, or another
+                                     static-context fingerprint;
+              STEP_CHANGED         — the current step's stage differs from the
+                                     snapshot's declared_step (ignored when
+                                     that one is NULL — the v1 snapshots);
+              STAKEHOLDERS_CHANGED — another stakeholders fingerprint (ignored
+                                     when the snapshot has none — before S7).
+            A note typed on an activity, or any edit of an activity, is NEVER
+            a reason by itself. EXISTENCE queries only: bounded.
         """
-        cursor = (previous.sources_cursor or {}) if previous is not None else {}
+        if previous is None:
+            return [DEAL_HEALTH_FRESHNESS_NO_ANALYSIS_YET]
+        cursor = previous.sources_cursor or {}
+        reasons = []
+        if self._has_new_sources(dc, previous, cursor):
+            reasons.append(DEAL_HEALTH_FRESHNESS_NEW_SOURCES)
+        if previous.declared_step and previous.declared_step != current_stage:
+            reasons.append(DEAL_HEALTH_FRESHNESS_STEP_CHANGED)
+        stored = cursor.get(DEAL_HEALTH_CURSOR_STAKEHOLDERS)
+        if stored is not None and stored != self.stakeholders_fingerprint(dc):
+            reasons.append(DEAL_HEALTH_FRESHNESS_STAKEHOLDERS_CHANGED)
+        return reasons
+
+    def _has_new_sources(self, dc, previous, cursor):
+        """NEW_SOURCES of new_info_reasons: an analysed activity of the cycle
+        since the snapshot's date, a validated signal / a manager note since
+        their cursor, or (6c) another static-context fingerprint. Activities
+        merely edited (fresh_activities_qs) are NOT read here — the prompt
+        still reads them when a run happens."""
+        from .analysis_state import analysed_runs_of_cycle
+
         since = self._parse_cursor(cursor)
-        if self.fresh_activities_qs(dc, since.get(DEAL_HEALTH_CURSOR_ACTIVITIES)).exists():
+        if analysed_runs_of_cycle(dc, previous.snapshot_date).exists():
             return True
         if self.fresh_manager_notes_qs(dc, since.get(DEAL_HEALTH_CURSOR_MANAGER_NOTES)).exists():
             return True
@@ -203,6 +249,24 @@ class DealHealthEvidenceBuilder:
             self._build_cycle_context(dc), self._build_account_context(dc),
         )
         return fingerprint != cursor.get(DEAL_HEALTH_CURSOR_STATIC_CONTEXT)
+
+    @staticmethod
+    def stakeholders_fingerprint(dc):
+        """S7 (PO Q4): sha256 of the cycle's stakeholders — each one's id and
+        the role of its current signal (the role is never copied on the
+        stakeholder: read on current_signal)."""
+        import hashlib
+        import json
+
+        from app_modules.decision_cycles.models import Stakeholder
+
+        rows = sorted(
+            [str(pk), role or '']
+            for pk, role in Stakeholder.objects
+            .filter(decision_cycle=dc, client_id=dc.client_id)
+            .values_list('id', 'current_signal__role')
+        )
+        return hashlib.sha256(json.dumps(rows).encode('utf-8')).hexdigest()
 
     @staticmethod
     def static_fingerprint(cycle_context, account_context):

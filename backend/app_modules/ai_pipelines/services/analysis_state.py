@@ -49,3 +49,16 @@ def analysed_run_of(activity, client_id, pipeline_type):
 
 def is_activity_analysed(activity):
     return analysed_runs(activity, activity.client_id).exists()
+
+
+def analysed_runs_of_cycle(cycle, since=None):
+    """The successful ANALYSIS runs of the activities of `cycle` — created
+    after `since` when given. Read by the deal health's « is there new
+    information? » predicate (sprint 2 Game Plan, S7): an activity counts
+    once it is ANALYSED, never because it was merely edited."""
+    from ..models import AIPipelineRun
+    qs = AIPipelineRun.objects.filter(
+        client_id=cycle.client_id, source_activity__decision_cycle=cycle,
+        status__in=ANALYSED_RUN_STATUSES, pipeline_type__in=ANALYSIS_PIPELINE_TYPES,
+    )
+    return qs.filter(created_at__gt=since) if since is not None else qs
