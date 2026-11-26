@@ -151,9 +151,12 @@ from ..prompts.transcript_signals.pain_impact_v1 import (
     build_pain_impact_request,
     PAIN_IMPACT_PROMPT_VERSION,
 )
-from ..prompts.transcript_signals.objective_v1 import (
+# Objective v3 (sprint 2 Game Plan, G5 — TD-219): + success_criteria / notes,
+# a strict response schema; v1 (the v2 text) kept.
+from ..prompts.transcript_signals.objective_v3 import (
     build_objective_request,
     OBJECTIVE_PROMPT_VERSION,
+    OBJECTIVE_RESPONSE_SCHEMA,
 )
 from ..prompts.transcript_signals.techstack_v1 import (
     build_techstack_request,
@@ -231,6 +234,7 @@ _STAGES = [
 # support it (checked at load, check_stage_schemas).
 STAGE_RESPONSE_SCHEMAS = {
     'people': PEOPLE_RESPONSE_SCHEMA,
+    'objective': OBJECTIVE_RESPONSE_SCHEMA,
 }
 
 

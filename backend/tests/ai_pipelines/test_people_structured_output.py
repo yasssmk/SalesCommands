@@ -121,15 +121,24 @@ class TestPeopleCall:
         assert signal.role == PeopleRole.UNKNOWN
         assert signal.full_name == 'Jordan Lee'
 
-    def test_the_other_stages_send_no_schema(
+    def test_the_other_stages_send_no_schema_but_objective(
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):
+        from app_modules.ai_pipelines.prompts.transcript_signals.objective_v3 import (
+            OBJECTIVE_RESPONSE_SCHEMA,
+        )
         _run(account, activity, user_a, fake_provider)
         default = config.PROVIDER_CONFIG[config.ACTIVE_PROVIDER]
         others = [c for c in fake_provider.calls if c['stage'] != 'people']
         assert len(others) == 6
         for call in others:
-            assert call['extra'] == {}
+            # Sprint 2 Game Plan, G5 (TD-219): the objective stage sends its own
+            # strict schema (success_criteria / notes); the others none.
+            expected = (
+                {'response_schema': OBJECTIVE_RESPONSE_SCHEMA}
+                if call['stage'] == 'objective' else {}
+            )
+            assert call['extra'] == expected
             assert call['model'] == default['model']
             assert call['temperature'] == 0.0
 

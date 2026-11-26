@@ -194,6 +194,13 @@ def _clean_text(value):
     return str(value).strip() if value is not None else ''
 
 
+def _stated_text(value):
+    """A text the LLM reports as SAID (Objective success_criteria / notes,
+    sprint 2 Game Plan G5): a string, stripped; anything else — absent, null,
+    a number, a list — is '' (never coerced, the signal is kept)."""
+    return value.strip() if isinstance(value, str) else ''
+
+
 def _build_department_resolution_index():
     """
     Build the name -> StandardDepartment resolution index over the whole
@@ -971,9 +978,10 @@ class TranscriptSignalExtractor:
         """
         Build SignalManager.create() data for an Objective signal.
 
-        Schema requirements (from objective_v1.py):
+        Schema requirements (from objective_v1.py / objective_v3.py):
             what, dimension, summary, source_quote, confidence, is_inferred
-            (+ optional target_date, v2)
+            (+ optional target_date, v2; + optional success_criteria / notes,
+            v3 — G5, TD-219)
 
         target_date (TD-279 C2): a real YYYY-MM-DD date via _iso_date (same
         helper as the techstack lifecycle dates), else None -- an invalid or
@@ -1012,6 +1020,10 @@ class TranscriptSignalExtractor:
             'scope_level':        scope_level,
             'target_department':  target_department,
             'target_date':        _iso_date(raw.get('target_date')),
+            # G5 (TD-219, objective v3): what was SAID — verbatim criterion,
+            # stated context — '' when absent / invalid, the signal kept.
+            'success_criteria':   _stated_text(raw.get('success_criteria')),
+            'notes':              _stated_text(raw.get('notes')),
         }
     
     # ---------------------- Impact ----------------------

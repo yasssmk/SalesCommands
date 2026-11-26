@@ -88,12 +88,20 @@ class TestStageCalls:
         assert {c['stage'] for c in others} == {
             'pain_impact', 'objective', 'techstack', 'blocker', 'constraint', 'competitor',
         }
+        from app_modules.ai_pipelines.prompts.transcript_signals.objective_v3 import (
+            OBJECTIVE_RESPONSE_SCHEMA,
+        )
         for call in others:
             assert call['model'] == default['model'] == 'gpt-4o-mini'
             assert call['temperature'] == 0.0
             assert call['max_tokens'] == default['max_tokens']
             assert call['timeout_s'] == default['timeout_s']
-            assert call['extra'] == {}
+            # Sprint 2 Game Plan, G5 (TD-219): the objective stage sends its
+            # own strict schema; the default call is otherwise unchanged.
+            assert call['extra'] == (
+                {'response_schema': OBJECTIVE_RESPONSE_SCHEMA}
+                if call['stage'] == 'objective' else {}
+            )
         # run.model_name stays the default model (documented).
         assert result['run'].model_name == default['model']
         models = {c['stage']: c['model_used'] for c in result['run'].sub_calls}
