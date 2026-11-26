@@ -18,6 +18,8 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models.moduleBaseModels import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 
+from ..constants import PREP_CALL_SCHEMA_V1, PrepCallBriefMode, PrepCallOutputKind
+
 
 class PrepCallSnapshot(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
@@ -52,16 +54,54 @@ class PrepCallSnapshot(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     brief_mode = models.CharField(
         max_length=20,
-        choices=[
-            ('DISCOVERY', _('Discovery')),
-            ('CONVICTION', _('Conviction')),
-            ('PROOF', _('Proof')),
-            ('DECISION', _('Decision')),
-        ],
+        choices=PrepCallBriefMode.choices,
+        null=True,
+        blank=True,
         verbose_name=_('Brief Mode'),
         help_text=_(
-            'Deterministic mode resolved from the maturity snapshot '
-            'before the LLM call.'
+            'v1 only: the deterministic mode resolved from the maturity '
+            'snapshot before the LLM call. Empty from v2 (single mode).'
+        ),
+    )
+
+    # -------------------------------------------------------------------------
+    # v2 — sprint 2 Game Plan, G2
+    # -------------------------------------------------------------------------
+
+    schema_version = models.PositiveSmallIntegerField(
+        default=PREP_CALL_SCHEMA_V1,
+        verbose_name=_('Schema Version'),
+        help_text=_(
+            'Shape of `brief`: 1 = the v1 tactical brief, 2 = the Game Plan / '
+            'message (constants PREP_CALL_SCHEMA_V*).'
+        ),
+    )
+
+    output_kind = models.CharField(
+        max_length=20,
+        choices=PrepCallOutputKind.choices,
+        default=PrepCallOutputKind.PLAN,
+        verbose_name=_('Output Kind'),
+        help_text=_('PLAN (a conversation) or MESSAGE (an email / LinkedIn message).'),
+    )
+
+    deal_health_snapshot = models.ForeignKey(
+        'decision_cycles.DealHealthSnapshot',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='prep_call_snapshots',
+        verbose_name=_('Deal Health Snapshot read'),
+        help_text=_('The deal-health snapshot the generation read (trace).'),
+    )
+
+    deal_health_schema_version = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_('Deal Health Schema Version read'),
+        help_text=_(
+            'schema_version of that deal-health snapshot at generation time '
+            '(kept if the snapshot is deleted).'
         ),
     )
 
@@ -108,6 +148,6 @@ class PrepCallSnapshot(ModuleBaseModel, ClientScopeManager.ModelMixin):
     def __str__(self):
         return (
             f"PrepCall {self.snapshot_date} — "
-            f"{self.get_brief_mode_display()} — "
+            f"{self.get_brief_mode_display() or self.get_output_kind_display()} — "
             f"{self.activity_id}"
         )

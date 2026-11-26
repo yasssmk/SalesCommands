@@ -27,6 +27,8 @@ serializers without manual choice mapping.
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from app_modules.activities.constants import ActivityType
+
 
 # =============================================================================
 # PIPELINE TYPE
@@ -512,3 +514,59 @@ DEAL_HEALTH_GUARDRAIL_LEAK_PHRASES = (
 # Classical rhetoric labels — never in a diagnostic (sales vocabulary only:
 # needs and urgency, credibility, fit and value). Whole words, any case.
 DEAL_HEALTH_RHETORIC_LABELS = ('ethos', 'pathos', 'logos')
+
+
+# =============================================================================
+# PREP CALL / GAME PLAN — the socle (sprint 2 Game Plan, G2)
+# =============================================================================
+# The code keeps the « prep call » names (PO decision); the UI says Game Plan.
+
+# The prep call's provider choice -> its PROVIDER_CONFIG entry. THE switch
+# itself is config.PREP_CALL_LLM_PROVIDER (the deal health's pattern,
+# DEAL_HEALTH_PROVIDER_KEYS; TD-319 extended to this pipeline).
+PREP_CALL_PROVIDER_KEYS = {
+    'openai': 'openai_prep_call',
+    'claude': 'claude_prep_call',
+}
+
+# What the pipeline produces per activity type: a PLAN (the Game Plan) for a
+# conversation, a MESSAGE (« AI Email generation by Game Plan ») for an email
+# or a LinkedIn message. The statuses a generation is allowed on are
+# activities.constants.NON_TERMINAL_STATUSES (PLANNED / ON_HOLD) — no list of
+# our own (PO).
+PREP_CALL_PLAN_TYPES = frozenset({
+    ActivityType.CALL, ActivityType.MEETING, ActivityType.DEMO,
+})
+PREP_CALL_MESSAGE_TYPES = frozenset({
+    ActivityType.EMAIL, ActivityType.LINKEDIN,
+})
+
+
+class PrepCallOutputKind(models.TextChoices):
+    """PrepCallSnapshot.output_kind — what the snapshot holds."""
+    PLAN    = 'PLAN',    _('Game Plan')
+    MESSAGE = 'MESSAGE', _('AI message')
+
+
+class PrepCallBriefMode(models.TextChoices):
+    """PrepCallSnapshot.brief_mode — the v1 brief's deterministic mode
+    (services/prep_call/mode_resolver.py). Optional: the v2 Game Plan has a
+    single mode (G10); kept to read the v1 snapshots."""
+    DISCOVERY  = 'DISCOVERY',  _('Discovery')
+    CONVICTION = 'CONVICTION', _('Conviction')
+    PROOF      = 'PROOF',      _('Proof')
+    DECISION   = 'DECISION',   _('Decision')
+
+
+# PrepCallSnapshot.schema_version — v1: the tactical brief (brief_v1, with a
+# brief_mode); v2: the Game Plan / message (G10 / G11). The existing rows are v1.
+PREP_CALL_SCHEMA_V1 = 1
+PREP_CALL_SCHEMA_V2 = 2
+
+# The INFO codes of the prep-call run endpoint — business rules answered
+# 200 + a code, never a 400 (the deal health's pattern; messages in
+# core.error_messages, wired by the sub-steps that apply them: G3 / G9).
+PREP_CALL_TYPE_NOT_ELIGIBLE_CODE = 'PREP_CALL_TYPE_NOT_ELIGIBLE'
+PREP_CALL_ACTIVITY_CLOSED_CODE = 'PREP_CALL_ACTIVITY_CLOSED'
+PREP_CALL_NO_CAMPAIGN_NO_DC_CODE = 'PREP_CALL_NO_CAMPAIGN_NO_DC'
+PREP_CALL_NOTHING_NEW_CODE = 'PREP_CALL_NOTHING_NEW'

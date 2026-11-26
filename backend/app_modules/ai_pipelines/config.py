@@ -166,6 +166,26 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },
+    # Sprint 2 Game Plan, G2 -- the prep call's OWN entries (the deal health's
+    # pattern; PREP_CALL_LLM_PROVIDER below picks one). openai_prep_call keeps
+    # exactly what the prep call ran on until now (the active 'openai' entry),
+    # so this sub-step changes nothing in production; claude_prep_call mirrors
+    # claude_deal_health's model (configurable:
+    # AI_PIPELINES_PREP_CALL_CLAUDE_MODEL). Models, timeouts and budgets are
+    # settled by the Game Plan evaluation (G13).
+    'openai_prep_call': {
+        'provider':    'openai',
+        'model':       'gpt-4o-mini',
+        'timeout_s':   30,
+        'max_tokens':  4096,
+    },
+    'claude_prep_call': {
+        'provider':          'claude',
+        'model':             getattr(settings, 'AI_PIPELINES_PREP_CALL_CLAUDE_MODEL', 'claude-opus-5-5'),
+        'reasoning_effort':  'medium',
+        'timeout_s':         90,
+        'max_tokens':        8192,
+    },
 })
 
 
@@ -177,6 +197,16 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
 # (pipelines/deal_health.check_deal_health_provider). Only the deal health
 # reads it. See README.md.
 DEAL_HEALTH_LLM_PROVIDER = 'openai'
+
+
+# THE switch of the prep call / Game Plan's LLM provider (sprint 2 Game Plan,
+# G2 — the deal health's exact pattern, TD-319 extended: ONE value in the
+# module's configuration, never an environment variable). 'openai' ->
+# PROVIDER_CONFIG['openai_prep_call'], 'claude' -> PROVIDER_CONFIG
+# ['claude_prep_call'] (constants PREP_CALL_PROVIDER_KEYS). 'claude' needs
+# ANTHROPIC_API_KEY, checked at load (pipelines/prep_call.
+# check_prep_call_provider). Only the prep call reads it.
+PREP_CALL_LLM_PROVIDER = 'openai'
 
 
 # =============================================================================

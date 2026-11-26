@@ -29,7 +29,13 @@ import logging
 
 from django.db import transaction
 
-from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
+from .. import config as ai_config
+from ..constants import (
+    AIPipelineStatus,
+    AIPipelineType,
+    PIPELINE_TEMPERATURES,
+    PREP_CALL_PROVIDER_KEYS,
+)
 from ..prompts.base import PromptParseError
 from ..prompts.prep_call import (
     SYSTEM_PROMPT,
@@ -38,6 +44,12 @@ from ..prompts.prep_call import (
     CONTEXT_VERSION,
     build_brief_request,
     BRIEF_PROMPT_VERSION,
+)
+from ..providers import (
+    get_provider,
+    provider_credentials_present,
+    provider_required_env_key,
+    provider_supports_response_schema,
 )
 from ..providers.base import (
     LLMAuthError,
@@ -51,6 +63,50 @@ from .base import BasePipeline
 logger = logging.getLogger(__name__)
 
 _STAGE_NAME = 'brief'
+
+
+def check_prep_call_provider(choice, provider_config):
+    """
+    Load-time guard of the prep call's provider (sprint 2 Game Plan, G2 — the
+    exact pattern of pipelines/deal_health.check_deal_health_provider):
+    `choice` must be a key of PREP_CALL_PROVIDER_KEYS mapped to a
+    PROVIDER_CONFIG entry whose provider supports a strict response schema
+    (the Game Plan's two schemas, G10 / G11) AND whose API key is set (its
+    REQUIRED_ENV_KEY: 'claude' needs ANTHROPIC_API_KEY). Raises ImportError so
+    a misconfiguration fails at Django startup with a clear message, not at
+    the first run.
+    """
+    key = PREP_CALL_PROVIDER_KEYS.get(choice)
+    if key is None:
+        raise ImportError(
+            f'AI Pipelines configuration error: PREP_CALL_LLM_PROVIDER '
+            f'{choice!r} is not one of {sorted(PREP_CALL_PROVIDER_KEYS)}.'
+        )
+    if key not in provider_config:
+        raise ImportError(
+            f'AI Pipelines configuration error: the prep call provider '
+            f'{choice!r} maps to {key!r}, which is not in PROVIDER_CONFIG. '
+            f'Available keys: {sorted(provider_config)}.'
+        )
+    if not provider_supports_response_schema(key):
+        raise ImportError(
+            f'AI Pipelines configuration error: the Game Plan sends a strict '
+            f'response schema, but PREP_CALL_LLM_PROVIDER={choice!r} uses '
+            f'{key!r}, whose provider does not declare SUPPORTS_RESPONSE_SCHEMA. '
+            f'Keep "openai" until that provider supports Structured Outputs.'
+        )
+    if not provider_credentials_present(key):
+        env_key = provider_required_env_key(key)
+        raise ImportError(
+            f'AI Pipelines configuration error: PREP_CALL_LLM_PROVIDER={choice!r} '
+            f'needs the {env_key} environment variable, which is not set. Set '
+            f'{env_key} in backend/salescommands/.env (backend/.env.example), or set '
+            f'PREP_CALL_LLM_PROVIDER back to "openai" in ai_pipelines/config.py.'
+        )
+    return key
+
+
+check_prep_call_provider(ai_config.PREP_CALL_LLM_PROVIDER, ai_config.PROVIDER_CONFIG)
 
 
 class PrepCallPipeline(BasePipeline):
@@ -67,6 +123,15 @@ class PrepCallPipeline(BasePipeline):
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.PREP_CALL]
+
+    def __init__(self, provider=None):
+        super().__init__(provider=provider)
+        # The prep call's own entry (G2) — call AND run row (the
+        # DealHealthPipeline.__init__ pattern; the run's provider since G1).
+        self._provider_key = PREP_CALL_PROVIDER_KEYS[ai_config.PREP_CALL_LLM_PROVIDER]
+        self._provider_config = ai_config.PROVIDER_CONFIG[self._provider_key]
+        if not self._provider_injected:
+            self.provider = get_provider(self._provider_key)
 
     # =========================================================================
     # MAIN ENTRY

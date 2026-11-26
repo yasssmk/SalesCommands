@@ -8,7 +8,7 @@ PrepCallSnapshotSerializer — read-only output for GET /prep-call/by-activity/<
 
 from rest_framework import serializers
 
-from app_modules.activities.constants import ActivityType
+from app_modules.ai_pipelines.constants import PREP_CALL_PLAN_TYPES
 from app_modules.activities.models import Activity
 from core.client_scope import ClientScopeManager
 from core.error_messages import AIPipelineErrorMessages
@@ -17,11 +17,9 @@ from core.exceptions import StandardizedValidationError
 from ..models import PrepCallSnapshot
 
 
-_ELIGIBLE_TYPES = frozenset({
-    ActivityType.CALL,
-    ActivityType.MEETING,
-    ActivityType.DEMO,
-})
+# The plan types (constants, G2) — unchanged behaviour; the message types
+# and the INFO answer arrive with G3.
+_ELIGIBLE_TYPES = PREP_CALL_PLAN_TYPES
 
 
 class PrepCallRunInputSerializer(
@@ -94,6 +92,10 @@ class PrepCallSnapshotSerializer(
             'activity',
             'target_contact',
             'brief_mode',
+            'schema_version',
+            'output_kind',
+            'deal_health_snapshot',
+            'deal_health_schema_version',
             'brief',
             'input_hash',
             'snapshot_date',
