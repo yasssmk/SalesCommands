@@ -12,7 +12,12 @@ guide/To_IMPLEMENT/signals_journey.md §3.2.
 
 import logging
 
-from app_modules.ai_pipelines.constants import people_role_for_prompt
+from app_modules.ai_pipelines.constants import (
+    DEAL_HEALTH_TRUNCATION_MARKER,
+    PREP_CALL_MAX_CHARS_PER_SOURCE,
+    PREP_CALL_PREVIOUS_ACTIVITIES_MAX,
+    people_role_for_prompt,
+)
 from app_modules.ai_pipelines.services.deal_health_evidence_builder import (
     DealHealthEvidenceBuilder,
 )
@@ -50,12 +55,19 @@ class PrepInputPackAssembler:
         # G4: ONE roster for the whole prompt — the cycle's people and the
         # activity's participants, every label final before it is read.
         people = activity_roster(activity)
-        maturity = self.build_maturity_snapshot(dc)
-        signals = self._build_signals(dc, people.roster) if dc else self._empty_signals()
+        # G7: read ONCE for the whole pack — the cycle's current step (S5),
+        # its latest deal-health snapshot (S3), its validated objectives.
+        current_step = self._current_step(dc) if dc else None
+        dh_snapshot = DealHealthEvidenceBuilder.latest_snapshot(dc) if dc else None
+        objectives = self._validated_objectives(dc) if dc else []
+        maturity = self._maturity_of(dh_snapshot)
+        signals = (
+            self._build_signals(dc, people.roster, objectives) if dc else self._empty_signals()
+        )
 
         return {
             'prep_context': self._build_prep_context(
-                activity, target_contact, dc,
+                activity, target_contact, dc, current_step, dh_snapshot,
             ),
             'maturity_snapshot': maturity,
             'levers': self._build_levers(signals),
@@ -78,13 +90,30 @@ class PrepInputPackAssembler:
                 )}
                 for p in people.participants
             ],
+            # ---- G7: the input pack v2 — what exists, read, never recalculated.
+            'deal_health': self._build_deal_health(dh_snapshot),
+            'activity': self._build_activity(activity),
+            'objectives': DealHealthEvidenceBuilder.serialize_objective_signals(objectives),
+            'deal': (
+                DealHealthEvidenceBuilder().build_cycle_context(dc, current_step) if dc else None
+            ),
+            'account': (
+                DealHealthEvidenceBuilder.account_context(activity.account)
+                if activity.account_id else None
+            ),
+            'manager_notes': [
+                {**note, 'content': _bounded(note['content'])}
+                for note in (DealHealthEvidenceBuilder.manager_notes(dc) if dc else [])
+            ],
+            'seller_profile': self._build_seller_profile(activity.client_id),
+            'previous_activities': self._build_previous_activities(activity),
         }
 
     # =========================================================================
     # PREP CONTEXT
     # =========================================================================
 
-    def _build_prep_context(self, activity, target_contact, dc):
+    def _build_prep_context(self, activity, target_contact, dc, current_step, dh_snapshot):
         ctx = {
             'account_name': str(activity.account) if activity.account else None,
             'upcoming_activity': {
@@ -101,7 +130,7 @@ class PrepInputPackAssembler:
         }
 
         if dc:
-            current_step = self._find_current_step(dc)
+            current_step = self._step_dict(current_step)
             ctx.update({
                 'decision_cycle_id': str(dc.id),
                 'current_step': current_step['name'] if current_step else None,
@@ -116,7 +145,8 @@ class PrepInputPackAssembler:
                     str(dc.estimated_value) if dc.estimated_value else None
                 ),
                 'last_deal_health_snapshot_date': (
-                    self._get_last_snapshot_date(dc)
+                    dh_snapshot.snapshot_date.isoformat()
+                    if dh_snapshot is not None and dh_snapshot.snapshot_date else None
                 ),
             })
         else:
@@ -159,16 +189,20 @@ class PrepInputPackAssembler:
         }
 
     @staticmethod
-    def _find_current_step(dc):
+    def _current_step(dc):
         """The cycle's current step, derived ONCE for the whole cycle
         (current_decision_step — the shared definition of
         DecisionStep.is_current) instead of one is_current per step, each
         re-deriving the cycle (sprint 2 Game Plan, S5; the deal health's
-        evidence builder does the same)."""
+        evidence builder does the same). G7: derived once for the whole pack
+        (the prep context AND the deal context)."""
         from app_modules.activities.services.next_step_materialization import (
             current_decision_step,
         )
-        step = current_decision_step(dc)
+        return current_decision_step(dc)
+
+    @staticmethod
+    def _step_dict(step):
         if step is None:
             return None
         return {
@@ -176,14 +210,6 @@ class PrepInputPackAssembler:
             'goal': step.goal or '',
             'criterias': step.criterias or [],
         }
-
-    @staticmethod
-    def _get_last_snapshot_date(dc):
-        # The canonical reader, inside the tenant (sprint 2 Game Plan, S3).
-        snapshot = DealHealthEvidenceBuilder.latest_snapshot(dc)
-        if not snapshot or not snapshot.snapshot_date:
-            return None
-        return snapshot.snapshot_date.isoformat()
 
     # =========================================================================
     # MATURITY SNAPSHOT
@@ -199,12 +225,14 @@ class PrepInputPackAssembler:
         """
         if not dc:
             return None
-
         # The canonical reader, inside the tenant (sprint 2 Game Plan, S3).
-        snapshot = DealHealthEvidenceBuilder.latest_snapshot(dc)
+        return PrepInputPackAssembler._maturity_of(DealHealthEvidenceBuilder.latest_snapshot(dc))
+
+    @staticmethod
+    def _maturity_of(snapshot):
+        """The v1 maturity view of a deal-health snapshot (or None)."""
         if not snapshot:
             return None
-
         diagnostic = snapshot.diagnostic or {}
         return {
             'global_reading': diagnostic.get('global_reading', ''),
@@ -215,13 +243,12 @@ class PrepInputPackAssembler:
     # SIGNALS — grouped for levers / stakeholder / competitive
     # =========================================================================
 
-    def _build_signals(self, dc, roster):
+    def _build_signals(self, dc, roster, objectives):
         # Every person is named by llm_people (first name only, homonyms told
         # apart) — ONE roster for the prompt (sprint « Deal health v2 », 3a;
         # since G4 the activity's roster, participants included).
         from app_modules.signals.models import (
             PainSignal,
-            ObjectiveSignal,
             ImpactSignal,
             TechStackSignal,
             BlockerSignal,
@@ -260,16 +287,21 @@ class PrepInputPackAssembler:
                     decision_cycle=dc, status=validated,
                 ).prefetch_related('target_departments')
             ],
-            'objective': list(
-                ObjectiveSignal.objects.filter(
-                    decision_cycle=dc, status=validated,
-                ).select_related(
-                    'target_department', 'target_contact',
-                ).values(
-                    'summary', 'source_quote', 'what', 'dimension',
-                    'target_department__name',
-                )
-            ),
+            # The validated objectives, read ONCE for the pack (G7) — the v1
+            # rows (levers / stakeholder focus) and the v2 `objectives` block
+            # come from the same instances.
+            'objective': [
+                {
+                    'summary': o.summary,
+                    'source_quote': o.source_quote,
+                    'what': o.what,
+                    'dimension': o.dimension,
+                    'target_department__name': (
+                        o.target_department.name if o.target_department_id else None
+                    ),
+                }
+                for o in objectives
+            ],
             # Multi-department scope (sub-step 2b): same M2M treatment as pain.
             'impact': [
                 {
@@ -574,3 +606,120 @@ class PrepInputPackAssembler:
             'transcripts_count': transcripts_count,
             'coverage_note': 'Based on captured evidence.',
         }
+
+    # =========================================================================
+    # INPUT PACK v2 (sprint 2 Game Plan, G7) — read the existing, recalculate nothing
+    # =========================================================================
+
+    # The deal-health v2 keys the Game Plan reads (diagnostic_v2.py schema).
+    _DEAL_HEALTH_V2_KEYS = (
+        'summary', 'strategic_conclusion', 'objectives', 'missing_info',
+        'top_arguments', 'stakeholders', 'bant', 'needs_and_urgency',
+        'credibility', 'fit_and_value', 'estimated_step',
+    )
+
+    @staticmethod
+    def _validated_objectives(dc):
+        """The cycle's validated Objective signals — ONE query, shared by the
+        v1 levers and the v2 `objectives` block."""
+        from app_modules.signals.models import ObjectiveSignal
+        return list(
+            ObjectiveSignal.objects
+            .filter(decision_cycle=dc, client_id=dc.client_id, status=SignalStatus.VALIDATED)
+            .select_related('target_department')
+            .order_by('created_at', 'id')
+        )
+
+    @classmethod
+    def _build_deal_health(cls, snapshot):
+        """The latest deal-health snapshot as the Game Plan reads it: its trace
+        (snapshot_id + schema_version) and its v2 keys (None when absent — a
+        v1 snapshot). None without a snapshot."""
+        if snapshot is None:
+            return None
+        diagnostic = snapshot.diagnostic or {}
+        return {
+            'snapshot_id': str(snapshot.id),
+            'schema_version': snapshot.schema_version,
+            'snapshot_date': snapshot.snapshot_date.isoformat() if snapshot.snapshot_date else None,
+            **{key: diagnostic.get(key) for key in cls._DEAL_HEALTH_V2_KEYS},
+        }
+
+    @staticmethod
+    def _build_activity(activity):
+        """The activity being prepared: its own content, bounded."""
+        return {
+            'type': activity.activity_type,
+            'date': activity.scheduled_date.isoformat() if activity.scheduled_date else None,
+            'description': _bounded(activity.description),
+            'call_to_action': _bounded(activity.call_to_action),
+            'outcome_notes': _bounded(activity.outcome_notes),
+            'preparation_notes': _bounded(activity.preparation_notes),
+        }
+
+    @staticmethod
+    def _build_seller_profile(client_id):
+        """The tenant's seller profile (G6) — None when none yet. Its
+        updated_at is carried for the dedup hash only."""
+        from app_modules.product_catalog.models import SellerProfile
+        profile = SellerProfile.objects.filter(client_id=client_id).first()
+        if profile is None:
+            return None
+        return {
+            'company_description': _bounded(profile.company_description),
+            'value_proposition': _bounded(profile.value_proposition),
+            'customer_references': profile.customer_references or [],
+            'credibility_and_certifications': _bounded(profile.credibility_and_certifications),
+            'competitors_and_positioning': _bounded(profile.competitors_and_positioning),
+            'ideal_targets': _bounded(profile.ideal_targets),
+            'updated_at': profile.updated_at.isoformat() if profile.updated_at else None,
+        }
+
+    @staticmethod
+    def _build_previous_activities(activity):
+        """The previous conversations (PO decision Q5): the COMPLETED
+        activities of the same cycle OR of the same sequence (campaign
+        contact), this one excluded, the PREP_CALL_PREVIOUS_ACTIVITIES_MAX most
+        recent — ONE query — returned oldest first, their notes bounded."""
+        from django.db.models import Q
+
+        from app_modules.activities.constants import ActivityStatus
+        from app_modules.activities.models import Activity
+
+        scope = Q()
+        if activity.decision_cycle_id:
+            scope |= Q(decision_cycle_id=activity.decision_cycle_id)
+        if activity.campaign_contact_id:
+            scope |= Q(campaign_contact_id=activity.campaign_contact_id)
+        if not scope:
+            return []
+        rows = list(
+            Activity.objects
+            .filter(scope, client_id=activity.client_id, account_id=activity.account_id,
+                    status=ActivityStatus.COMPLETED)
+            .exclude(pk=activity.pk)
+            .defer('transcript')
+            .order_by('-completed_at', '-scheduled_date', '-created_at')[:PREP_CALL_PREVIOUS_ACTIVITIES_MAX]
+        )
+        return [
+            {
+                'type': a.activity_type,
+                'date': DealHealthEvidenceBuilder.activity_moment(a).date().isoformat(),
+                'description': _bounded(a.description),
+                'outcome': a.get_outcome_display() if a.outcome else '',
+                'notes': _bounded(a.outcome_notes),
+            }
+            for a in reversed(rows)
+        ]
+
+
+def _bounded(text):
+    """A free text of the pack, cut to PREP_CALL_MAX_CHARS_PER_SOURCE (the deal
+    health's bound) with its truncation marker; '' for none."""
+    text = text or ''
+    if len(text) <= PREP_CALL_MAX_CHARS_PER_SOURCE:
+        return text
+    return (
+        text[:PREP_CALL_MAX_CHARS_PER_SOURCE] + '\n'
+        + DEAL_HEALTH_TRUNCATION_MARKER.format(kept=PREP_CALL_MAX_CHARS_PER_SOURCE, total=len(text))
+    )

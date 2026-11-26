@@ -376,9 +376,14 @@ class DealHealthEvidenceBuilder:
     # =========================================================================
 
     def _build_cycle_context(self, dc):
+        return self.build_cycle_context(dc, self._find_current_step(dc))
+
+    def build_cycle_context(self, dc, current_step):
+        """The deal's static context (step 3b) with ITS current step given —
+        public for the Game Plan's pack (sprint 2, G7), which derives the step
+        once for the whole pack."""
         from app_modules.decision_cycles.models import DealProduct
 
-        current_step = self._find_current_step(dc)
         products = (
             DealProduct.objects
             .filter(decision_cycle=dc)
@@ -414,7 +419,12 @@ class DealHealthEvidenceBuilder:
 
     @staticmethod
     def _build_account_context(dc):
-        account = dc.account
+        return DealHealthEvidenceBuilder.account_context(dc.account)
+
+    @staticmethod
+    def account_context(account):
+        """The account's static context — public for the Game Plan's pack
+        (sprint 2, G7; an activity outside a cycle has an account too)."""
         return {
             'industry': (account.get_industry_display() if account.industry else None),
             'company_size': account.company_size or None,
@@ -558,6 +568,12 @@ class DealHealthEvidenceBuilder:
             }
             for s in qs
         ]
+
+    @staticmethod
+    def serialize_objective_signals(qs):
+        """The Objective rows of the AI packs — public for the Game Plan's
+        pack (sprint 2, G7), which reuses them as they are."""
+        return DealHealthEvidenceBuilder._serialize_objective_signals(qs)
 
     @staticmethod
     def _serialize_objective_signals(qs):
@@ -785,6 +801,17 @@ class DealHealthEvidenceBuilder:
     # =========================================================================
     # MANAGER NOTES (step 3b)
     # =========================================================================
+
+    @staticmethod
+    def manager_notes(dc):
+        """Every ManagerNote of the cycle, as the deal health reads them —
+        public for the Game Plan's pack (sprint 2, G7)."""
+        return DealHealthEvidenceBuilder._build_manager_notes(dc)[0]
+
+    @staticmethod
+    def activity_moment(activity):
+        """Public for the Game Plan's pack (G7): when the activity happened."""
+        return DealHealthEvidenceBuilder._activity_moment(activity)
 
     @staticmethod
     def _build_manager_notes(dc, since=None):

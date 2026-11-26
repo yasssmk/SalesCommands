@@ -287,6 +287,7 @@ class PrepCallPipeline(BasePipeline):
         - target_contact id (or "none")
         - current step name (or "none")
         - brief_mode
+        - the pack v2's inputs (G7, _pack_v2_fingerprint)
         """
         parts = []
 
@@ -314,8 +315,36 @@ class PrepCallPipeline(BasePipeline):
         else:
             parts.append('dims:none')
 
+        # G7 — the input pack v2: what the Game Plan reads changes the hash.
+        parts.append(f"v2:{PrepCallPipeline._pack_v2_fingerprint(input_pack)}")
+
         composite = '|'.join(sorted(parts))
         return hashlib.sha256(composite.encode('utf-8')).hexdigest()
+
+    @staticmethod
+    def _pack_v2_fingerprint(input_pack):
+        """sha256 of the pack v2's inputs (G7): the activity's content, the
+        participants' identities (sorted — the server-side ids, not the
+        labels), the deal-health snapshot read, the seller profile's update
+        date, the deal's products, the previous activities' notes."""
+        participants = sorted(
+            f"{p.get('contact_id') or ''}:{p.get('stakeholder_id') or ''}"
+            for p in input_pack.get('participants') or []
+        )
+        deal_health = input_pack.get('deal_health') or {}
+        seller = input_pack.get('seller_profile') or {}
+        deal = input_pack.get('deal') or {}
+        canonical = json.dumps({
+            'activity': input_pack.get('activity'),
+            'participants': participants,
+            'deal_health_snapshot': deal_health.get('snapshot_id'),
+            'seller_profile_updated_at': seller.get('updated_at'),
+            'products': sorted(
+                (json.dumps(p, sort_keys=True, default=str) for p in deal.get('products') or []),
+            ),
+            'previous_activities': input_pack.get('previous_activities') or [],
+        }, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
     @staticmethod
     def _find_existing_snapshot(input_hash, activity):

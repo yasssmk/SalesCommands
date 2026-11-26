@@ -365,6 +365,26 @@ class ActivityRoster:
         return self._by_identity.get(self.roster.identity_of(label))
 
 
+def _contacts_stakeholders(cycle, contacts):
+    """[stakeholder | None] aligned on `contacts`: the stakeholder of each
+    contact in `cycle` — stakeholder_for's rule (tenant- and cycle-scoped, the
+    contact's ONE stakeholder, else None) — in ONE query."""
+    from app_modules.decision_cycles.models import Stakeholder
+
+    if cycle is None or not contacts:
+        return [None] * len(contacts)
+    by_contact = {}
+    for stakeholder in Stakeholder.objects.filter(
+        decision_cycle=cycle, client_id=cycle.client_id,
+        contact_id__in=[c.pk for c in contacts],
+    ).select_related('contact', 'department', 'current_signal'):
+        by_contact.setdefault(stakeholder.contact_id, []).append(stakeholder)
+    return [
+        found[0] if len(found) == 1 else None
+        for found in (by_contact.get(c.pk, []) for c in contacts)
+    ]
+
+
 def activity_roster(activity):
     """
     THE roster of an activity's Game Plan (sprint 2, G4 — TD-46 / TD-48):
@@ -377,16 +397,18 @@ def activity_roster(activity):
         cycle's account.
     Every participant is registered BEFORE a label is read (a label depends
     on the whole roster — homonyms). A contact's stakeholder (its role, its
-    profile) is resolved by stakeholder_for, the deal health's own
-    resolution. First names only: the roster never carries a last name, an
-    email or a phone.
+    profile) is resolved with stakeholder_for's rule — the cycle's ONE
+    stakeholder of that contact — for every contact in a single query (G7: no
+    N+1, the cost does not grow with the participants). First names only:
+    the roster never carries a last name, an email or a phone.
     """
     cycle = activity.decision_cycle if activity.decision_cycle_id else None
     roster = cycle_roster(cycle) if cycle is not None else LLMPeopleRoster()
 
+    contacts = ordered_participants(activity)
     people = [
-        (contact, stakeholder_for(cycle, _identity(contact)) if cycle is not None else None)
-        for contact in ordered_participants(activity)
+        (contact, stakeholder)
+        for contact, stakeholder in zip(contacts, _contacts_stakeholders(cycle, contacts))
     ]
     if cycle is not None:
         people += [

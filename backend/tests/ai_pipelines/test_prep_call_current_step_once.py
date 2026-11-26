@@ -63,9 +63,12 @@ RUN_URL = '/module-ai-pipelines/prep-call/run/'
 # Measured on the real POST (5-step cycle, the 5th step current): 34 queries
 # with the is_current loop, 25 with the single derivation (S5); 27 since G4 —
 # the activity's roster reads its contacts and its stakeholders (2 queries,
-# whatever the number of steps). The proof of S5 is the single query on
+# whatever the number of steps); 30 since G7 — the pack v2: −1 deal-health
+# snapshot read (once for the pack instead of twice), +1 deal products, +1
+# manager notes, +1 seller profile, +1 previous activities (each ONE query,
+# whatever their number). The proof of S5 is the single query on
 # decision_steps, asserted below.
-MAX_QUERIES = 27
+MAX_QUERIES = 30
 _CURRENT_PREFIX = 'Current step: '
 
 

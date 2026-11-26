@@ -105,6 +105,9 @@ EXPECTED_TOP_KEYS = {
     'brief_mode',
     # Sprint 2 Game Plan, G4: every participant of the activity, by label.
     'participants',
+    # G7: the input pack v2.
+    'deal_health', 'activity', 'objectives', 'deal', 'account', 'manager_notes',
+    'seller_profile', 'previous_activities',
 }
 
 

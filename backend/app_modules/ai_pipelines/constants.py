@@ -570,3 +570,10 @@ PREP_CALL_TYPE_NOT_ELIGIBLE_CODE = 'PREP_CALL_TYPE_NOT_ELIGIBLE'
 PREP_CALL_ACTIVITY_CLOSED_CODE = 'PREP_CALL_ACTIVITY_CLOSED'
 PREP_CALL_NO_CAMPAIGN_NO_DC_CODE = 'PREP_CALL_NO_CAMPAIGN_NO_DC'
 PREP_CALL_NOTHING_NEW_CODE = 'PREP_CALL_NOTHING_NEW'
+
+# The input pack v2 (G7): the previous conversations the Game Plan reads —
+# the COMPLETED activities of the same cycle or of the same sequence, the most
+# recent ones (PO decision Q5) — and the bound of every free text it carries
+# (the deal health's own bound, amendment A3).
+PREP_CALL_PREVIOUS_ACTIVITIES_MAX = 10
+PREP_CALL_MAX_CHARS_PER_SOURCE = DEAL_HEALTH_MAX_CHARS_PER_SOURCE
