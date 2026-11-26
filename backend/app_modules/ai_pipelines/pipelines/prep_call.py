@@ -34,6 +34,7 @@ from ..constants import (
     AIPipelineStatus,
     AIPipelineType,
     PIPELINE_TEMPERATURES,
+    PREP_CALL_NOTHING_NEW_CODE,
     PREP_CALL_PROVIDER_KEYS,
     PrepCallOutputKind,
 )
@@ -158,6 +159,9 @@ class PrepCallPipeline(BasePipeline):
                 'run':      AIPipelineRun (finalised),
                 'snapshot': PrepCallSnapshot | None,
             }
+            or, nothing new since the last Game Plan (G9):
+            {'run': None, 'snapshot': None,
+             'blocked': PREP_CALL_NOTHING_NEW_CODE, 'last_snapshot': ...}
         """
         input_text = json.dumps(input_pack, default=str)
         input_hash = self._compute_idempotence_hash(
@@ -166,17 +170,21 @@ class PrepCallPipeline(BasePipeline):
             target_contact=target_contact,
         )
 
-        existing = self._find_existing_snapshot(input_hash, activity)
-        if existing:
+        # G9 (PO decision Q1) — regenerate only when the inputs changed since
+        # the activity's LAST Game Plan (the hash v2, G7); otherwise an INFO,
+        # no run, no LLM call (the deal health's _blocked(NO_NEW_SOURCES)
+        # pattern). The first generation of an activity is never blocked.
+        last = self._last_snapshot(activity)
+        if last is not None and last.input_hash == input_hash:
             logger.info(
-                'prep_call_dedup_hit',
+                'prep_call_nothing_new',
                 extra={
                     'activity_id': str(activity.id),
                     'input_hash': input_hash,
-                    'event': 'ai_pipeline_dedup',
+                    'event': 'ai_pipeline_blocked',
                 },
             )
-            return existing
+            return self._blocked(PREP_CALL_NOTHING_NEW_CODE, last)
 
         # Bound before the try: a crash inside _create_run leaves no run to
         # finalise (S4 — was an UnboundLocalError hiding the original error).
@@ -349,28 +357,23 @@ class PrepCallPipeline(BasePipeline):
         return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
     @staticmethod
-    def _find_existing_snapshot(input_hash, activity):
-        """
-        Check if a PrepCallSnapshot with this hash already exists.
-
-        Returns the cached result dict or None.
-        """
+    def _last_snapshot(activity):
+        """The activity's last Game Plan, or None (its first generation)."""
         from ..models import PrepCallSnapshot
 
-        snapshot = (
+        return (
             PrepCallSnapshot.objects
-            .filter(activity=activity, input_hash=input_hash)
-            .select_related('pipeline_run')
-            .order_by('-snapshot_date')
+            .filter(activity=activity)
+            .order_by('-snapshot_date', '-id')
             .first()
         )
-        if not snapshot:
-            return None
 
-        return {
-            'run': snapshot.pipeline_run,
-            'snapshot': snapshot,
-        }
+    @staticmethod
+    def _blocked(code, last_snapshot):
+        """Nothing run, nothing written — the deal health's shape
+        (pipelines/deal_health.py _blocked)."""
+        return {'run': None, 'snapshot': None, 'blocked': code,
+                'last_snapshot': last_snapshot}
 
     # =========================================================================
     # PERSISTENCE

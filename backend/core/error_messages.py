@@ -746,6 +746,11 @@ class AIPipelineErrorMessages:
         "No Game Plan for an activity outside a campaign and a decision "
         "cycle: link it to one first."
     )
+    # G9 (PO decision Q1): the inputs have not changed since the last Game
+    # Plan — 200 + INFO, no run, no LLM call.
+    PREP_CALL_NOTHING_NEW = _(
+        "Nothing new since the last Game Plan ({date})."
+    )
 
     # -----------------------------------------------------------------
     # Provider errors

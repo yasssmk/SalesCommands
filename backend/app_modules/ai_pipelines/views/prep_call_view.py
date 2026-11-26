@@ -43,6 +43,7 @@ from ..constants import (
     AIPipelineStatus,
     PREP_CALL_ACTIVITY_CLOSED_CODE,
     PREP_CALL_NO_CAMPAIGN_NO_DC_CODE,
+    PREP_CALL_NOTHING_NEW_CODE,
     PREP_CALL_TYPE_NOT_ELIGIBLE_CODE,
 )
 from ..pipelines.prep_call import PrepCallPipeline
@@ -67,7 +68,27 @@ _BLOCKED_MESSAGES = {
     PREP_CALL_TYPE_NOT_ELIGIBLE_CODE: AIPipelineErrorMessages.PREP_CALL_TYPE_NOT_ELIGIBLE,
     PREP_CALL_ACTIVITY_CLOSED_CODE:   AIPipelineErrorMessages.PREP_CALL_ACTIVITY_CLOSED,
     PREP_CALL_NO_CAMPAIGN_NO_DC_CODE: AIPipelineErrorMessages.PREP_CALL_NO_CAMPAIGN_NO_DC,
+    PREP_CALL_NOTHING_NEW_CODE:       AIPipelineErrorMessages.PREP_CALL_NOTHING_NEW,   # G9
 }
+
+
+def _blocked_body(code, last_snapshot=None):
+    """200 + the INFO code: nothing was run, nothing written (the deal
+    health's _blocked_body, views/deal_health_view.py)."""
+    last_at = last_snapshot.snapshot_date if last_snapshot is not None else None
+    message = str(_BLOCKED_MESSAGES[code])
+    if code == PREP_CALL_NOTHING_NEW_CODE:
+        message = message.format(date=last_at.date().isoformat() if last_at else '')
+    return {
+        'success': True,
+        'code':    code,
+        'message': message,
+        'data': {
+            'run':               None,
+            'snapshot':          None,
+            'last_generated_at': last_at.isoformat() if last_at else None,
+        },
+    }
 
 
 class PrepCallRunView(BaseAPIView):
@@ -107,12 +128,7 @@ class PrepCallRunView(BaseAPIView):
         if blocked:
             logger.info('prep_call_run.blocked',
                         extra={'activity_id': str(activity.id), 'code': blocked})
-            return Response({
-                'success': True,
-                'code':    blocked,
-                'message': str(_BLOCKED_MESSAGES[blocked]),
-                'data':    {'run': None, 'snapshot': None},
-            }, status=http_status.HTTP_200_OK)
+            return Response(_blocked_body(blocked), status=http_status.HTTP_200_OK)
 
         # Idempotence layer 1 (Redis) intentionally omitted — matches
         # DealHealth pattern. Layer 2 (DB hash dedup in the pipeline)
@@ -154,6 +170,14 @@ class PrepCallRunView(BaseAPIView):
                 },
                 status=http_status.HTTP_502_BAD_GATEWAY,
             )
+
+        # G9 — nothing new since the last Game Plan: 200 + INFO, after the
+        # permission (403) and the business rules of G3 (INFO) above.
+        if result.get('blocked'):
+            logger.info('prep_call_run.blocked',
+                        extra={'activity_id': str(activity.id), 'code': result['blocked']})
+            return Response(_blocked_body(result['blocked'], result.get('last_snapshot')),
+                            status=http_status.HTTP_200_OK)
 
         run = result['run']
         snapshot = result.get('snapshot')
