@@ -87,7 +87,7 @@ import hashlib
 import logging
 
 from .. import config as ai_config
-from ..config import ACTIVE_PROVIDER, get_active_provider_config
+from ..config import get_active_provider_config
 from ..constants import AIPipelineStatus, HARD_CRASH_ERROR_MAX_CHARS
 from ..models import AIPipelineRun
 from ..prompts.base import PromptBuilder, PromptParseError
@@ -133,6 +133,11 @@ class BasePipeline(ABC):
         self._provider_injected = provider is not None
         self.provider = provider or get_active_provider()
         self._provider_config = get_active_provider_config()
+        # The PROVIDER_CONFIG key the pipeline calls — the active provider by
+        # default; a pipeline with its own entry (deal health, next steps)
+        # sets it with its _provider_config, so the run row records the
+        # provider REALLY used (sprint 2 Game Plan, G1).
+        self._provider_key = ai_config.ACTIVE_PROVIDER
 
     @abstractmethod
     def run(self, **kwargs):
@@ -176,7 +181,9 @@ class BasePipeline(ABC):
         return AIPipelineRun.objects.create(
             pipeline_type=self.PIPELINE_TYPE,
             prompt_versions=dict(self.PROMPT_VERSIONS),
-            provider=ACTIVE_PROVIDER,
+            # The provider family of the entry the pipeline calls (G1 — was
+            # ACTIVE_PROVIDER whatever the pipeline's own entry).
+            provider=self._run_provider(),
             # The DEFAULT model of the run. A stage mapped to another entry
             # (config.STAGE_PROVIDER, TD-279 P1) is not reflected here: the
             # real model of each call is sub_calls[].model_used.
@@ -195,6 +202,13 @@ class BasePipeline(ABC):
             created_by=user,
             updated_by=user,
         )
+
+    def _run_provider(self):
+        """The provider family recorded on the run: PROVIDER_CONFIG[<the
+        pipeline's key>]['provider'], the key itself for the plain entries
+        ('openai', 'claude')."""
+        entry = ai_config.PROVIDER_CONFIG.get(self._provider_key) or {}
+        return entry.get('provider', self._provider_key)
 
     def _log_sub_call(self, run, *, stage, sub_call_meta=None,
                       parsed=None, error=None, dropped_count=0,

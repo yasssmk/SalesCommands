@@ -212,8 +212,10 @@ class NextStepsPipeline(BasePipeline):
 
     def __init__(self, provider=None):
         super().__init__(provider=provider)
-        # The pipeline's own entry (3.1) -- call AND run row (module docstring).
-        self._provider_config = ai_config.PROVIDER_CONFIG[ai_config.NEXT_STEPS_PROVIDER]
+        # The pipeline's own entry (3.1) -- call AND run row (module docstring;
+        # the run's provider too since G1).
+        self._provider_key = ai_config.NEXT_STEPS_PROVIDER
+        self._provider_config = ai_config.PROVIDER_CONFIG[self._provider_key]
         if not self._provider_injected:
             self.provider = get_provider(ai_config.NEXT_STEPS_PROVIDER)
 
