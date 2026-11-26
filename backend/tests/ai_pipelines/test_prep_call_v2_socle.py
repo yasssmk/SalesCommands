@@ -125,17 +125,21 @@ def test_the_shipped_choice_is_openai():
 # 2 — PrepCallSnapshot v2, the existing snapshots readable as v1
 # =============================================================================
 
-def test_a_snapshot_written_today_reads_as_v1_plan(authed_api_a, activity, patch_active_provider):
+def test_a_snapshot_written_today_is_a_v2_plan(authed_api_a, activity, patch_active_provider):
+    """G2 wrote v1 until the Game Plan v2 existed; since G10 a generation
+    writes schema_version 2, without brief_mode (renamed from
+    test_a_snapshot_written_today_reads_as_v1_plan). No deal health on this
+    cycle: no trace."""
     patch_active_provider.replies['prep_call'] = json.dumps(_VALID_BRIEF)
     _run(authed_api_a, activity)
 
     served = _served(authed_api_a, activity)
 
-    assert served['schema_version'] == 1
+    assert served['schema_version'] == 2
     assert served['output_kind'] == 'PLAN'
     assert served['deal_health_snapshot'] is None
     assert served['deal_health_schema_version'] is None
-    assert served['brief_mode'] == 'DISCOVERY'
+    assert served['brief_mode'] is None
     assert served['brief'] == _VALID_BRIEF
 
 

@@ -32,29 +32,36 @@ class PrepInputPackAssembler:
     Assembles the prep-call input pack for an Activity.
 
     Usage:
-        pack = PrepInputPackAssembler().build(
-            activity=activity,
-            brief_mode='CONVICTION',
-        )
+        assembler = PrepInputPackAssembler()
+        pack = assembler.build(activity=activity)
+        assembler.people   # the activity's roster (G4), for the validation
+
+    No brief mode since G10 (a single Game Plan mode — the mode resolver is
+    removed).
     """
 
-    def build(self, *, activity, target_contact=None, brief_mode):
+    people = None
+
+    def build(self, *, activity, target_contact=None):
         """
         Build the input pack dict.
 
         Args:
             activity: Activity instance.
             target_contact: Contact instance or None.
-            brief_mode: resolved brief mode string.
 
         Returns:
-            dict matching the §3.2 Prep Input Pack contract.
+            dict matching the §3.2 Prep Input Pack contract. The roster the
+            pack's labels come from is kept on `self.people` (G10: the
+            server-side resolution of the refs the Game Plan writes back —
+            the deal health's `builder.roster` pattern).
         """
         dc = activity.decision_cycle
 
         # G4: ONE roster for the whole prompt — the cycle's people and the
         # activity's participants, every label final before it is read.
         people = activity_roster(activity)
+        self.people = people
         # G7: read ONCE for the whole pack — the cycle's current step (S5),
         # its latest deal-health snapshot (S3), its validated objectives.
         current_step = self._current_step(dc) if dc else None
@@ -81,7 +88,6 @@ class PrepInputPackAssembler:
             ),
             'competitive_context': self._build_competitive_context(signals),
             'evidence_scope': self._build_evidence_scope(dc, signals),
-            'brief_mode': brief_mode,
             # G4 (TD-46 / TD-48): every participant, by its label — the ids
             # stay server-side (never rendered), no last name, email or phone.
             'participants': [
@@ -220,19 +226,6 @@ class PrepInputPackAssembler:
     # =========================================================================
     # MATURITY SNAPSHOT
     # =========================================================================
-
-    @staticmethod
-    def build_maturity_snapshot(dc):
-        """
-        Extract the maturity snapshot from the latest DealHealthSnapshot.
-
-        Public helper: called by the view to feed resolve_brief_mode()
-        BEFORE build(), so the brief_mode can be passed into build().
-        """
-        if not dc:
-            return None
-        # The canonical reader, inside the tenant (sprint 2 Game Plan, S3).
-        return PrepInputPackAssembler._maturity_of(DealHealthEvidenceBuilder.latest_snapshot(dc))
 
     @staticmethod
     def _maturity_of(snapshot):

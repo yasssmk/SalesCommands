@@ -66,9 +66,12 @@ RUN_URL = '/module-ai-pipelines/prep-call/run/'
 # whatever the number of steps); 30 since G7 — the pack v2: −1 deal-health
 # snapshot read (once for the pack instead of twice), +1 deal products, +1
 # manager notes, +1 seller profile, +1 previous activities (each ONE query,
-# whatever their number). The proof of S5 is the single query on
+# whatever their number); 29 since G10 — −1: the view's second read of the
+# deal-health snapshot (it fed the removed brief mode) is gone; the roster's
+# last names (the Game Plan's refusal of a last name) cost +1 only when the
+# roster has contacts — none here. The proof of S5 is the single query on
 # decision_steps, asserted below.
-MAX_QUERIES = 30
+MAX_QUERIES = 29
 _CURRENT_PREFIX = 'Current step: '
 
 

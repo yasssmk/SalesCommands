@@ -277,19 +277,23 @@ def test_c_an_invalid_bant_is_a_parse_error_and_nothing_is_written(
 def test_d_the_prep_call_reads_dimensions_and_global_reading_of_a_v2_snapshot(
     authed_api_a, technical_fit_cycle, marc, patch_active_provider,
 ):
+    from app_modules.ai_pipelines.services.deal_health_evidence_builder import (
+        DealHealthEvidenceBuilder,
+    )
     from app_modules.ai_pipelines.services.prep_call.input_pack_assembler import (
         PrepInputPackAssembler,
     )
-    from app_modules.ai_pipelines.services.prep_call.mode_resolver import resolve_brief_mode
 
     _provider(patch_active_provider, VALID_V2)
     assert _post(authed_api_a, technical_fit_cycle).status_code == 201
 
-    maturity = PrepInputPackAssembler.build_maturity_snapshot(technical_fit_cycle)
+    # The pack's maturity view (the prep call's single read of the snapshot —
+    # since G10 no brief mode is resolved from it: the resolver is removed).
+    maturity = PrepInputPackAssembler._maturity_of(
+        DealHealthEvidenceBuilder.latest_snapshot(technical_fit_cycle),
+    )
     assert maturity['global_reading'] == VALID_V2['global_reading']
     assert maturity['dimensions'] == VALID_V2['dimensions']
-    v1_maturity = {'dimensions': _VALID_DIAGNOSTIC['dimensions']}
-    assert resolve_brief_mode(maturity) == resolve_brief_mode(v1_maturity)
 
 
 # =============================================================================

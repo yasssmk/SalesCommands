@@ -9,7 +9,7 @@ mixing rules.
 
 import json
 
-from app_modules.ai_pipelines.services.prep_call.rhetoric_guide import (
+from .guide_v1 import (  # frozen v1 guide (G10)
     BRIEF_MODES,
     MODE_TO_DOMINANT_REGISTER,
     RHETORIC_REGISTERS,

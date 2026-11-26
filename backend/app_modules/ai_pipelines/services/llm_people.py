@@ -34,7 +34,7 @@ from .participant_refs import _normalize_person_name, ordered_participants
 
 __all__ = [
     'ActivityRoster', 'LLMPeopleRoster', 'activity_roster', 'cycle_roster',
-    'first_name_of', 'stakeholder_for', 'stakeholder_for_label',
+    'first_name_of', 'roster_last_names', 'stakeholder_for', 'stakeholder_for_label',
     'stakeholder_prompt_facts',
 ]
 
@@ -363,6 +363,45 @@ class ActivityRoster:
         roster's own resolution (identity_of: the exact label); a label of
         a cycle person who is not a participant resolves to None."""
         return self._by_identity.get(self.roster.identity_of(label))
+
+
+def roster_last_names(roster, client_id):
+    """
+    Sprint 2 Game Plan, G10: the last names of the people of a roster —
+    server side only, to refuse an answer that writes one (a prompt never
+    carries a last name). The contacts' last_name (ONE query, tenant-scoped),
+    the words after the first name of a stakeholder / an observation known by
+    its full name only. A last name that is also a first name of the roster is
+    left out (writing that first name is allowed). Normalised (accents and
+    case stripped).
+    """
+    from app_modules.contacts.models import Contact
+    from app_modules.decision_cycles.models import Stakeholder
+
+    identities = list(roster._people)   # every person, named or not
+    by_kind = {}
+    for kind, key in identities:
+        by_kind.setdefault(kind, []).append(key)
+    names = set()
+    if by_kind.get('contact'):
+        names.update(
+            Contact.objects.filter(client_id=client_id, pk__in=by_kind['contact'])
+            .values_list('last_name', flat=True)
+        )
+    full_names = list(by_kind.get('name') or [])
+    if by_kind.get('stakeholder'):
+        full_names += list(
+            Stakeholder.objects.filter(client_id=client_id, pk__in=by_kind['stakeholder'])
+            .values_list('full_name', flat=True)
+        )
+    names.update(' '.join((full or '').split()[1:]) for full in full_names)
+    first_names = {
+        _normalize_person_name(roster.first_name_for(identity) or '') for identity in identities
+    }
+    return frozenset(
+        n for n in (_normalize_person_name(name or '') for name in names)
+        if n and n not in first_names
+    )
 
 
 def _contacts_stakeholders(cycle, contacts):

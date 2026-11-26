@@ -102,7 +102,6 @@ EXPECTED_TOP_KEYS = {
     'discovery_gaps',
     'competitive_context',
     'evidence_scope',
-    'brief_mode',
     # Sprint 2 Game Plan, G4: every participant of the activity, by label.
     'participants',
     # G7: the input pack v2.
@@ -122,11 +121,10 @@ class TestFullData:
         pack = PrepInputPackAssembler().build(
             activity=activity_with_cycle,
             target_contact=contact,
-            brief_mode='CONVICTION',
         )
 
         assert set(pack.keys()) == EXPECTED_TOP_KEYS
-        assert pack['brief_mode'] == 'CONVICTION'
+        assert 'brief_mode' not in pack   # G10: no brief mode
         assert pack['prep_context']['decision_cycle_id'] is not None
         assert pack['maturity_snapshot'] is not None
         assert pack['maturity_snapshot']['global_reading'] != ''
@@ -142,7 +140,6 @@ class TestWithoutDecisionCycle:
         pack = PrepInputPackAssembler().build(
             activity=activity_no_cycle,
             target_contact=None,
-            brief_mode='DISCOVERY',
         )
 
         assert set(pack.keys()) == EXPECTED_TOP_KEYS
@@ -161,7 +158,6 @@ class TestWithoutDealHealthSnapshot:
         pack = PrepInputPackAssembler().build(
             activity=activity_with_cycle,
             target_contact=None,
-            brief_mode='DISCOVERY',
         )
 
         assert pack['maturity_snapshot'] is None
@@ -177,7 +173,6 @@ class TestWithoutTargetContact:
         pack = PrepInputPackAssembler().build(
             activity=activity_with_cycle,
             target_contact=None,
-            brief_mode='CONVICTION',
         )
 
         assert pack['stakeholder_focus'] is None

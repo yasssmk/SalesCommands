@@ -31,30 +31,43 @@ RUN_URL = '/module-ai-pipelines/prep-call/run/'
 LAST_RUN_URL = '/module-ai-pipelines/last-run/'
 ACTIVITIES_URL = '/module-activities/'
 
+# A valid Game Plan v2 answer (G10, PREP_CALL_OUTLINE_SCHEMA) — no
+# participant ref: valid whatever the activity's roster.
 _VALID_BRIEF = {
     'context': 'Second call with the operations team.',
-    'objectives': [
-        {
-            'rank': 'primary',
-            'summary': 'Quantify the time lost on reporting.',
-            'nature': 'VALUE',
-            'success_criteria': 'A weekly figure is stated.',
-        },
-    ],
-    'rhetoric': {
-        'register': 'Lead with their own numbers.',
-        'key_argument': 'Reporting takes too long.',
-        'tangible_reformulation': '10h/week = one month a year.',
-        'proof': 'Stated during the first call.',
+    'objective': {'plans': [
+        {'label': 'A', 'goal': 'Agree on a pilot scope.',
+         'success_criteria': 'A pilot scope is written down together.'},
+        {'label': 'B', 'goal': 'Quantify the time lost on reporting.',
+         'success_criteria': 'They state a weekly figure.'},
+    ]},
+    'client_expectations': ['See how the reporting would work for their team.'],
+    'opening': {
+        'objective': 'Agree on what a pilot should prove.',
+        'time': 'Ask for 30 minutes.',
+        'client_agenda': 'Ask what they want to leave the call with.',
+        'our_agenda': 'Their reporting today, then the pilot scope.',
+        'expected_outcome': 'A pilot scope and a date for the next meeting.',
     },
-    'gaps': [
-        {'topic': 'Budget', 'strategy': 'DIRECT', 'question': 'Who owns the budget?'},
-    ],
-    'next_step': {
-        'what': 'Book a demo.',
+    'discovery': {
+        'missing_info': [{'item': 'Budget owner', 'question': 'Who owns the budget?'}],
+        'conviction': {
+            'needs_and_urgency': {'reading': 'Reporting pain stated, no deadline.',
+                                  'question': 'What happens if nothing changes this quarter?'},
+            'credibility': {'reading': 'Unknown.', 'question': 'What would you need to see?'},
+            'fit_and_value': {'reading': 'Unknown.', 'question': 'Which report matters most?'},
+        },
+    },
+    'argumentation': [],
+    'closing': {
+        'next_step': 'Book a demo.',
         'with_whom': 'The operations lead.',
         'when': 'Propose two dates during the call.',
+        'keep_control': 'Send the invitation right after the call.',
     },
+    'product_pitch': [],
+    'participants': [],
+    'campaign_diagnostic': None,
 }
 
 

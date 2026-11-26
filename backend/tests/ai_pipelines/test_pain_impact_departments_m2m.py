@@ -103,7 +103,7 @@ class TestPrepCallPainImpactDepartmentsM2M:
         fin, it = _dept('Finance'), _dept('IT')
         _mk_impact(cycle, user_a, [fin, it])
         pack = PrepInputPackAssembler().build(
-            activity=activity, target_contact=None, brief_mode='DISCOVERY',
+            activity=activity, target_contact=None,
         )
         value = pack['levers']['value']
         assert len(value) == 1

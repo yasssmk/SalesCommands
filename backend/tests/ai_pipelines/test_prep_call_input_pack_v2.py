@@ -180,12 +180,12 @@ def scene(account, user_a, client_account_a):
 
 def _pack(activity):
     activity.refresh_from_db()
-    return PrepInputPackAssembler().build(activity=activity, brief_mode='DISCOVERY')
+    return PrepInputPackAssembler().build(activity=activity)
 
 
 def _hash(activity):
     return PrepCallPipeline._compute_idempotence_hash(
-        input_pack=_pack(activity), brief_mode='DISCOVERY', target_contact=None,
+        input_pack=_pack(activity), target_contact=None,
     )
 
 
@@ -352,7 +352,7 @@ def test_the_pack_cost_does_not_grow_with_participants_nor_previous_activities(
     def count():
         meeting = Activity.objects.get(pk=scene['meeting'].pk)
         with CaptureQueriesContext(connection) as ctx:
-            PrepInputPackAssembler().build(activity=meeting, brief_mode='DISCOVERY')
+            PrepInputPackAssembler().build(activity=meeting)
         return len(ctx.captured_queries)
 
     few = count()

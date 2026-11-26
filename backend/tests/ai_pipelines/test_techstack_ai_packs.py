@@ -315,7 +315,6 @@ class TestPrepCallTechSerialization:
 
         pack = PrepInputPackAssembler().build(
             activity=activity_with_cycle, target_contact=contact,
-            brief_mode='CONVICTION',
         )
         rows = pack['competitive_context']['incumbents']
 
@@ -339,7 +338,6 @@ class TestPrepCallCompetitiveContext:
         return PrepInputPackAssembler().build(
             activity=activity_with_cycle,
             target_contact=contact,
-            brief_mode='CONVICTION',
         )
 
     def test_competitor_lands_in_competing_on_deal(
@@ -425,7 +423,6 @@ class TestPrepCallPromptRendering:
         pack = PrepInputPackAssembler().build(
             activity=activity_with_cycle,
             target_contact=contact,
-            brief_mode='CONVICTION',
         )
         rendered = build_context_layer(pack, 'CONVICTION')
 
@@ -452,7 +449,6 @@ class TestPrepCallCompetitorFromCompetitorSignal:
         return PrepInputPackAssembler().build(
             activity=activity_with_cycle,
             target_contact=contact,
-            brief_mode='CONVICTION',
         )
 
     def test_competing_on_deal_comes_from_competitor_signal(

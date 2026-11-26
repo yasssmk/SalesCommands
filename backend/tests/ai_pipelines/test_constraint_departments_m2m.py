@@ -94,7 +94,6 @@ class TestPrepCallConstraintDepartmentsM2M:
         pack = PrepInputPackAssembler().build(
             activity=activity,
             target_contact=None,
-            brief_mode='DISCOVERY',
         )
         constraints = pack['levers']['constraints']
         assert len(constraints) == 1

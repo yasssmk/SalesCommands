@@ -121,7 +121,7 @@ class TestConsumers:
             PrepInputPackAssembler,
         )
         pack = PrepInputPackAssembler().build(
-            activity=activity, target_contact=contact, brief_mode='CONVICTION',
+            activity=activity, target_contact=contact,
         )
         assert pack['prep_context']['upcoming_activity']['primary_contact']['role'] == (
             PEOPLE_ROLE_TO_QUALIFY)

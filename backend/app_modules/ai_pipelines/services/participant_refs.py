@@ -26,6 +26,7 @@ import unicodedata
 __all__ = [
     'account_contacts',
     'name_appears_in_text',
+    'names_appearing_in_text',
     'ordered_participants',
     'resolve_contact_by_name',
     'resolve_participant_by_name',
@@ -221,6 +222,17 @@ def resolve_speaker_label(stated_name, labels):
     return _best_unique_match(stated_name, [
         (_written_name_parts(label), label) for label in labels
     ])
+
+
+def names_appearing_in_text(names, text):
+    """
+    Sprint 2 Game Plan, G10: the names (e.g. the last names of the roster)
+    that the text contains as a word — the SAME word match as
+    name_appears_in_text (accents and case ignored, punctuation a word
+    boundary, a compound name as consecutive words). Returns them sorted.
+    """
+    words = _normalize_person_name(_NON_WORD_RE.sub(' ', str(text or '')))
+    return sorted(name for name in names if _matched_name_parts(words, [name]) > 0)
 
 
 def name_appears_in_text(stated_name, text):

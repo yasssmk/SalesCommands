@@ -549,9 +549,9 @@ class PrepCallOutputKind(models.TextChoices):
 
 
 class PrepCallBriefMode(models.TextChoices):
-    """PrepCallSnapshot.brief_mode — the v1 brief's deterministic mode
-    (services/prep_call/mode_resolver.py). Optional: the v2 Game Plan has a
-    single mode (G10); kept to read the v1 snapshots."""
+    """PrepCallSnapshot.brief_mode — the v1 brief's deterministic mode (the
+    mode resolver, removed in G10). Kept ONLY to read the v1 snapshots: the
+    v2 Game Plan has a single mode and writes no brief_mode."""
     DISCOVERY  = 'DISCOVERY',  _('Discovery')
     CONVICTION = 'CONVICTION', _('Conviction')
     PROOF      = 'PROOF',      _('Proof')
@@ -577,3 +577,11 @@ PREP_CALL_NOTHING_NEW_CODE = 'PREP_CALL_NOTHING_NEW'
 # (the deal health's own bound, amendment A3).
 PREP_CALL_PREVIOUS_ACTIVITIES_MAX = 10
 PREP_CALL_MAX_CHARS_PER_SOURCE = DEAL_HEALTH_MAX_CHARS_PER_SOURCE
+
+# The Game Plan v2's outline (G10, prompts/prep_call/outline_v2.py): the
+# objective's plans A / B / C (3 at most), the top arguments per participant
+# (the deal health's own bound), the classical rhetoric labels a Game Plan
+# never writes (the deal health's list — whole words, any case).
+PREP_CALL_PLAN_LABELS = ('A', 'B', 'C')
+PREP_CALL_ARGUMENTS_MAX = DEAL_HEALTH_TOP_ARGUMENTS_MAX
+PREP_CALL_RHETORIC_LABELS = DEAL_HEALTH_RHETORIC_LABELS

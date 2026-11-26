@@ -7,7 +7,7 @@ that govern every brief output. This is a NEW prompt family — it does
 NOT reuse the deal-health diagnostic system prompt.
 """
 
-from app_modules.ai_pipelines.services.prep_call.rhetoric_guide import (
+from .guide_v1 import (  # frozen v1 guide (G10)
     GUARDRAILS,
 )
 

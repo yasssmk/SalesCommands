@@ -1,19 +1,29 @@
 # app_modules/ai_pipelines/prompts/prep_call/__init__.py
 """
-Prompt package for the prep-call tactical brief pipeline.
+Prompt package of the Game Plan (prep call).
 
-Three layers assembled by PromptBuilder.assemble():
-  * system  — coach role, guardrails (§5.4), output constraints.
-  * context — input pack + rhetoric guide + brief mode.
-  * request — brief generation task + output JSON schema.
+v2 (sprint 2 Game Plan, G10) — what the pipeline sends:
+  * system_v2  — the account executive's posture, the hard rules, the
+    deal health v2's output-language rule;
+  * context_v2 — the input pack v2, section by section;
+  * outline_v2 — the task, the field rules, the strict schema
+    PREP_CALL_OUTLINE_SCHEMA.
 
-Versioning: each layer carries an independent version constant captured
-in AIPipelineRun.prompt_versions for audit traceability.
+v1 (system.py, context.py, brief_v1.py, guide_v1.py) is kept, frozen: it
+documents what produced the v1 snapshots (schema_version 1), which stay
+readable. The pipeline no longer imports it.
+
+Versioning: each layer carries its own version constant, captured in
+AIPipelineRun.prompt_versions.
 """
 
-from .system import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
-from .context import build_context_layer, CONTEXT_VERSION
-from .brief_v1 import build_brief_request, BRIEF_PROMPT_VERSION
+from .system_v2 import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+from .context_v2 import build_context_layer, CONTEXT_VERSION
+from .outline_v2 import (
+    OUTLINE_PROMPT_VERSION,
+    PREP_CALL_OUTLINE_SCHEMA,
+    build_outline_request,
+)
 
 
 __all__ = [
@@ -21,6 +31,7 @@ __all__ = [
     'SYSTEM_PROMPT_VERSION',
     'build_context_layer',
     'CONTEXT_VERSION',
-    'build_brief_request',
-    'BRIEF_PROMPT_VERSION',
+    'build_outline_request',
+    'OUTLINE_PROMPT_VERSION',
+    'PREP_CALL_OUTLINE_SCHEMA',
 ]

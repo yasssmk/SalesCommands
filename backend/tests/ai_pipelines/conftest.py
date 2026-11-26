@@ -140,6 +140,8 @@ class FakeProvider:
         ('Extract NEXT-STEP signals',  'next_steps'),
         # The prep-call brief (prompts/prep_call/brief_v1.py, TASK header).
         ('Produce a tactical pre-call brief', 'prep_call'),
+        # The Game Plan v2 (prompts/prep_call/outline_v2.py TASK_HEADER, G10).
+        ('Produce the Game Plan of the upcoming conversation', 'prep_call'),
         # The deal-health diagnostic (prompts/deal_health/diagnostic_v1.py).
         ('Produce a deal-health diagnostic', 'deal_health'),
     )

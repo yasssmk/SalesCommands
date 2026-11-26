@@ -1,11 +1,14 @@
 # app_modules/ai_pipelines/pipelines/prep_call.py
 """
-PrepCallPipeline -- single-stage LLM pipeline that produces a
-structured tactical brief for an upcoming Activity from validated
-signals and the last DealHealthSnapshot.
+PrepCallPipeline -- single-stage LLM pipeline that produces the Game Plan
+(v2 since sprint 2 Game Plan, G10) of an upcoming Activity from its input
+pack v2 (G7 / G8).
 
-Single stage: one LLM call, one structural validation + snapshot
-persistence, one sub-call audit entry.
+Single stage: one LLM call with the strict schema PREP_CALL_OUTLINE_SCHEMA,
+one server-side validation (services/prep_call/plan_validator.py — refs
+resolved against the activity's roster, no rhetoric label, no last name),
+the snapshot persisted in schema_version 2 with its deal-health trace, one
+sub-call audit entry.
 
 Error handling mirrors DealHealthPipeline (single stage = no PARTIAL):
 
@@ -16,8 +19,8 @@ Error handling mirrors DealHealthPipeline (single stage = no PARTIAL):
     LLMProviderError (generic)    -> LLM_ERROR.
 
 Return contract:
-    .run(*, activity, target_contact, brief_mode, input_pack,
-         user, client_id) -> {
+    .run(*, activity, target_contact, input_pack, user, client_id,
+         output_kind, people) -> {
         'run':      AIPipelineRun (finalised),
         'snapshot': PrepCallSnapshot | None,
     }
@@ -36,6 +39,7 @@ from ..constants import (
     PIPELINE_TEMPERATURES,
     PREP_CALL_NOTHING_NEW_CODE,
     PREP_CALL_PROVIDER_KEYS,
+    PREP_CALL_SCHEMA_V2,
     PrepCallOutputKind,
 )
 from ..prompts.base import PromptParseError
@@ -44,8 +48,9 @@ from ..prompts.prep_call import (
     SYSTEM_PROMPT_VERSION,
     build_context_layer,
     CONTEXT_VERSION,
-    build_brief_request,
-    BRIEF_PROMPT_VERSION,
+    build_outline_request,
+    OUTLINE_PROMPT_VERSION,
+    PREP_CALL_OUTLINE_SCHEMA,
 )
 from ..providers import (
     get_provider,
@@ -59,6 +64,8 @@ from ..providers.base import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
+from ..services.llm_people import roster_last_names
+from ..services.prep_call.plan_validator import validate_plan
 from .base import BasePipeline
 
 
@@ -121,7 +128,7 @@ class PrepCallPipeline(BasePipeline):
     PROMPT_VERSIONS = {
         'system':  SYSTEM_PROMPT_VERSION,
         'context': CONTEXT_VERSION,
-        'brief':   BRIEF_PROMPT_VERSION,
+        'outline': OUTLINE_PROMPT_VERSION,
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.PREP_CALL]
@@ -139,20 +146,23 @@ class PrepCallPipeline(BasePipeline):
     # MAIN ENTRY
     # =========================================================================
 
-    def run(self, *, activity, target_contact, brief_mode, input_pack,
-            user, client_id, output_kind=PrepCallOutputKind.PLAN):
+    def run(self, *, activity, target_contact, input_pack,
+            user, client_id, output_kind=PrepCallOutputKind.PLAN, people=None):
         """
-        Execute the single-stage prep-call brief pipeline.
+        Execute the single-stage Game Plan pipeline.
 
         Args:
             activity:       Activity instance.
             target_contact: Contact instance or None.
-            brief_mode:     str — resolved brief mode.
             input_pack:     dict — assembled input pack.
             user:           end_users.User — the rep who triggered the run.
             client_id:      UUID — tenant scope.
             output_kind:    PrepCallOutputKind — PLAN (a conversation) or
                             MESSAGE (an email / a LinkedIn message, G3).
+            people:         ActivityRoster the pack's labels come from
+                            (PrepInputPackAssembler.people) — the refs the
+                            Game Plan writes back are resolved against it;
+                            None: every ref is dropped.
 
         Returns:
             dict: {
@@ -166,7 +176,6 @@ class PrepCallPipeline(BasePipeline):
         input_text = json.dumps(input_pack, default=str)
         input_hash = self._compute_idempotence_hash(
             input_pack=input_pack,
-            brief_mode=brief_mode,
             target_contact=target_contact,
         )
 
@@ -200,22 +209,34 @@ class PrepCallPipeline(BasePipeline):
                 )
 
                 try:
-                    context_layer = build_context_layer(input_pack, brief_mode)
-                    request_layer = build_brief_request(input_pack, brief_mode)
+                    context_layer = build_context_layer(input_pack)
+                    request_layer = build_outline_request(input_pack)
 
                     parsed, sub_call_meta = self._call_llm(
                         system_prompt=SYSTEM_PROMPT,
                         context=context_layer,
                         request=request_layer,
+                        response_schema=PREP_CALL_OUTLINE_SCHEMA,
                     )
 
-                    self._validate_brief(parsed)
+                    # G10 — validated server side (the deal health v2
+                    # writer's pattern): a refusal is a PromptParseError,
+                    # nothing is written.
+                    plan, ref_counts = validate_plan(
+                        parsed,
+                        people=people,
+                        last_names=(
+                            roster_last_names(people.roster, client_id)
+                            if people is not None else frozenset()
+                        ),
+                        has_campaign=bool(input_pack.get('campaign')),
+                    )
 
                     snapshot = self._persist_snapshot(
-                        parsed=parsed,
+                        plan=plan,
                         activity=activity,
                         target_contact=target_contact,
-                        brief_mode=brief_mode,
+                        input_pack=input_pack,
                         input_hash=input_hash,
                         run=run,
                         user=user,
@@ -229,7 +250,10 @@ class PrepCallPipeline(BasePipeline):
                         sub_call_meta=sub_call_meta,
                         parsed=parsed,
                         error=None,
-                        dropped_count=0,
+                        dropped_count=(
+                            len(ref_counts['unknown_refs']) + len(ref_counts['ambiguous_refs'])
+                        ),
+                        persist_counts=ref_counts,
                     )
 
                 except LLMTimeoutError as exc:
@@ -285,7 +309,7 @@ class PrepCallPipeline(BasePipeline):
     # =========================================================================
 
     @staticmethod
-    def _compute_idempotence_hash(*, input_pack, brief_mode, target_contact):
+    def _compute_idempotence_hash(*, input_pack, target_contact):
         """
         SHA-256 of deterministic input components for DB-layer dedup.
 
@@ -294,7 +318,7 @@ class PrepCallPipeline(BasePipeline):
         - last DealHealthSnapshot date (or "none")
         - target_contact id (or "none")
         - current step name (or "none")
-        - brief_mode
+        - the output schema version (G10: v2 — no brief mode any more)
         - the pack v2's inputs (G7, _pack_v2_fingerprint)
         """
         parts = []
@@ -310,7 +334,7 @@ class PrepCallPipeline(BasePipeline):
             f"contact:{str(target_contact.id) if target_contact else 'none'}"
         )
         parts.append(f"step:{ctx.get('current_step') or 'none'}")
-        parts.append(f"mode:{brief_mode}")
+        parts.append(f"schema:{PREP_CALL_SCHEMA_V2}")
 
         # Maturity dimensions for finer-grained dedup
         maturity = input_pack.get('maturity_snapshot')
@@ -380,19 +404,26 @@ class PrepCallPipeline(BasePipeline):
     # =========================================================================
 
     @staticmethod
-    def _persist_snapshot(*, parsed, activity, target_contact, brief_mode,
+    def _persist_snapshot(*, plan, activity, target_contact, input_pack,
                           input_hash, run, user, client_id,
                           output_kind=PrepCallOutputKind.PLAN):
+        """The Game Plan v2 (schema_version 2, no brief_mode) with the trace
+        of the deal-health snapshot it read (G2 columns): the pack's
+        deal_health block — read inside the tenant by the canonical reader
+        (DealHealthEvidenceBuilder.latest_snapshot, S3), never received."""
         from ..models import PrepCallSnapshot
 
+        deal_health = input_pack.get('deal_health') or {}
         snapshot = PrepCallSnapshot(
             activity=activity,
             pipeline_run=run,
             target_contact=target_contact,
-            brief_mode=brief_mode,
-            brief=parsed,
+            brief=plan,
             input_hash=input_hash,
             output_kind=output_kind,
+            schema_version=PREP_CALL_SCHEMA_V2,
+            deal_health_snapshot_id=deal_health.get('snapshot_id'),
+            deal_health_schema_version=deal_health.get('schema_version'),
         )
         snapshot.save(user=user, client_id=client_id)
 
@@ -402,82 +433,12 @@ class PrepCallPipeline(BasePipeline):
                 'snapshot_id': str(snapshot.id),
                 'activity_id': str(activity.id),
                 'run_id': str(run.id),
-                'brief_mode': brief_mode,
+                'schema_version': PREP_CALL_SCHEMA_V2,
                 'event': 'ai_pipeline_persist',
             },
         )
 
         return snapshot
-
-    # =========================================================================
-    # STRUCTURAL VALIDATION
-    # =========================================================================
-
-    @staticmethod
-    def _validate_brief(parsed):
-        if not isinstance(parsed, dict):
-            raise PromptParseError(
-                'Brief must be a JSON object.'
-            )
-
-        if not isinstance(parsed.get('context'), str):
-            raise PromptParseError(
-                'Missing or invalid "context" (expected string).'
-            )
-
-        objectives = parsed.get('objectives')
-        if not isinstance(objectives, list) or not objectives:
-            raise PromptParseError(
-                'Missing or invalid "objectives" (expected non-empty list).'
-            )
-        for obj in objectives:
-            if not isinstance(obj, dict):
-                raise PromptParseError(
-                    'Each objective must be a JSON object.'
-                )
-            if obj.get('rank') not in ('primary', 'secondary'):
-                raise PromptParseError(
-                    f'Invalid objective rank: "{obj.get("rank")}". '
-                    f'Expected "primary" or "secondary".'
-                )
-
-        rhetoric = parsed.get('rhetoric')
-        if not isinstance(rhetoric, dict):
-            raise PromptParseError(
-                'Missing or invalid "rhetoric" (expected object).'
-            )
-        for field in ('register', 'key_argument', 'tangible_reformulation', 'proof'):
-            if not isinstance(rhetoric.get(field), str):
-                raise PromptParseError(
-                    f'Missing or invalid "rhetoric.{field}" (expected string).'
-                )
-
-        gaps = parsed.get('gaps')
-        if not isinstance(gaps, list):
-            raise PromptParseError(
-                'Missing or invalid "gaps" (expected list).'
-            )
-        for gap in gaps:
-            if not isinstance(gap, dict):
-                raise PromptParseError(
-                    'Each gap must be a JSON object.'
-                )
-            if gap.get('strategy') not in ('DIRECT', 'ELICITATION'):
-                raise PromptParseError(
-                    f'Invalid gap strategy: "{gap.get("strategy")}". '
-                    f'Expected "DIRECT" or "ELICITATION".'
-                )
-
-        next_step = parsed.get('next_step')
-        if not isinstance(next_step, dict):
-            raise PromptParseError(
-                'Missing or invalid "next_step" (expected object).'
-            )
-        for field in ('what', 'with_whom', 'when'):
-            if not isinstance(next_step.get(field), str):
-                raise PromptParseError(
-                    f'Missing or invalid "next_step.{field}" (expected string).'
-                )
 
     # =========================================================================
     # HELPERS

@@ -56,7 +56,6 @@ from ..services.game_plan_access import (
     game_plan_blocked_reason,
     game_plan_output_kind,
 )
-from ..services.prep_call.mode_resolver import resolve_brief_mode
 from ..services.prep_call.input_pack_assembler import PrepInputPackAssembler
 
 
@@ -133,16 +132,12 @@ class PrepCallRunView(BaseAPIView):
         # Idempotence layer 1 (Redis) intentionally omitted — matches
         # DealHealth pattern. Layer 2 (DB hash dedup in the pipeline)
         # prevents duplicate snapshots.
+        # G10: no brief mode (the mode resolver and its extra deal-health
+        # read are gone): the pack reads the latest snapshot ONCE.
         assembler = PrepInputPackAssembler()
-        maturity_snapshot = assembler.build_maturity_snapshot(
-            activity.decision_cycle,
-        )
-        brief_mode = resolve_brief_mode(maturity_snapshot)
-
         input_pack = assembler.build(
             activity=activity,
             target_contact=target_contact,
-            brief_mode=brief_mode,
         )
 
         try:
@@ -150,11 +145,11 @@ class PrepCallRunView(BaseAPIView):
             result = pipeline.run(
                 activity=activity,
                 target_contact=target_contact,
-                brief_mode=brief_mode,
                 input_pack=input_pack,
                 user=request.user,
                 client_id=client_id,
                 output_kind=game_plan_output_kind(activity),
+                people=assembler.people,
             )
         except Exception:
             logger.exception(
