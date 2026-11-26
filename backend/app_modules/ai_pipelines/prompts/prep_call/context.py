@@ -156,6 +156,19 @@ def build_context_layer(input_pack, brief_mode):
             part_lines.append(f"  {_participant_text(person)}")
         sections.append('\n'.join(part_lines))
 
+    # -- Campaign (G8: an activity of a campaign outside a cycle) --
+    campaign = input_pack.get('campaign')
+    if campaign:
+        sections.append(_campaign_text(campaign))
+
+    # -- Previous conversations (G7 / G8: same cycle or same sequence) --
+    previous = input_pack.get('previous_activities') or []
+    if previous:
+        prev_lines = ["PREVIOUS CONVERSATIONS (oldest first)"]
+        for row in previous:
+            prev_lines.append(f"  {_previous_text(row)}")
+        sections.append('\n'.join(prev_lines))
+
     # -- Levers --
     levers = input_pack.get('levers', {})
     if any(levers.get(k) for k in ('desires', 'value', 'cost_frictions', 'constraints')):
@@ -188,6 +201,31 @@ def build_context_layer(input_pack, brief_mode):
     )
 
     return '\n\n'.join(sections)
+
+
+def _campaign_text(campaign):
+    """The campaign block of the pack, as given (G8)."""
+    lines = [f"CAMPAIGN: {campaign.get('name') or 'unknown'} ({campaign.get('type') or 'unknown'})"]
+    if campaign.get('objective'):
+        lines.append(f"Campaign objective: {campaign['objective']}")
+    if campaign.get('contact_objective'):
+        lines.append(f"Objective for this contact: {campaign['contact_objective']}")
+    sequence = campaign.get('sequence') or {}
+    if sequence.get('position') and sequence.get('total'):
+        lines.append(f"Sequence: step {sequence['position']} of {sequence['total']}")
+    for step in sequence.get('next_steps') or []:
+        lines.append(f"  Next step: {step.get('type')} on {step.get('scheduled_date') or 'unscheduled'}")
+    return '\n'.join(lines)
+
+
+def _previous_text(row):
+    """One previous conversation of the pack, as given (G7 / G8)."""
+    text = f"{row.get('date')} {row.get('type')}"
+    if row.get('outcome'):
+        text += f" — {row['outcome']}"
+    if row.get('notes'):
+        text += f" — notes: {row['notes']}"
+    return text
 
 
 def _participant_text(person):

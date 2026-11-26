@@ -108,6 +108,8 @@ EXPECTED_TOP_KEYS = {
     # G7: the input pack v2.
     'deal_health', 'activity', 'objectives', 'deal', 'account', 'manager_notes',
     'seller_profile', 'previous_activities',
+    # G8: the light campaign diagnostic's data (None inside a cycle).
+    'campaign',
 }
 
 

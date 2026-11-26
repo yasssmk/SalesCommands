@@ -561,12 +561,16 @@ class ActivitySequenceService:
                 ]
             )
         )
+        # decision_step joined and loaded as in _annotate_with_rank:
+        # _activity_to_dict reads it on every row — left deferred, the
+        # sequence cost one query per activity (sprint 2 Game Plan, G8).
         return ranked.select_related(
-            'owner'
+            'owner', 'decision_step'
         ).only(
             'id', 'title', 'activity_type', 'status', 'outcome',
             'scheduled_date', 'scheduled_time', 'due_date',
             'completed_at', 'created_at', 'sequence_position',
+            'decision_step__id', 'decision_step__order', 'decision_step__name',
             'owner__id', 'owner__first_name', 'owner__last_name'
         ).order_by('_rank')
     

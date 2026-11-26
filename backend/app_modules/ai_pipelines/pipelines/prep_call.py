@@ -326,7 +326,8 @@ class PrepCallPipeline(BasePipeline):
         """sha256 of the pack v2's inputs (G7): the activity's content, the
         participants' identities (sorted — the server-side ids, not the
         labels), the deal-health snapshot read, the seller profile's update
-        date, the deal's products, the previous activities' notes."""
+        date, the deal's products, the previous activities' notes, the
+        campaign block (G8)."""
         participants = sorted(
             f"{p.get('contact_id') or ''}:{p.get('stakeholder_id') or ''}"
             for p in input_pack.get('participants') or []
@@ -343,6 +344,7 @@ class PrepCallPipeline(BasePipeline):
                 (json.dumps(p, sort_keys=True, default=str) for p in deal.get('products') or []),
             ),
             'previous_activities': input_pack.get('previous_activities') or [],
+            'campaign': input_pack.get('campaign'),               # G8
         }, sort_keys=True, default=str)
         return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 

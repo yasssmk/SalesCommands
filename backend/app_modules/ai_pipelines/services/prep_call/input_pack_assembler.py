@@ -107,6 +107,12 @@ class PrepInputPackAssembler:
             ],
             'seller_profile': self._build_seller_profile(activity.client_id),
             'previous_activities': self._build_previous_activities(activity),
+            # G8: the light campaign diagnostic's data — ONLY outside a cycle
+            # (a campaign activity inside a cycle keeps the DC path).
+            'campaign': (
+                self._build_campaign(activity)
+                if activity.campaign_id and not activity.decision_cycle_id else None
+            ),
         }
 
     # =========================================================================
@@ -712,6 +718,49 @@ class PrepInputPackAssembler:
             for a in reversed(rows)
         ]
 
+
+    @staticmethod
+    def _build_campaign(activity):
+        """
+        The campaign of an activity outside a cycle (G8): the campaign's
+        objective (activity_objective), the contact's objective and status
+        (CampaignContact), the sequence — position / total and the next open
+        steps, ActivitySequenceService.get_sequence_context(activity,
+        SequenceScope.CAMPAIGN), reused. The activity's call_to_action (the
+        stored result of campaign_execution_service._create_activity's
+        objective copy) is in `activity`; the history and results of the
+        sequence are `previous_activities` (same sequence) — neither is read
+        twice nor recomputed.
+        """
+        from app_modules.activities.services.activity_sequence_service import (
+            ActivitySequenceService,
+            SequenceScope,
+        )
+
+        campaign = activity.campaign
+        contact = activity.campaign_contact if activity.campaign_contact_id else None
+        sequence = ActivitySequenceService.get_sequence_context(
+            activity, SequenceScope.CAMPAIGN,
+        ) or {}
+        return {
+            'name': campaign.name,
+            'type': campaign.get_campaign_type_display(),
+            'objective': _bounded(campaign.activity_objective),
+            'contact_objective': _bounded(contact.objective) if contact else '',
+            'contact_status': contact.status if contact else None,
+            'sequence': {
+                'position': sequence.get('position'),
+                'total': sequence.get('total'),
+                'next_steps': [
+                    {
+                        'type': step.get('activity_type'),
+                        'status': step.get('status'),
+                        'scheduled_date': step.get('scheduled_date'),
+                    }
+                    for step in sequence.get('next_activities') or []
+                ],
+            },
+        }
 
 def _bounded(text):
     """A free text of the pack, cut to PREP_CALL_MAX_CHARS_PER_SOURCE (the deal
