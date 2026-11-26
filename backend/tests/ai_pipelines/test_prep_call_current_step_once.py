@@ -61,8 +61,11 @@ pytestmark = pytest.mark.django_db
 
 RUN_URL = '/module-ai-pipelines/prep-call/run/'
 # Measured on the real POST (5-step cycle, the 5th step current): 34 queries
-# with the is_current loop, 25 with the single derivation.
-MAX_QUERIES = 25
+# with the is_current loop, 25 with the single derivation (S5); 27 since G4 —
+# the activity's roster reads its contacts and its stakeholders (2 queries,
+# whatever the number of steps). The proof of S5 is the single query on
+# decision_steps, asserted below.
+MAX_QUERIES = 27
 _CURRENT_PREFIX = 'Current step: '
 
 

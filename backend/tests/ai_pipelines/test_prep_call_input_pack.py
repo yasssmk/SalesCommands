@@ -103,6 +103,8 @@ EXPECTED_TOP_KEYS = {
     'competitive_context',
     'evidence_scope',
     'brief_mode',
+    # Sprint 2 Game Plan, G4: every participant of the activity, by label.
+    'participants',
 }
 
 

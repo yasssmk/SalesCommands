@@ -16,7 +16,7 @@ from app_modules.ai_pipelines.constants import people_role_for_prompt
 from app_modules.ai_pipelines.services.deal_health_evidence_builder import (
     DealHealthEvidenceBuilder,
 )
-from app_modules.ai_pipelines.services.llm_people import cycle_roster
+from app_modules.ai_pipelines.services.llm_people import activity_roster
 from app_modules.signals.constants import SignalStatus
 
 logger = logging.getLogger(__name__)
@@ -47,8 +47,11 @@ class PrepInputPackAssembler:
         """
         dc = activity.decision_cycle
 
+        # G4: ONE roster for the whole prompt — the cycle's people and the
+        # activity's participants, every label final before it is read.
+        people = activity_roster(activity)
         maturity = self.build_maturity_snapshot(dc)
-        signals = self._build_signals(dc) if dc else self._empty_signals()
+        signals = self._build_signals(dc, people.roster) if dc else self._empty_signals()
 
         return {
             'prep_context': self._build_prep_context(
@@ -67,6 +70,14 @@ class PrepInputPackAssembler:
             'competitive_context': self._build_competitive_context(signals),
             'evidence_scope': self._build_evidence_scope(dc, signals),
             'brief_mode': brief_mode,
+            # G4 (TD-46 / TD-48): every participant, by its label — the ids
+            # stay server-side (never rendered), no last name, email or phone.
+            'participants': [
+                {key: p[key] for key in (
+                    'label', 'role', 'department', 'profile', 'contact_id', 'stakeholder_id',
+                )}
+                for p in people.participants
+            ],
         }
 
     # =========================================================================
@@ -204,10 +215,10 @@ class PrepInputPackAssembler:
     # SIGNALS — grouped for levers / stakeholder / competitive
     # =========================================================================
 
-    def _build_signals(self, dc):
+    def _build_signals(self, dc, roster):
         # Every person is named by llm_people (first name only, homonyms told
-        # apart) — ONE roster for the prompt (sprint « Deal health v2 », 3a).
-        roster = cycle_roster(dc)
+        # apart) — ONE roster for the prompt (sprint « Deal health v2 », 3a;
+        # since G4 the activity's roster, participants included).
         from app_modules.signals.models import (
             PainSignal,
             ObjectiveSignal,

@@ -148,6 +148,14 @@ def build_context_layer(input_pack, brief_mode):
             )
         sections.append('\n'.join(sh_lines))
 
+    # -- Participants (G4: every one, by label — first names only) --
+    participants = input_pack.get('participants') or []
+    if participants:
+        part_lines = ["PARTICIPANTS (one angle per person)"]
+        for person in participants:
+            part_lines.append(f"  {_participant_text(person)}")
+        sections.append('\n'.join(part_lines))
+
     # -- Levers --
     levers = input_pack.get('levers', {})
     if any(levers.get(k) for k in ('desires', 'value', 'cost_frictions', 'constraints')):
@@ -180,6 +188,21 @@ def build_context_layer(input_pack, brief_mode):
     )
 
     return '\n\n'.join(sections)
+
+
+def _participant_text(person):
+    """One participant of the pack, as given (G4): label, role, department,
+    the profile values — never an id, a last name or a contact detail."""
+    text = person.get('label') or 'unknown'
+    details = []
+    if person.get('role'):
+        details.append(f"role: {person['role']}")
+    if person.get('department'):
+        details.append(f"department: {person['department']}")
+    for field, value in (person.get('profile') or {}).items():
+        if value not in (None, '', []):
+            details.append(f"{field}: {value}")
+    return f"{text} — {'; '.join(details)}" if details else text
 
 
 def _incumbent_text(inc):

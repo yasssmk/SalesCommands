@@ -48,7 +48,11 @@ from app_modules.ai_pipelines.constants import (
     TECHSTACK_PLANNED_EXIT,
     people_role_for_prompt,
 )
-from app_modules.ai_pipelines.services.llm_people import cycle_roster, stakeholder_for
+from app_modules.ai_pipelines.services.llm_people import (
+    cycle_roster,
+    stakeholder_for,
+    stakeholder_prompt_facts,
+)
 from app_modules.signals.constants import PeopleRole, SignalStatus
 
 from app_modules.decision_cycles.services.readiness_score_service import (
@@ -356,16 +360,14 @@ class DealHealthEvidenceBuilder:
         on them). No id."""
         rows = []
         for identity, label, department in roster.entries():
-            stakeholder = stakeholder_for(dc, identity)
-            signal = stakeholder.current_signal if stakeholder else None
+            # The role + profile values: llm_people.stakeholder_prompt_facts,
+            # shared with the Game Plan's roster (sprint 2, G4).
+            role, profile = stakeholder_prompt_facts(stakeholder_for(dc, identity))
             rows.append({
                 'ref': label,
                 'department': department,
-                'role': people_role_for_prompt(signal.role) if signal else None,
-                'profile': {
-                    field: entry.get('value')
-                    for field, entry in ((stakeholder.profile or {}).items() if stakeholder else ())
-                },
+                'role': role,
+                'profile': profile,
             })
         return rows
 

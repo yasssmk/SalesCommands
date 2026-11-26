@@ -27,13 +27,15 @@ from ..constants import (
     LLM_PERSON_HOMONYM_LABEL_FORMAT,
     LLM_PERSON_HOMONYM_LABEL_NO_DEPT_FORMAT,
     LLM_PERSON_REF_FORMAT,
+    people_role_for_prompt,
 )
-from .participant_refs import _normalize_person_name
+from .participant_refs import _normalize_person_name, ordered_participants
 
 
 __all__ = [
-    'LLMPeopleRoster', 'cycle_roster', 'first_name_of', 'stakeholder_for',
-    'stakeholder_for_label',
+    'ActivityRoster', 'LLMPeopleRoster', 'activity_roster', 'cycle_roster',
+    'first_name_of', 'stakeholder_for', 'stakeholder_for_label',
+    'stakeholder_prompt_facts',
 ]
 
 
@@ -318,3 +320,102 @@ def stakeholder_for_label(decision_cycle, roster, label):
     if not own or _normalize_person_name(own) != _normalize_person_name(named or ''):
         return None, LABEL_AMBIGUOUS
     return stakeholder, LABEL_RESOLVED
+
+
+def stakeholder_prompt_facts(stakeholder):
+    """
+    What a prompt may say of a stakeholder beside its label: (role, profile).
+    role — its current signal's role, as prompts write it
+    (people_role_for_prompt), or None; profile — the profile VALUES only
+    (manual ones included), never their source / author / dates. {} for no
+    stakeholder. Shared by the deal health (its stakeholders block) and the
+    Game Plan (activity_roster), sprint 2 G4.
+    """
+    if stakeholder is None:
+        return None, {}
+    signal = stakeholder.current_signal
+    role = people_role_for_prompt(signal.role) if signal else None
+    profile = {field: entry.get('value') for field, entry in (stakeholder.profile or {}).items()}
+    return role, profile
+
+
+class ActivityRoster:
+    """
+    The people of an activity's Game Plan (sprint 2, G4): the prompt's roster
+    and its participants.
+
+    roster       — the LLMPeopleRoster of the prompt (the cycle's people + the
+                   participants, all registered: labels are final);
+    participants — [{'label', 'contact_id', 'stakeholder_id', 'role',
+                   'department', 'profile', 'identity'}], one per person, in
+                   the order contacts (ordered_participants) then
+                   stakeholders. 'contact_id' / 'stakeholder_id' / 'identity'
+                   are server-side (never rendered in a prompt).
+    """
+
+    def __init__(self, roster, participants):
+        self.roster = roster
+        self.participants = participants
+        self._by_identity = {p['identity']: p for p in participants}
+
+    def participant_for_label(self, label):
+        """The participant behind a label the LLM wrote back, or None — the
+        roster's own resolution (identity_of: the exact label); a label of
+        a cycle person who is not a participant resolves to None."""
+        return self._by_identity.get(self.roster.identity_of(label))
+
+
+def activity_roster(activity):
+    """
+    THE roster of an activity's Game Plan (sprint 2, G4 — TD-46 / TD-48):
+    cycle_roster(its cycle) — the labels the deal health uses — or an empty
+    roster without a cycle, plus EVERY participant of the activity:
+      * its contacts, bounded on its tenant AND account
+        (participant_refs.ordered_participants);
+      * its stakeholders (the non-converted ones of its cycle,
+        participant_rules), bounded on its tenant, its cycle and that
+        cycle's account.
+    Every participant is registered BEFORE a label is read (a label depends
+    on the whole roster — homonyms). A contact's stakeholder (its role, its
+    profile) is resolved by stakeholder_for, the deal health's own
+    resolution. First names only: the roster never carries a last name, an
+    email or a phone.
+    """
+    cycle = activity.decision_cycle if activity.decision_cycle_id else None
+    roster = cycle_roster(cycle) if cycle is not None else LLMPeopleRoster()
+
+    people = [
+        (contact, stakeholder_for(cycle, _identity(contact)) if cycle is not None else None)
+        for contact in ordered_participants(activity)
+    ]
+    if cycle is not None:
+        people += [
+            (None, stakeholder)
+            for stakeholder in activity.stakeholders.filter(
+                client_id=activity.client_id,
+                decision_cycle_id=cycle.id,
+                decision_cycle__account_id=activity.account_id,
+            ).select_related('contact', 'department', 'current_signal').order_by('created_at', 'id')
+        ]
+
+    for contact, stakeholder in people:          # ALL registered first
+        roster.add(contact if contact is not None else stakeholder)
+
+    participants, seen = [], set()
+    for contact, stakeholder in people:
+        person = contact if contact is not None else stakeholder
+        identity = _identity(person)
+        if identity in seen:                     # a converted stakeholder = its contact
+            continue
+        seen.add(identity)
+        role, profile = stakeholder_prompt_facts(stakeholder)
+        participants.append({
+            'label': roster.label(person),
+            'contact_id': str(contact.id) if contact is not None else None,
+            'stakeholder_id': str(stakeholder.id) if stakeholder is not None else None,
+            'role': role,
+            'department': _department_of(person),
+            'profile': profile,
+            'identity': identity,
+        })
+    return ActivityRoster(roster, participants)
