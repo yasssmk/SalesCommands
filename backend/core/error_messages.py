@@ -919,3 +919,12 @@ class NotificationErrorMessages:
     NOTIFICATION_NOT_FOUND = _("Notification not found or access denied")
     NOTIFICATION_NOT_ACTIONABLE = _("This notification is informational and cannot be responded to")
     INVALID_RESPONSE_STATUS = _("Invalid response status; expected ACCEPTED or DECLINED")
+
+
+class SellerProfileErrorMessages:
+    """Seller profile (product_catalog, sprint 2 Game Plan G6) error messages."""
+    REFERENCES_NOT_A_LIST = _("Customer references must be a list")
+    TOO_MANY_REFERENCES = _("At most {max} customer references")
+    INVALID_REFERENCE = _(
+        "Each customer reference is an object with text fields among: {keys}"
+    )

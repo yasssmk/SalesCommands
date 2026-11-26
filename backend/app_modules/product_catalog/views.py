@@ -11,7 +11,7 @@ Permission model:
     Reads are open to admin/manager/individual within the tenant.
 """
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import Http404
 
 from rest_framework import filters, status, viewsets
@@ -37,12 +37,13 @@ from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
 
 from app_modules.product_catalog.constants import PRODUCT_CATALOG_CACHE_TAG
-from app_modules.product_catalog.models import ProductCatalog
+from app_modules.product_catalog.models import ProductCatalog, SellerProfile
 from app_modules.product_catalog.serializers import (
     ProductCatalogCreateSerializer,
     ProductCatalogListSerializer,
     ProductCatalogSerializer,
     ProductCatalogUpdateSerializer,
+    SellerProfileSerializer,
 )
 
 
@@ -405,3 +406,78 @@ class ProductCatalogViewSet(
 
         except Exception as e:
             return self.handle_exception(e)
+
+
+# =============================================================================
+# SELLER PROFILE (sprint 2 Game Plan, G6 — PO decision Q6)
+# =============================================================================
+
+class SellerProfileViewSet(BaseAPIView, viewsets.GenericViewSet):
+    """
+    GET / PUT /product-catalog/seller-profile/ — the seller profile of the
+    requester's OWN tenant (one per tenant, models.SellerProfile).
+
+    Pattern: end_users/views/client_account_viewset.py ClientAccountViewSet —
+    the requester's own tenant through the shared tenant filter (the
+    BaseAPIView get_queryset socle, not redefined here) and
+    `http_method_names` so a method absent from the mapping is a clean 405,
+    never BaseAPIView's generic handlers (TD-330).
+
+      * GET (retrieve): any user of the tenant; an EMPTY profile (id null)
+        when the tenant has none yet.
+      * PUT (update): the tenant's ADMIN only — the module's registry
+        (permissions/registry/product_catalog_registry.py: update = admin
+        'client', manager / individual 'none'), enforced at the gate by
+        ScopedPermission: product_catalog is enabled in
+        salescommands/settings.py PERMISSIONS_CONFIG['MODULES'] (which
+        overrides permissions/config.py's defaults). A manager / an individual
+        gets the standard 403 before this method runs. Created on the first
+        PUT, updated afterwards.
+    """
+
+    queryset = SellerProfile.objects.all()
+    serializer_class = SellerProfileSerializer
+    entity_name = 'seller_profile'
+    http_method_names = ['get', 'put', 'head', 'options']
+
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated, ScopedPermission]
+    module = 'product_catalog'
+
+    def retrieve(self, request, *args, **kwargs):
+        profile = self.get_queryset().first()
+        if profile is None:
+            data = dict(SellerProfileSerializer(SellerProfile()).data)
+            data['id'] = None           # nothing stored yet
+        else:
+            data = SellerProfileSerializer(profile).data
+        return Response({'success': True, 'data': data})
+
+    def update(self, request, *args, **kwargs):
+        client_id = self.get_client_id()
+        serializer = SellerProfileSerializer(
+            instance=self.get_queryset().first(), data=request.data,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        def _write():
+            with transaction.atomic():
+                profile = self.get_queryset().select_for_update().first() or SellerProfile()
+                for field, value in serializer.validated_data.items():
+                    setattr(profile, field, value)
+                profile.save(user=request.user, client_id=client_id)
+                return profile
+
+        try:
+            profile = _write()
+        except IntegrityError:
+            # Two first PUTs at once: the one-per-tenant constraint kept the
+            # other; this one updates it.
+            profile = _write()
+
+        logger.info('seller_profile_saved', extra={
+            **ctx_from_request(request),
+            'action': 'update', 'target_type': 'seller_profile',
+            'target_id': str(profile.id), 'outcome': 'success',
+        })
+        return Response({'success': True, 'data': SellerProfileSerializer(profile).data})

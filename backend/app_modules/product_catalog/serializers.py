@@ -12,10 +12,20 @@ Four serializers mirroring the TechCatalog pattern:
 from rest_framework import serializers
 
 from core.client_scope import ClientScopeManager
-from core.error_messages import CoreErrorMessages
+from core.error_messages import (
+    CoreErrorMessages,
+    SellerProfileErrorMessages,
+    ValidationErrorMessages,
+)
 from core.exceptions import StandardizedValidationError
 
-from app_modules.product_catalog.models import ProductCatalog
+from app_modules.product_catalog.constants import (
+    SELLER_PROFILE_REFERENCE_FIELD_MAX_CHARS,
+    SELLER_PROFILE_REFERENCE_KEYS,
+    SELLER_PROFILE_REFERENCES_MAX,
+    SELLER_PROFILE_TEXT_MAX_CHARS,
+)
+from app_modules.product_catalog.models import ProductCatalog, SellerProfile
 
 
 # =============================================================================
@@ -206,3 +216,73 @@ class ProductCatalogUpdateSerializer(
             setattr(instance, attr, value)
         instance.save(user=user)
         return instance
+
+
+# =============================================================================
+# SELLER PROFILE (sprint 2 Game Plan, G6)
+# =============================================================================
+
+def _profile_text(label):
+    return serializers.CharField(
+        required=False, allow_blank=True, max_length=SELLER_PROFILE_TEXT_MAX_CHARS,
+        error_messages={'max_length': ValidationErrorMessages.MAX_LENGTH.format(
+            field=label, max_length=SELLER_PROFILE_TEXT_MAX_CHARS)},
+    )
+
+
+class SellerProfileSerializer(serializers.ModelSerializer):
+    """
+    The tenant's seller profile — read by every user of the tenant, written
+    by its admin (views.SellerProfileViewSet). No field is required; each
+    text is bounded by SELLER_PROFILE_TEXT_MAX_CHARS; customer_references is
+    a list (at most SELLER_PROFILE_REFERENCES_MAX) of objects whose keys are
+    among SELLER_PROFILE_REFERENCE_KEYS, each a text bounded by
+    SELLER_PROFILE_REFERENCE_FIELD_MAX_CHARS. The tenant is never received:
+    it is the requester's (the view saves with the token's client_id).
+    """
+
+    company_description = _profile_text('Company description')
+    value_proposition = _profile_text('Value proposition')
+    credibility_and_certifications = _profile_text('Credibility figures and certifications')
+    competitors_and_positioning = _profile_text('Competitors and positioning')
+    ideal_targets = _profile_text('Ideal targets')
+    customer_references = serializers.JSONField(required=False)
+
+    class Meta:
+        model = SellerProfile
+        fields = [
+            'id',
+            'company_description',
+            'value_proposition',
+            'customer_references',
+            'credibility_and_certifications',
+            'competitors_and_positioning',
+            'ideal_targets',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'updated_at']
+
+    def validate_customer_references(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError(SellerProfileErrorMessages.REFERENCES_NOT_A_LIST)
+        if len(value) > SELLER_PROFILE_REFERENCES_MAX:
+            raise serializers.ValidationError(
+                SellerProfileErrorMessages.TOO_MANY_REFERENCES.format(max=SELLER_PROFILE_REFERENCES_MAX))
+        invalid = SellerProfileErrorMessages.INVALID_REFERENCE.format(
+            keys=', '.join(SELLER_PROFILE_REFERENCE_KEYS))
+        cleaned = []
+        for reference in value:
+            if not isinstance(reference, dict) or not reference \
+                    or set(reference) - set(SELLER_PROFILE_REFERENCE_KEYS):
+                raise serializers.ValidationError(invalid)
+            row = {}
+            for key, text in reference.items():
+                if not isinstance(text, str):
+                    raise serializers.ValidationError(invalid)
+                if len(text) > SELLER_PROFILE_REFERENCE_FIELD_MAX_CHARS:
+                    raise serializers.ValidationError(ValidationErrorMessages.MAX_LENGTH.format(
+                        field=f'Customer reference {key}',
+                        max_length=SELLER_PROFILE_REFERENCE_FIELD_MAX_CHARS))
+                row[key] = text.strip()
+            cleaned.append(row)
+        return cleaned
