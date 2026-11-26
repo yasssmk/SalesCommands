@@ -35,6 +35,7 @@ from ..constants import (
     AIPipelineType,
     PIPELINE_TEMPERATURES,
     PREP_CALL_PROVIDER_KEYS,
+    PrepCallOutputKind,
 )
 from ..prompts.base import PromptParseError
 from ..prompts.prep_call import (
@@ -138,7 +139,7 @@ class PrepCallPipeline(BasePipeline):
     # =========================================================================
 
     def run(self, *, activity, target_contact, brief_mode, input_pack,
-            user, client_id):
+            user, client_id, output_kind=PrepCallOutputKind.PLAN):
         """
         Execute the single-stage prep-call brief pipeline.
 
@@ -149,6 +150,8 @@ class PrepCallPipeline(BasePipeline):
             input_pack:     dict — assembled input pack.
             user:           end_users.User — the rep who triggered the run.
             client_id:      UUID — tenant scope.
+            output_kind:    PrepCallOutputKind — PLAN (a conversation) or
+                            MESSAGE (an email / a LinkedIn message, G3).
 
         Returns:
             dict: {
@@ -209,6 +212,7 @@ class PrepCallPipeline(BasePipeline):
                         run=run,
                         user=user,
                         client_id=client_id,
+                        output_kind=output_kind,
                     )
 
                     self._log_sub_call(
@@ -343,7 +347,8 @@ class PrepCallPipeline(BasePipeline):
 
     @staticmethod
     def _persist_snapshot(*, parsed, activity, target_contact, brief_mode,
-                          input_hash, run, user, client_id):
+                          input_hash, run, user, client_id,
+                          output_kind=PrepCallOutputKind.PLAN):
         from ..models import PrepCallSnapshot
 
         snapshot = PrepCallSnapshot(
@@ -353,6 +358,7 @@ class PrepCallPipeline(BasePipeline):
             brief_mode=brief_mode,
             brief=parsed,
             input_hash=input_hash,
+            output_kind=output_kind,
         )
         snapshot.save(user=user, client_id=client_id)
 

@@ -22,7 +22,7 @@ import pytest
 from app_modules.ai_pipelines.constants import AIPipelineStatus, AIPipelineType
 from app_modules.ai_pipelines.models import AIPipelineRun
 
-from tests.signals.test_signal_cycle_attachment import _plain_activity
+from tests.signals.test_signal_cycle_attachment import TODAY, _cycle, _plain_activity
 
 
 pytestmark = pytest.mark.django_db
@@ -58,11 +58,29 @@ _VALID_BRIEF = {
 }
 
 
+def _preparable_activity(account, user, cycle=None):
+    """An activity a Game Plan may be generated on (sprint 2, G3): a dated
+    PLANNED MEETING (the PATCH needs a date) in a decision cycle — a new one
+    unless `cycle` is given. `_plain_activity` (COMPLETED, no cycle) is now
+    refused with an INFO (services/game_plan_access.py)."""
+    from app_modules.activities.constants import ActivityStatus
+    a = _plain_activity(account, user)
+    a.status = ActivityStatus.PLANNED
+    a.scheduled_date = TODAY
+    a.decision_cycle = cycle or _cycle(account, user)
+    # An activity linked to a cycle carries one of its steps (the PATCH
+    # refuses a cycle without step).
+    a.decision_step = a.decision_cycle.steps.order_by('order').first()
+    a.save(user=user, client_id=account.client_id)
+    return a
+
+
 @pytest.fixture
 def activity(account, user_a):
     """A dated MEETING (eligible for a brief; the PATCH needs a date) — the
-    activity of tests/activities/test_transcript_lock.py."""
-    return _plain_activity(account, user_a)
+    activity of tests/activities/test_transcript_lock.py, made preparable
+    (PLANNED, in a cycle — G3)."""
+    return _preparable_activity(account, user_a)
 
 
 @pytest.fixture

@@ -30,8 +30,7 @@ import pytest
 
 from app_modules.ai_pipelines.pipelines.prep_call import PrepCallPipeline
 
-from tests.ai_pipelines.test_prep_call_not_an_analysis import _VALID_BRIEF
-from tests.signals.test_signal_cycle_attachment import _plain_activity
+from tests.ai_pipelines.test_prep_call_not_an_analysis import _VALID_BRIEF, _preparable_activity
 
 
 pytestmark = pytest.mark.django_db
@@ -47,7 +46,7 @@ class _RunTableDown(Exception):
 
 @pytest.fixture
 def activity(account, user_a):
-    return _plain_activity(account, user_a)
+    return _preparable_activity(account, user_a)
 
 
 @pytest.fixture

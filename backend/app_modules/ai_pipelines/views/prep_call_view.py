@@ -33,21 +33,41 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.apps_shared_methods import BaseAPIView
+from core.error_messages import AIPipelineErrorMessages, CoreErrorMessages
+from core.exceptions import StandardizedPermissionDenied
 from core.jwt_helpers import CustomJWTAuthentication
 from core.throttling import AIRateThrottle
 from permissions.mixins import ScopedPermission
 
-from ..constants import AIPipelineStatus
+from ..constants import (
+    AIPipelineStatus,
+    PREP_CALL_ACTIVITY_CLOSED_CODE,
+    PREP_CALL_NO_CAMPAIGN_NO_DC_CODE,
+    PREP_CALL_TYPE_NOT_ELIGIBLE_CODE,
+)
 from ..pipelines.prep_call import PrepCallPipeline
 from ..serializers.prep_call_serializer import (
     PrepCallRunInputSerializer,
     PrepCallSnapshotSerializer,
+)
+from ..services.game_plan_access import (
+    can_run_game_plan,
+    game_plan_blocked_reason,
+    game_plan_output_kind,
 )
 from ..services.prep_call.mode_resolver import resolve_brief_mode
 from ..services.prep_call.input_pack_assembler import PrepInputPackAssembler
 
 
 logger = logging.getLogger(__name__)
+
+# The INFO message of each business rule (G3) — centralised in
+# core.error_messages, as the deal health's run guards.
+_BLOCKED_MESSAGES = {
+    PREP_CALL_TYPE_NOT_ELIGIBLE_CODE: AIPipelineErrorMessages.PREP_CALL_TYPE_NOT_ELIGIBLE,
+    PREP_CALL_ACTIVITY_CLOSED_CODE:   AIPipelineErrorMessages.PREP_CALL_ACTIVITY_CLOSED,
+    PREP_CALL_NO_CAMPAIGN_NO_DC_CODE: AIPipelineErrorMessages.PREP_CALL_NO_CAMPAIGN_NO_DC,
+}
 
 
 class PrepCallRunView(BaseAPIView):
@@ -76,6 +96,24 @@ class PrepCallRunView(BaseAPIView):
         # brief come from the activity itself (Game Plan roster, sub-step G4).
         target_contact = None
 
+        # G3 — who may generate: a real 403, before anything else.
+        if not can_run_game_plan(request, activity):
+            logger.info('prep_call_run.permission_denied',
+                        extra={'activity_id': str(activity.id)})
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
+
+        # G3 — the business rules: 200 + an INFO code, nothing run.
+        blocked = game_plan_blocked_reason(activity)
+        if blocked:
+            logger.info('prep_call_run.blocked',
+                        extra={'activity_id': str(activity.id), 'code': blocked})
+            return Response({
+                'success': True,
+                'code':    blocked,
+                'message': str(_BLOCKED_MESSAGES[blocked]),
+                'data':    {'run': None, 'snapshot': None},
+            }, status=http_status.HTTP_200_OK)
+
         # Idempotence layer 1 (Redis) intentionally omitted — matches
         # DealHealth pattern. Layer 2 (DB hash dedup in the pipeline)
         # prevents duplicate snapshots.
@@ -100,6 +138,7 @@ class PrepCallRunView(BaseAPIView):
                 input_pack=input_pack,
                 user=request.user,
                 client_id=client_id,
+                output_kind=game_plan_output_kind(activity),
             )
         except Exception:
             logger.exception(

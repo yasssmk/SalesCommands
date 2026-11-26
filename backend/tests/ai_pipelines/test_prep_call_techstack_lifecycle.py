@@ -32,8 +32,8 @@ from django.utils import timezone
 
 from app_modules.signals.constants import SignalSource, SignalStatus, UsageScope
 
-from tests.ai_pipelines.test_prep_call_not_an_analysis import _VALID_BRIEF
-from tests.signals.test_signal_cycle_attachment import _cycle, _plain_activity
+from tests.ai_pipelines.test_prep_call_not_an_analysis import _VALID_BRIEF, _preparable_activity
+from tests.signals.test_signal_cycle_attachment import _cycle
 
 
 pytestmark = pytest.mark.django_db
@@ -54,10 +54,7 @@ def cycle(account, user_a):
 
 @pytest.fixture
 def activity(account, user_a, cycle):
-    a = _plain_activity(account, user_a)
-    a.decision_cycle = cycle
-    a.save(user=user_a, client_id=account.client_id)
-    return a
+    return _preparable_activity(account, user_a, cycle)
 
 
 def _dept(name):

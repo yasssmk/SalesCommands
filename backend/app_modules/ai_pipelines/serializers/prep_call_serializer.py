@@ -8,18 +8,12 @@ PrepCallSnapshotSerializer — read-only output for GET /prep-call/by-activity/<
 
 from rest_framework import serializers
 
-from app_modules.ai_pipelines.constants import PREP_CALL_PLAN_TYPES
 from app_modules.activities.models import Activity
 from core.client_scope import ClientScopeManager
 from core.error_messages import AIPipelineErrorMessages
 from core.exceptions import StandardizedValidationError
 
 from ..models import PrepCallSnapshot
-
-
-# The plan types (constants, G2) — unchanged behaviour; the message types
-# and the INFO answer arrive with G3.
-_ELIGIBLE_TYPES = PREP_CALL_PLAN_TYPES
 
 
 class PrepCallRunInputSerializer(
@@ -65,10 +59,9 @@ class PrepCallRunInputSerializer(
                 AIPipelineErrorMessages.ACTIVITY_NOT_FOUND
             )
 
-        if activity.activity_type not in _ELIGIBLE_TYPES:
-            raise StandardizedValidationError(
-                'Activity type must be CALL, MEETING, or DEMO.'
-            )
+        # The activity type, its status and its context are BUSINESS RULES
+        # (G3): answered by the view with 200 + an INFO code
+        # (services/game_plan_access.py game_plan_blocked_reason), never a 400.
 
         attrs['activity'] = activity
         attrs['client_id'] = client_id

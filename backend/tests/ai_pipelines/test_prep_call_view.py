@@ -6,7 +6,7 @@ Tests for PrepCallRunView and PrepCallByActivityView:
 
 Coverage:
   - Happy path: pipeline succeeds → 201 with brief.
-  - Invalid activity type → 400.
+  - A type without Game Plan → 200 + INFO (G3; was a 400).
   - Cross-tenant activity → 400.
   - Unauthenticated → 401.
   - Idempotency: 2 identical POSTs → 1 LLM call.
@@ -58,32 +58,38 @@ def _by_activity_url(activity_id):
 # =============================================================================
 
 @pytest.fixture
-def call_activity(db, account, user_a):
+def call_activity(db, account, user_a, cycle):
     from app_modules.activities.models import Activity
     from app_modules.activities.constants import ActivityType, ActivityStatus
 
+    # In a cycle: an activity with neither a cycle nor a campaign gets an
+    # INFO since G3 (services/game_plan_access.py).
     a = Activity(
         title='Prep call test',
         activity_type=ActivityType.CALL,
         status=ActivityStatus.PLANNED,
         account=account,
         owner=user_a,
+        decision_cycle=cycle,
     )
     a.save(user=user_a, client_id=account.client_id)
     return a
 
 
 @pytest.fixture
-def email_activity(db, account, user_a):
+def task_activity(db, account, user_a, cycle):
+    """A TASK — no Game Plan for it (an EMAIL is accepted in message mode
+    since G3)."""
     from app_modules.activities.models import Activity
     from app_modules.activities.constants import ActivityType, ActivityStatus
 
     a = Activity(
-        title='Email followup',
-        activity_type=ActivityType.EMAIL,
+        title='Send the contract',
+        activity_type=ActivityType.TASK,
         status=ActivityStatus.PLANNED,
         account=account,
         owner=user_a,
+        decision_cycle=cycle,
     )
     a.save(user=user_a, client_id=account.client_id)
     return a
@@ -146,15 +152,17 @@ class TestHappyPath:
 @pytest.mark.django_db
 class TestInvalidInput:
 
-    def test_invalid_activity_type_returns_400(
-        self, authed_api_a, email_activity,
+    def test_a_type_without_game_plan_is_an_info_not_a_400(
+        self, authed_api_a, task_activity,
     ):
+        # G3: a business rule — 200 + an INFO code, never a 400.
         resp = authed_api_a.post(
             RUN_URL,
-            {'activity_id': str(email_activity.id)},
+            {'activity_id': str(task_activity.id)},
             format='json',
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert resp.data['code'] == 'PREP_CALL_TYPE_NOT_ELIGIBLE'
 
     def test_nonexistent_activity_returns_400(self, authed_api_a):
         resp = authed_api_a.post(

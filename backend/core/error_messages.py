@@ -732,6 +732,21 @@ class AIPipelineErrorMessages:
         "no new analysis is run."
     )
 
+    # Game Plan (prep call) business rules (sprint 2 Game Plan, G3) —
+    # answered 200 with an INFO code, nothing run.
+    PREP_CALL_TYPE_NOT_ELIGIBLE = _(
+        "No Game Plan for this type of activity: it is prepared for a call, "
+        "a meeting, a demo, an email or a LinkedIn message."
+    )
+    PREP_CALL_ACTIVITY_CLOSED = _(
+        "This activity is over: its Game Plan stays readable, no new one is "
+        "generated."
+    )
+    PREP_CALL_NO_CAMPAIGN_NO_DC = _(
+        "No Game Plan for an activity outside a campaign and a decision "
+        "cycle: link it to one first."
+    )
+
     # -----------------------------------------------------------------
     # Provider errors
     # -----------------------------------------------------------------

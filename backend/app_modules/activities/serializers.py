@@ -473,7 +473,32 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 # DETAIL SERIALIZER
 # ============================================================================
 
-class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class GamePlanAccessFieldMixin(serializers.Serializer):
+    """
+    Sprint 2 Game Plan, G3 — may the requester GENERATE a Game Plan on this
+    activity (``can_run_game_plan``: an admin, a manager, the cycle's owner
+    or the activity's owner), and which business rule stops it
+    (``game_plan_blocked_reason``: an INFO code, or None)? THE predicates of
+    ai_pipelines/services/game_plan_access.py, computed at read time from the
+    request (context) and the instance — the decision_cycles
+    DealHealthAccessFieldMixin pattern. Read only; the run endpoint enforces
+    the same predicates.
+    """
+
+    can_run_game_plan = serializers.SerializerMethodField(read_only=True)
+    game_plan_blocked_reason = serializers.SerializerMethodField(read_only=True)
+
+    def get_can_run_game_plan(self, obj):
+        from app_modules.ai_pipelines.services.game_plan_access import can_run_game_plan
+        return can_run_game_plan(self.context.get('request'), obj)
+
+    def get_game_plan_blocked_reason(self, obj):
+        from app_modules.ai_pipelines.services.game_plan_access import game_plan_blocked_reason
+        return game_plan_blocked_reason(obj)
+
+
+class ActivitySerializer(GamePlanAccessFieldMixin, ClientScopeManager.SerializerMixin,
+                         serializers.ModelSerializer):
     """
     Complete serializer for activity detail view.
     """
@@ -577,6 +602,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
             # Computed
             'is_overdue', 'is_scheduled',
+            # Game Plan (sprint 2, G3): may the requester generate, and why not.
+            'can_run_game_plan', 'game_plan_blocked_reason',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
 
