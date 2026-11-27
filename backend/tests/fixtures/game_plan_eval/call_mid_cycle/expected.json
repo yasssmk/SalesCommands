@@ -1,0 +1,21 @@
+{
+  "case": "call_mid_cycle",
+  "output_kind": "PLAN",
+  "participants": [
+    "Nadia",
+    "P2 Marc (Finance)",
+    "P1 Marc (IT)",
+    "Lea"
+  ],
+  "dh_missing_any_of": [
+    "security",
+    "review"
+  ],
+  "campaign_diagnostic": false,
+  "planted_last_names": [
+    "Okafor",
+    "Dupont",
+    "Lefort",
+    "Varga"
+  ]
+}

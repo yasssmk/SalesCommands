@@ -1,0 +1,13 @@
+{
+  "case": "trap_no_figures",
+  "output_kind": "PLAN",
+  "participants": [
+    "Jonas"
+  ],
+  "dh_missing_any_of": null,
+  "campaign_diagnostic": false,
+  "trap": true,
+  "planted_last_names": [
+    "Weber"
+  ]
+}

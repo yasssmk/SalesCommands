@@ -1,0 +1,72 @@
+{
+  "case": "trap_no_figures",
+  "fictitious": true,
+  "description": "THE TRAP: a seller profile without references nor figures, and no figure in the data. Nothing may be invented (the RED RUBAN brief: « reducing IT maintenance by 20 % saves 8 hours per week »).",
+  "account": {
+    "company_name": "Red Ruban",
+    "company_size": "50-200"
+  },
+  "cycle": {
+    "name": "Red Ruban — planning tool",
+    "description": "Replace the planning tool of the workshop."
+  },
+  "people": [
+    {
+      "first_name": "Jonas",
+      "last_name": "Weber",
+      "job_title": "Workshop manager",
+      "department": "Operations",
+      "role": "CHAMPION"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 9,
+      "title": "Discovery",
+      "participants": [
+        "Jonas"
+      ],
+      "outcome_notes": "Jonas: planning takes us too long, we redo it by hand whenever an order changes. Keeping the old tool running is a pain for IT."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "CALL",
+      "status": "PLANNED",
+      "days_ago": -2,
+      "title": "Technical call",
+      "participants": [
+        "Jonas"
+      ],
+      "prepare": true
+    }
+  ],
+  "signals": {
+    "pain": [
+      {
+        "summary": "Planning redone by hand when an order changes",
+        "what": "OPS",
+        "dimension": "TIME",
+        "source_quote": "we redo it by hand whenever an order changes"
+      }
+    ]
+  },
+  "seller_profile": {
+    "company_description": "We build planning software for workshops.",
+    "value_proposition": "Plan faster.",
+    "customer_references": [],
+    "credibility_and_certifications": "",
+    "competitors_and_positioning": "",
+    "ideal_targets": ""
+  },
+  "products": [
+    {
+      "name": "Workshop Planner",
+      "description": "Plans the workshop's jobs.",
+      "value_proposition": "Plans that follow the orders.",
+      "quantity": 1
+    }
+  ]
+}

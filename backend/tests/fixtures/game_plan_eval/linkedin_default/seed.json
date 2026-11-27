@@ -1,0 +1,54 @@
+{
+  "case": "linkedin_default",
+  "fictitious": true,
+  "description": "A LINKEDIN message to a contact with no known language (no stakeholder): one message, in English (DEFAULT), no subject.",
+  "account": {
+    "company_name": "Tarvik Supply",
+    "company_size": "50-200"
+  },
+  "cycle": {
+    "name": "Tarvik Supply — dock planning",
+    "description": "Plan the docks of the central warehouse."
+  },
+  "people": [
+    {
+      "first_name": "Ivan",
+      "last_name": "Petrov",
+      "job_title": "Warehouse manager",
+      "department": "Operations",
+      "stakeholder": false
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "CALL",
+      "status": "COMPLETED",
+      "days_ago": 4,
+      "title": "First call",
+      "participants": [
+        "Ivan"
+      ],
+      "outcome_notes": "Ivan: dock slots are booked by phone and trucks wait at the gate."
+    },
+    {
+      "stage": "QUALIFICATION",
+      "type": "LINKEDIN",
+      "status": "PLANNED",
+      "days_ago": -1,
+      "title": "LinkedIn follow-up",
+      "participants": [
+        "Ivan"
+      ],
+      "prepare": true
+    }
+  ],
+  "seller_profile": {
+    "company_description": "We build planning software for logistics teams.",
+    "value_proposition": "Plans that update themselves when reality changes.",
+    "customer_references": [],
+    "credibility_and_certifications": "",
+    "competitors_and_positioning": "",
+    "ideal_targets": ""
+  }
+}

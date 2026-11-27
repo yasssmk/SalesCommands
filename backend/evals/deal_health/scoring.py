@@ -79,6 +79,18 @@ _JSON_TYPES = {
 
 
 def _validate(value, schema, path, errors):
+    # anyOf (a nullable object — the Game Plan's campaign_diagnostic, G13):
+    # valid when one branch is; the deal-health schema has none.
+    if 'anyOf' in schema:
+        branches = []
+        for branch in schema['anyOf']:
+            branch_errors = []
+            _validate(value, branch, path, branch_errors)
+            if not branch_errors:
+                return
+            branches.append(branch_errors)
+        errors.extend(min(branches, key=len))
+        return
     expected = schema.get('type')
     if expected:
         types = expected if isinstance(expected, list) else [expected]
@@ -108,12 +120,13 @@ def _validate(value, schema, path, errors):
             _validate(item, schema['items'], f'{path}[{index}]', errors)
 
 
-def schema_errors(parsed):
-    """The answer against the strict v2 schema; [] when valid."""
+def schema_errors(parsed, schema=None):
+    """The answer against a strict schema (default: the deal health v2's;
+    the Game Plan eval passes its own, G13); [] when valid."""
     if not isinstance(parsed, dict):
         return ['$: no JSON object']
     errors = []
-    _validate(parsed, DEAL_HEALTH_RESPONSE_SCHEMA['schema'], '', errors)
+    _validate(parsed, (schema or DEAL_HEALTH_RESPONSE_SCHEMA)['schema'], '', errors)
     return errors
 
 

@@ -1,0 +1,14 @@
+{
+  "case": "linkedin_default",
+  "output_kind": "MESSAGE",
+  "channel": "LINKEDIN",
+  "languages": {
+    "Ivan": "en"
+  },
+  "language_sources": {
+    "Ivan": "DEFAULT"
+  },
+  "planted_last_names": [
+    "Petrov"
+  ]
+}

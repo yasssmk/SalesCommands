@@ -1,0 +1,228 @@
+{
+  "case": "call_mid_cycle",
+  "fictitious": true,
+  "description": "A CALL in the middle of the cycle (SOLUTION_VALIDATION), a deal health v2, two people named Marc (P1 / P2) and a stakeholder without contact.",
+  "account": {
+    "company_name": "Halden Logistics",
+    "company_size": "200-500"
+  },
+  "cycle": {
+    "name": "Halden Logistics — warehouse planning",
+    "description": "Replace the spreadsheet planning of the three warehouses."
+  },
+  "people": [
+    {
+      "first_name": "Nadia",
+      "last_name": "Okafor",
+      "job_title": "Head of operations",
+      "department": "Operations",
+      "role": "CHAMPION"
+    },
+    {
+      "first_name": "Marc",
+      "last_name": "Dupont",
+      "job_title": "Finance director",
+      "department": "Finance",
+      "role": "ECONOMIC_BUYER"
+    },
+    {
+      "first_name": "Marc",
+      "last_name": "Lefort",
+      "job_title": "IT manager",
+      "department": "IT",
+      "role": "INFLUENCER"
+    }
+  ],
+  "stakeholders_without_contact": [
+    {
+      "full_name": "Lea Varga",
+      "on_prepared_activity": true
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 30,
+      "title": "Discovery",
+      "participants": [
+        "Nadia"
+      ],
+      "outcome_notes": "Nadia: we rebuild the warehouse plan by hand every time a truck is late. The finance director wants a clear business case."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 12,
+      "title": "Technical workshop",
+      "participants": [
+        "Nadia",
+        "Marc Lefort"
+      ],
+      "outcome_notes": "Marc from IT: any new tool must pass our security review before a pilot. Nadia: the team is tired of the spreadsheet."
+    },
+    {
+      "stage": "SOLUTION_VALIDATION",
+      "type": "CALL",
+      "status": "PLANNED",
+      "days_ago": -3,
+      "title": "Solution review call",
+      "participants": [
+        "Nadia",
+        "Marc Dupont",
+        "Marc Lefort"
+      ],
+      "prepare": true,
+      "description": "Walk through the pilot scope with finance and IT."
+    }
+  ],
+  "signals": {
+    "pain": [
+      {
+        "summary": "Warehouse plan rebuilt by hand when a truck is late",
+        "what": "OPS",
+        "dimension": "TIME",
+        "source_quote": "we rebuild the warehouse plan by hand every time a truck is late"
+      }
+    ]
+  },
+  "deal_health": {
+    "global_reading": "Nadia carries the need; the security review is not started.",
+    "dimensions": [
+      {
+        "key": "problem_recognized",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "felt_pain",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "impact_understood",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "desired_gain",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "urgency",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "willingness_to_act",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "solution_trust",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      }
+    ],
+    "summary": "Nadia carries the need; the security review is not started.",
+    "strategic_conclusion": "Get the security review planned with IT before the pilot.",
+    "objectives": {
+      "deal": "Unknown",
+      "next_activity": [
+        "Clear the open point with the decision-maker"
+      ]
+    },
+    "missing_info": [
+      {
+        "level": "BUSINESS",
+        "item": "The IT security review",
+        "why_it_matters": "No pilot without it",
+        "suggested_question": "Who runs the security review and when?"
+      }
+    ],
+    "top_arguments": [
+      {
+        "target": "Nadia",
+        "arguments": [
+          {
+            "need": "a reliable plan",
+            "value": "less manual rework",
+            "benefit": "calmer weeks",
+            "advantage": "automatic updates",
+            "feature": "planning engine"
+          }
+        ]
+      }
+    ],
+    "stakeholders": [],
+    "bant": {
+      "budget": {
+        "status": "unknown",
+        "reason": "Unknown"
+      },
+      "authority": {
+        "status": "validated",
+        "reason": "Named in the meetings."
+      },
+      "need": {
+        "status": "validated",
+        "reason": "Stated in the meetings."
+      },
+      "timeline": {
+        "status": "unknown",
+        "reason": "Unknown"
+      }
+    },
+    "needs_and_urgency": {
+      "status": "suggested",
+      "assessment": "The need is stated, the urgency is not.",
+      "cost_of_inaction": "Unknown"
+    },
+    "credibility": {
+      "status": "unclear",
+      "assessment": "Unknown"
+    },
+    "fit_and_value": {
+      "status": "suggested",
+      "assessment": "The planning engine fits the need.",
+      "requirements": [],
+      "competitive_position": "Unknown"
+    },
+    "estimated_step": {
+      "step": "TECHNICAL_FIT",
+      "reason": "From the evidence."
+    }
+  },
+  "seller_profile": {
+    "company_description": "We build planning software for logistics teams.",
+    "value_proposition": "Plans that update themselves when reality changes.",
+    "customer_references": [
+      {
+        "name": "Norvik Freight",
+        "context": "Regional carrier",
+        "result": "Moved its warehouse planning off spreadsheets"
+      }
+    ],
+    "credibility_and_certifications": "",
+    "competitors_and_positioning": "",
+    "ideal_targets": "Logistics companies with several warehouses."
+  },
+  "products": [
+    {
+      "name": "Warehouse Planner",
+      "description": "Plans warehouse shifts and docks.",
+      "value_proposition": "Plans that follow the trucks.",
+      "quantity": 1
+    }
+  ]
+}

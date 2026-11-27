@@ -1,0 +1,230 @@
+{
+  "case": "demo_end_of_cycle",
+  "fictitious": true,
+  "description": "A DEMO at the end of the cycle (CLOSING), a deal health v2 whose open point is the budget sign-off. Sarah's last name, Price, is also a common word (false rejections).",
+  "account": {
+    "company_name": "Corvane Foods",
+    "company_size": "500-1000"
+  },
+  "cycle": {
+    "name": "Corvane Foods — delivery planning",
+    "description": "Plan the daily deliveries of the frozen range."
+  },
+  "people": [
+    {
+      "first_name": "Tom",
+      "last_name": "Becker",
+      "job_title": "Delivery manager",
+      "department": "Operations",
+      "role": "CHAMPION"
+    },
+    {
+      "first_name": "Sarah",
+      "last_name": "Price",
+      "job_title": "Chief financial officer",
+      "department": "Finance",
+      "role": "ECONOMIC_BUYER"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 60,
+      "title": "Discovery",
+      "participants": [
+        "Tom"
+      ],
+      "outcome_notes": "Tom: late deliveries cost us customer complaints every week."
+    },
+    {
+      "stage": "TECHNICAL_FIT",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 45,
+      "title": "Technical fit",
+      "participants": [
+        "Tom"
+      ],
+      "outcome_notes": "The integration with the order system is validated."
+    },
+    {
+      "stage": "SOLUTION_VALIDATION",
+      "type": "DEMO",
+      "status": "COMPLETED",
+      "days_ago": 30,
+      "title": "First demo",
+      "participants": [
+        "Tom"
+      ],
+      "outcome_notes": "Tom's team liked the route view."
+    },
+    {
+      "stage": "BUSINESS_CASE",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 15,
+      "title": "Business case",
+      "participants": [
+        "Tom",
+        "Sarah"
+      ],
+      "outcome_notes": "Sarah: the board must sign the budget off; I want to see the solution on our own data first."
+    },
+    {
+      "stage": "CLOSING",
+      "type": "DEMO",
+      "status": "PLANNED",
+      "days_ago": -4,
+      "title": "Final demo on their data",
+      "participants": [
+        "Tom",
+        "Sarah"
+      ],
+      "prepare": true,
+      "description": "Show the plan on Corvane's own delivery data."
+    }
+  ],
+  "signals": {
+    "objective": [
+      {
+        "summary": "Fewer late deliveries",
+        "what": "OPS",
+        "dimension": "QUALITY",
+        "source_quote": "late deliveries cost us customer complaints every week"
+      }
+    ]
+  },
+  "deal_health": {
+    "global_reading": "The solution is validated; the board's budget sign-off is open.",
+    "dimensions": [
+      {
+        "key": "problem_recognized",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "felt_pain",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "impact_understood",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "desired_gain",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "urgency",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "willingness_to_act",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      },
+      {
+        "key": "solution_trust",
+        "status": "suggested",
+        "evidence": "From the meetings.",
+        "missing": ""
+      }
+    ],
+    "summary": "The solution is validated; the board's budget sign-off is open.",
+    "strategic_conclusion": "Secure the date of the board's budget review with Sarah.",
+    "objectives": {
+      "deal": "Unknown",
+      "next_activity": [
+        "Clear the open point with the decision-maker"
+      ]
+    },
+    "missing_info": [
+      {
+        "level": "BUSINESS",
+        "item": "The board's budget approval",
+        "why_it_matters": "Nothing is signed without it",
+        "suggested_question": "When does the board review the budget?"
+      }
+    ],
+    "top_arguments": [
+      {
+        "target": "Sarah",
+        "arguments": [
+          {
+            "need": "a reliable plan",
+            "value": "less manual rework",
+            "benefit": "calmer weeks",
+            "advantage": "automatic updates",
+            "feature": "planning engine"
+          }
+        ]
+      }
+    ],
+    "stakeholders": [],
+    "bant": {
+      "budget": {
+        "status": "unknown",
+        "reason": "Unknown"
+      },
+      "authority": {
+        "status": "validated",
+        "reason": "Named in the meetings."
+      },
+      "need": {
+        "status": "validated",
+        "reason": "Stated in the meetings."
+      },
+      "timeline": {
+        "status": "unknown",
+        "reason": "Unknown"
+      }
+    },
+    "needs_and_urgency": {
+      "status": "suggested",
+      "assessment": "The need is stated, the urgency is not.",
+      "cost_of_inaction": "Unknown"
+    },
+    "credibility": {
+      "status": "unclear",
+      "assessment": "Unknown"
+    },
+    "fit_and_value": {
+      "status": "suggested",
+      "assessment": "The planning engine fits the need.",
+      "requirements": [],
+      "competitive_position": "Unknown"
+    },
+    "estimated_step": {
+      "step": "TECHNICAL_FIT",
+      "reason": "From the evidence."
+    }
+  },
+  "seller_profile": {
+    "company_description": "We build planning software for logistics teams.",
+    "value_proposition": "Plans that update themselves when reality changes.",
+    "customer_references": [],
+    "credibility_and_certifications": "",
+    "competitors_and_positioning": "",
+    "ideal_targets": ""
+  },
+  "products": [
+    {
+      "name": "Route Planner",
+      "description": "Plans the daily delivery routes.",
+      "value_proposition": "Routes that follow the orders.",
+      "quantity": 1
+    }
+  ]
+}

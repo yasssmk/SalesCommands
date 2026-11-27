@@ -1,0 +1,58 @@
+{
+  "case": "campaign_no_dc",
+  "fictitious": true,
+  "description": "A CALL of a cold-calling sequence, no decision cycle: two unanswered calls, this is step 3 of 4 — the light campaign diagnostic is expected.",
+  "account": {
+    "company_name": "Brightmoor Retail",
+    "company_size": "50-200"
+  },
+  "campaign": {
+    "name": "Outbound — retail operations",
+    "activity_objective": "Book a discovery meeting with the operations lead.",
+    "contact": "Elena",
+    "contact_objective": "Learn which planning tool they use today.",
+    "sequence": [
+      {
+        "type": "CALL",
+        "status": "COMPLETED",
+        "outcome": "NO_ANSWER",
+        "days_ago": 6,
+        "notes": "Voicemail left."
+      },
+      {
+        "type": "CALL",
+        "status": "COMPLETED",
+        "outcome": "NO_ANSWER",
+        "days_ago": 3,
+        "notes": "Rang twice, no answer."
+      },
+      {
+        "type": "CALL",
+        "status": "PLANNED",
+        "days_ago": -1,
+        "prepare": true
+      },
+      {
+        "type": "EMAIL",
+        "status": "PLANNED",
+        "days_ago": -5
+      }
+    ]
+  },
+  "people": [
+    {
+      "first_name": "Elena",
+      "last_name": "Rossi",
+      "job_title": "Operations lead",
+      "department": "Operations"
+    }
+  ],
+  "seller_profile": {
+    "company_description": "We build planning software for retail and logistics teams.",
+    "value_proposition": "Plans that update themselves when reality changes.",
+    "customer_references": [],
+    "credibility_and_certifications": "",
+    "competitors_and_positioning": "",
+    "ideal_targets": "Retailers with their own stores."
+  }
+}

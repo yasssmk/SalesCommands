@@ -179,6 +179,17 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':   30,
         'max_tokens':  4096,
     },
+    # Sprint 2 Game Plan, G13 -- model X of the Game Plan evaluation: the
+    # deal health's model with its options, DECLARED for the evaluation only
+    # (evals/game_plan) -- never wired: PREP_CALL_LLM_PROVIDER picks openai
+    # (openai_prep_call, model Y) or claude.
+    'openai_prep_call_terra': {
+        'provider':          'openai',
+        'model':             'gpt-5.6-terra',
+        'reasoning_effort':  'medium',
+        'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
+        'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
+    },
     'claude_prep_call': {
         'provider':          'claude',
         'model':             getattr(settings, 'AI_PIPELINES_PREP_CALL_CLAUDE_MODEL', 'claude-opus-5-5'),

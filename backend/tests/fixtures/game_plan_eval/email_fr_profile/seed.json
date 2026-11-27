@@ -1,0 +1,61 @@
+{
+  "case": "email_fr_profile",
+  "fictitious": true,
+  "description": "An EMAIL to a prospect whose stakeholder profile says « fr » (manual): one message, in French, with a subject.",
+  "account": {
+    "company_name": "Maison Lemaire",
+    "company_size": "200-500"
+  },
+  "cycle": {
+    "name": "Maison Lemaire — planification des tournées",
+    "description": "Planifier les tournées de livraison des boutiques."
+  },
+  "people": [
+    {
+      "first_name": "Claire",
+      "last_name": "Morel",
+      "job_title": "Directrice financière",
+      "department": "Finance",
+      "role": "ECONOMIC_BUYER",
+      "language": "fr"
+    }
+  ],
+  "activities": [
+    {
+      "stage": "QUALIFICATION",
+      "type": "MEETING",
+      "status": "COMPLETED",
+      "days_ago": 7,
+      "title": "Découverte",
+      "participants": [
+        "Claire"
+      ],
+      "outcome_notes": "Claire : les tournées sont refaites à la main quand une boutique change sa commande. Elle veut voir un cas client avant d'aller plus loin."
+    },
+    {
+      "stage": "QUALIFICATION",
+      "type": "EMAIL",
+      "status": "PLANNED",
+      "days_ago": -1,
+      "title": "Suivi de la découverte",
+      "participants": [
+        "Claire"
+      ],
+      "prepare": true
+    }
+  ],
+  "seller_profile": {
+    "company_description": "We build planning software for logistics teams.",
+    "value_proposition": "Plans that update themselves when reality changes.",
+    "customer_references": [
+      {
+        "name": "Norvik Freight",
+        "context": "Regional carrier",
+        "result": "Moved its delivery planning off spreadsheets"
+      }
+    ],
+    "credibility_and_certifications": "",
+    "competitors_and_positioning": "",
+    "ideal_targets": ""
+  }
+}

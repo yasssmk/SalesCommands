@@ -1,0 +1,12 @@
+{
+  "case": "campaign_no_dc",
+  "output_kind": "PLAN",
+  "participants": [
+    "Elena"
+  ],
+  "dh_missing_any_of": null,
+  "campaign_diagnostic": true,
+  "planted_last_names": [
+    "Rossi"
+  ]
+}

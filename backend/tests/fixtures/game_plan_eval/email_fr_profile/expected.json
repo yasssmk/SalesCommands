@@ -1,0 +1,14 @@
+{
+  "case": "email_fr_profile",
+  "output_kind": "MESSAGE",
+  "channel": "EMAIL",
+  "languages": {
+    "Claire": "fr"
+  },
+  "language_sources": {
+    "Claire": "PROFILE"
+  },
+  "planted_last_names": [
+    "Morel"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "case": "demo_end_of_cycle",
+  "output_kind": "PLAN",
+  "participants": [
+    "Tom",
+    "Sarah"
+  ],
+  "dh_missing_any_of": [
+    "budget",
+    "board",
+    "approval",
+    "sign"
+  ],
+  "campaign_diagnostic": false,
+  "planted_last_names": [
+    "Becker",
+    "Price"
+  ]
+}
