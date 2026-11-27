@@ -72,6 +72,22 @@ def test_on_openai_the_prep_call_uses_its_own_entry(authed_api_a, activity, patc
     assert run.model_name == entry['model']
 
 
+def test_the_game_plan_runs_on_gpt_5_6_terra_with_the_deal_health_options():
+    """G13b (PO decision after the Game Plan evaluation): the production
+    entry takes the deal health's model and options; gpt-4o-mini is the
+    challenger, declared for the evaluation only — never wired."""
+    from app_modules.ai_pipelines.constants import PREP_CALL_PROVIDER_KEYS
+    production = ai_config.PROVIDER_CONFIG['openai_prep_call']
+    deal_health = ai_config.PROVIDER_CONFIG['openai_deal_health']
+    assert production['model'] == 'gpt-5.6-terra'
+    for option in ('provider', 'reasoning_effort', 'timeout_s', 'max_tokens'):
+        assert production[option] == deal_health[option], option
+    assert ai_config.PROVIDER_CONFIG['openai_prep_call_challenger']['model'] == 'gpt-4o-mini'
+    assert 'openai_prep_call_challenger' not in PREP_CALL_PROVIDER_KEYS.values()
+    assert 'openai_prep_call_terra' not in ai_config.PROVIDER_CONFIG       # no duplicate entry
+    assert ai_config.PREP_CALL_LLM_PROVIDER == 'openai'
+
+
 def test_on_claude_the_prep_call_runs_on_its_claude_entry(
     authed_api_a, activity, anthropic_api, monkeypatch, patch_active_provider,
 ):

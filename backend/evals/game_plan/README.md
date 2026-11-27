@@ -32,8 +32,10 @@ Il tourne sur **6 cas fictifs** dont la vérité est écrite à l'avance. La mat
 
 | Modèle | Entrée `PROVIDER_CONFIG` | Rôle |
 |---|---|---|
-| **X** — gpt-5.6-terra (le modèle du deal health, effort `medium`, 150 s) | `openai_prep_call_terra` | **déclarée pour l'éval seulement**, jamais branchée |
-| **Y** — gpt-4o-mini (30 s, 4 096 tokens) | `openai_prep_call` | l'entrée actuelle du Game Plan |
+| **X** — gpt-5.6-terra (le modèle du deal health, effort `medium`, 150 s) | `openai_prep_call` | l'entrée de **production** du Game Plan (décision PO après la première matrice, G13b) |
+| **Y** — gpt-4o-mini (30 s, 4 096 tokens) | `openai_prep_call_challenger` | le challenger, **déclaré pour l'éval seulement**, jamais branché |
+
+Le premier run (G13, 36 appels) a été fait avec les anciennes clés : `openai_prep_call_terra` (gpt-5.6-terra) et `openai_prep_call` (gpt-4o-mini, l'entrée de production d'alors). Le rapport affiche le modèle **enregistré** dans chaque appel : un `--rescore` de ce run reste juste.
 
 - **Claude** : dès que `ANTHROPIC_API_KEY` est dans `backend/salescommands/.env`, ajoutez `claude_prep_call` à `--models` (aucun code). Sans clé, l'outil le refuse avant tout appel.
 - Le modèle d'une cellule vient de son entrée `PROVIDER_CONFIG` : modèle, effort, `max_tokens`, délai.
@@ -61,12 +63,12 @@ python evals/game_plan/run_game_plan_eval.py --only trap_no_figures
 ```
 
 ```bash
-python evals/game_plan/run_game_plan_eval.py --models openai_prep_call
+python evals/game_plan/run_game_plan_eval.py --models openai_prep_call_challenger
 ```
 
 ```bash
 # Ajouter Claude (ANTHROPIC_API_KEY requise)
-python evals/game_plan/run_game_plan_eval.py --models openai_prep_call_terra openai_prep_call claude_prep_call
+python evals/game_plan/run_game_plan_eval.py --models openai_prep_call openai_prep_call_challenger claude_prep_call
 ```
 
 ```bash

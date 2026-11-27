@@ -26,10 +26,10 @@ Real path, end to end:
     server-side validation — with the model / max_tokens / timeout / effort
     of the PROVIDER_CONFIG entry of the cell;
   * the matrix: models only, the pack v2 as it is (no format axis):
-    openai_prep_call_terra (gpt-5.6-terra, the deal health's model, model X —
-    declared for the evaluation only) and openai_prep_call (gpt-4o-mini, the
-    current entry, model Y). Any entry whose provider supports the schema can
-    be added — Claude with `--models ... claude_prep_call` once
+    openai_prep_call (the production entry — gpt-5.6-terra since G13b, model
+    X) and openai_prep_call_challenger (gpt-4o-mini, declared for the
+    evaluation only, model Y). Any entry whose provider supports the schema
+    can be added — Claude with `--models ... claude_prep_call` once
     ANTHROPIC_API_KEY is set.
 
 Truth and checks: tests/fixtures/game_plan_eval/<case>/expected.json +
@@ -47,7 +47,7 @@ Usage (from backend/, with OPENAI_API_KEY in backend/salescommands/.env):
   python evals/game_plan/run_game_plan_eval.py                 # 6 cases x 2 models = 12 calls
   python evals/game_plan/run_game_plan_eval.py --n 3           # 3 calls per cell
   python evals/game_plan/run_game_plan_eval.py --only trap_no_figures
-  python evals/game_plan/run_game_plan_eval.py --models openai_prep_call_terra claude_prep_call
+  python evals/game_plan/run_game_plan_eval.py --models openai_prep_call claude_prep_call
   python evals/game_plan/run_game_plan_eval.py --dry-run       # no API call
   python evals/game_plan/run_game_plan_eval.py --rescore evals/game_plan/out/<stamp>
 """
@@ -111,9 +111,9 @@ from evals.game_plan import scoring  # noqa: E402
 
 FIXTURES = BACKEND / 'tests' / 'fixtures' / 'game_plan_eval'
 CASES = tuple(sorted(d.name for d in FIXTURES.iterdir() if (d / 'seed.json').exists()))
-# Model X (the deal health's model, declared for the evaluation) and model Y
-# (the current entry of the prep call).
-DEFAULT_MODELS = ('openai_prep_call_terra', 'openai_prep_call')
+# Model X (the production entry, gpt-5.6-terra since G13b) and model Y (the
+# challenger, gpt-4o-mini, declared for the evaluation only).
+DEFAULT_MODELS = ('openai_prep_call', 'openai_prep_call_challenger')
 SEP = '__'
 # TD-321: gunicorn runs the web workers with --timeout 12 (backend/Procfile):
 # a synchronous run longer than that is killed in production today.
@@ -395,19 +395,19 @@ def _dry_messages(expected):
 def _dry_answer(case, model_key):
     """A valid answer built from the case's truth, through the real parse /
     validate path. Two cells are deliberately faulty, to show red checks:
-      * trap_no_figures · openai_prep_call: an INVENTED figure (the RED
+      * trap_no_figures · openai_prep_call_challenger: an INVENTED figure (the RED
         RUBAN fault, with numbers no date can hold: « 37 % … 430 hours »);
-      * demo_end_of_cycle · openai_prep_call_terra: « the price » written as
+      * demo_end_of_cycle · openai_prep_call: « the price » written as
         a common word — the server refuses it (Sarah's last name is Price): a
         PARSE_ERROR counted as a FALSE rejection."""
     expected = _expected(case)
     if expected['output_kind'] == 'MESSAGE':
         return _dry_messages(expected)
     answer = _dry_plan(case, expected)
-    if case == 'trap_no_figures' and model_key == 'openai_prep_call':
+    if case == 'trap_no_figures' and model_key == 'openai_prep_call_challenger':
         answer['context'] = ('Reducing IT maintenance by 37 % saves 430 hours a year: '
                              'lead with it.')
-    if case == 'demo_end_of_cycle' and model_key == 'openai_prep_call_terra':
+    if case == 'demo_end_of_cycle' and model_key == 'openai_prep_call':
         answer['client_expectations'] = ['See the price of the solution on their own data.']
     return answer
 
@@ -523,6 +523,9 @@ def write_report(out_dir, records, prices=None, suffix=''):
     prices = {**PRICES_PER_MTOK, **(prices or {})}
     cells = sorted({r['provider_key'] for r in records})
     cases = sorted({r['case'] for r in records})
+    # The model each cell RAN on, as recorded — not today's config (a
+    # --rescore of a run made before an entry changed stays right, G13b).
+    model_of = {r['provider_key']: r.get('model') for r in records}
 
     def rate(recs, key):
         values = [scoring.checks(r['metrics'])[key] for r in recs]
@@ -551,7 +554,7 @@ def write_report(out_dir, records, prices=None, suffix=''):
         costs = [_cost(r, prices) for r in recs]
         errors = [r['metrics'].get('error_type') for r in recs if r['metrics'].get('error_type')]
         lines.append(
-            f'| {ai_config.PROVIDER_CONFIG[model_key]["model"]} (`{model_key}`) | '
+            f'| {model_of[model_key]} (`{model_key}`) | '
             + ' | '.join(rate(recs, key) for key, _label in scoring.CHECK_LABELS)
             + ' | ' + ' / '.join(str(causes.count(c)) for c in scoring.PARSE_CAUSES)
             + f' ({sum(1 for c in causes if c)}/{len(recs)})'
@@ -584,7 +587,7 @@ def write_report(out_dir, records, prices=None, suffix=''):
                   + (' · campaign_diagnostic attendu' if expected.get('campaign_diagnostic') else '')
                   + (' · **piège : rien ne doit être inventé**' if expected.get('trap') else ''),
                   '',
-                  '| Contrôle | ' + ' | '.join(ai_config.PROVIDER_CONFIG[m]['model'] for m in cells) + ' |',
+                  '| Contrôle | ' + ' | '.join(model_of[m] for m in cells) + ' |',
                   '|---|' + '---|' * len(cells)]
         for key, label in scoring.CHECK_LABELS:
             lines.append(f'| {label} | ' + ' | '.join(
@@ -596,7 +599,7 @@ def write_report(out_dir, records, prices=None, suffix=''):
                 continue
             record = recs[0]
             parsed, metrics = record.get('parsed') or {}, record['metrics']
-            lines += [f'### {ai_config.PROVIDER_CONFIG[model_key]["model"]} — appel 1', '']
+            lines += [f'### {model_of[model_key]} — appel 1', '']
             if not parsed:
                 lines += [f'Erreur ({metrics.get("parse_error_cause") or metrics.get("error_type")}) : '
                           f'`{_short(record.get("error"), 300)}`', '']
@@ -687,8 +690,8 @@ def main(argv=None):
     )
     parser.set_defaults(n=1)
     parser.add_argument('--models', nargs='+', default=list(DEFAULT_MODELS),
-                        help='PROVIDER_CONFIG entries (default: model X openai_prep_call_terra, '
-                             'model Y openai_prep_call)')
+                        help='PROVIDER_CONFIG entries (default: model X openai_prep_call, '
+                             'model Y openai_prep_call_challenger)')
     parser.add_argument('--price', nargs='*', metavar='MODEL=IN,OUT',
                         help='USD per million tokens of a model, for the cost estimate')
     args = parser.parse_args(argv)

@@ -33,7 +33,7 @@ def test_the_dry_run_plays_the_matrix_writes_the_report_and_leaves_nothing(dry_r
 
     assert len(tool.CASES) == 6
     assert len(records) == 12                                  # 6 cases x 2 models x n=1
-    assert {r['provider_key'] for r in records} == {'openai_prep_call_terra', 'openai_prep_call'}
+    assert {r['provider_key'] for r in records} == {'openai_prep_call', 'openai_prep_call_challenger'}
     assert after == before                                     # nothing left in the database
     report = (out_dir / 'report.md').read_text(encoding='utf-8')
     for case in tool.CASES:
@@ -69,11 +69,37 @@ def test_the_checks_run_on_every_call_and_catch_the_planted_faults(dry_run):
     for record in records:
         metrics, checks = record['metrics'], scoring.checks(record['metrics'])
         cell = (record['case'], record['provider_key'])
-        if cell == ('trap_no_figures', 'openai_prep_call'):
+        if cell == ('trap_no_figures', 'openai_prep_call_challenger'):
             assert checks['numbers'] is False and metrics['invented_numbers'] == ['37', '430']
-        elif cell == ('demo_end_of_cycle', 'openai_prep_call_terra'):
+        elif cell == ('demo_end_of_cycle', 'openai_prep_call'):
             assert metrics['answered'] is False
             assert metrics['parse_error_cause'] == 'last_name_false_reject'
         else:
             assert all(v is not False for v in checks.values()), (record['variant'], metrics)
             assert record['error'] is None, record['error']
+
+
+def test_a_rescore_of_a_run_made_with_the_former_entries_stays_right(dry_run, tmp_path):
+    """G13b: the first real run was recorded under openai_prep_call_terra /
+    openai_prep_call (then gpt-4o-mini). The report labels each cell with the
+    model RECORDED in its calls — not today's config, which has no
+    openai_prep_call_terra and maps openai_prep_call to gpt-5.6-terra."""
+    import json
+    out_dir, _records, _b, _a = dry_run
+    former = tmp_path / 'former'
+    renamed = {'openai_prep_call': ('openai_prep_call_terra', 'gpt-5.6-terra'),
+               'openai_prep_call_challenger': ('openai_prep_call', 'gpt-4o-mini')}
+    for path in out_dir.glob('*/call_*.json'):
+        record = json.loads(path.read_text(encoding='utf-8'))
+        key, model = renamed[record['provider_key']]
+        record.update(provider_key=key, model=model,
+                      variant=tool.variant_name(record['case'], key))
+        target = former / record['variant'] / path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(record), encoding='utf-8')
+
+    tool.main(['--rescore', str(former)])
+
+    report = (former / 'report_rescored.md').read_text(encoding='utf-8')
+    assert '| gpt-5.6-terra (`openai_prep_call_terra`) |' in report
+    assert '| gpt-4o-mini (`openai_prep_call`) |' in report

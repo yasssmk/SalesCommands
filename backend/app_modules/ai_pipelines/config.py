@@ -167,28 +167,28 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
     },
     # Sprint 2 Game Plan, G2 -- the prep call's OWN entries (the deal health's
-    # pattern; PREP_CALL_LLM_PROVIDER below picks one). openai_prep_call keeps
-    # exactly what the prep call ran on until now (the active 'openai' entry),
-    # so this sub-step changes nothing in production; claude_prep_call mirrors
-    # claude_deal_health's model (configurable:
-    # AI_PIPELINES_PREP_CALL_CLAUDE_MODEL). Models, timeouts and budgets are
-    # settled by the Game Plan evaluation (G13).
+    # pattern; PREP_CALL_LLM_PROVIDER below picks one); claude_prep_call
+    # mirrors claude_deal_health's model (configurable:
+    # AI_PIPELINES_PREP_CALL_CLAUDE_MODEL).
+    # G13b (PO decision, after the Game Plan evaluation — evals/game_plan):
+    # the Game Plan runs on gpt-5.6-terra, the deal health's model with its
+    # options (reasoning effort, timeout, token budget).
     'openai_prep_call': {
-        'provider':    'openai',
-        'model':       'gpt-4o-mini',
-        'timeout_s':   30,
-        'max_tokens':  4096,
-    },
-    # Sprint 2 Game Plan, G13 -- model X of the Game Plan evaluation: the
-    # deal health's model with its options, DECLARED for the evaluation only
-    # (evals/game_plan) -- never wired: PREP_CALL_LLM_PROVIDER picks openai
-    # (openai_prep_call, model Y) or claude.
-    'openai_prep_call_terra': {
         'provider':          'openai',
         'model':             'gpt-5.6-terra',
         'reasoning_effort':  'medium',
         'timeout_s':         DEAL_HEALTH_TIMEOUT_S,
         'max_tokens':        DEAL_HEALTH_MAX_TOKENS,
+    },
+    # G13b -- the CHALLENGER of the Game Plan's model, DECLARED for the
+    # evaluation only (evals/game_plan, the openai_deal_health_challenger
+    # pattern) -- never wired: PREP_CALL_LLM_PROVIDER picks openai or claude.
+    # gpt-4o-mini with the options the Game Plan ran on until G13b.
+    'openai_prep_call_challenger': {
+        'provider':    'openai',
+        'model':       'gpt-4o-mini',
+        'timeout_s':   30,
+        'max_tokens':  4096,
     },
     'claude_prep_call': {
         'provider':          'claude',
