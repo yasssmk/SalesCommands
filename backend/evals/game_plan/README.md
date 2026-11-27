@@ -125,9 +125,10 @@ Avant tout appel, le script vérifie que l'activité préparée est éligible (G
 |---|---|
 | schéma valide | la réponse contre `PREP_CALL_OUTLINE_SCHEMA` ou `PREP_CALL_MESSAGE_SCHEMA` (le validateur du deal health, avec `anyOf`) |
 | prénoms seulement | aucun nom de famille planté, **ni dans le prompt ni dans la sortie** |
-| aucun chiffre inventé | chaque nombre de la sortie doit exister dans le **pack et la requête**. Le prompt système n'en fait pas partie : un « 70% » recopié de la consigne est inventé. Séparateurs ignorés (48 000 = 48,000 = 48000) ; un chiffre collé à des lettres (P1, v2) est un libellé. **Autorisés** (G13b / G13c) : une durée de réunion proposée (« a 30-minute working session », « ask for 20 minutes », avec n'importe quel tiret ou espace typographique ; en français « un échange de 30 minutes », « un point rapide de 20 min », « 30 minutes d'échange », « m'accorder 10 minutes », jamais « … par semaine ») ; une date, y compris « 2 December 2026 », « December 2, 2026 », « 2026-12-02 », ou une année après une préposition (« in 2026 ») ; une heure (« 10:00 », « 2 pm », « 14h30 »). **Toujours inventés** s'ils sont absents du pack : un pourcentage, un montant, un gain ou un volume, en chiffres (« 20 % », « saves 8 hours per week », « 2000 hours ») ou en lettres (« over one month of labor », « saves two days ») |
+| aucun chiffre inventé | chaque nombre de la sortie doit exister dans le **pack et la requête**. Le prompt système n'en fait pas partie : un « 70% » recopié de la consigne est inventé. Séparateurs ignorés (48 000 = 48,000 = 48000) ; un chiffre collé à des lettres (P1, v2) est un libellé. **Autorisés** (G13b / G13c / G13d) : une durée seule, qui est de la logistique (« 15 minutes », « spend 20 minutes »), sauf suivie d'un rythme (« per week », « par semaine ») ou entourée d'un gain (« of labor », « saved », « saves 8 hours ») ; une durée de réunion proposée (« a 30-minute working session », « ask for 20 minutes », avec n'importe quel tiret ou espace typographique ; en français « un échange de 30 minutes », « un point rapide de 20 min », « 30 minutes d'échange », « m'accorder 10 minutes », jamais « … par semaine ») ; une date, y compris « 2 December 2026 », « December 2, 2026 », « 2026-12-02 », ou une année après une préposition (« in 2026 ») ; une heure (« 10:00 », « 2 pm », « 14h30 »). **Toujours inventés** s'ils sont absents du pack : un pourcentage, un montant, un gain ou un volume, en chiffres (« 20 % », « saves 8 hours per week », « 2000 hours ») ou en lettres (« over one month of labor », « saves two days ») |
 | aucun nom inventé | l'heuristique du deal health, sur la prose seulement : les refs, labels et langues ne sont pas lus, ni le vocabulaire du Game Plan (plans B / C, canaux). Ne comptent pas comme inventés les jours de la semaine, les mois et leurs abréviations, ni un nom composé sur un nom de l'entrée (« Corvane-data »). Les mots trouvés sont listés pour relecture |
 | aucun ethos / pathos / logos | `constants.PREP_CALL_RHETORIC_LABELS`, mots entiers |
+| **aucun créneau inventé** (G13d) | signalés dans la prose : une date précise (« 1er décembre », « December 3 », « 12/03 ») **absente du pack**, une heure (« 10:00 », « 3pm », « à 10 h »), une **action prétendue**, faite ou en cours (« I've sent », « I booked », « I'm sending you an invite », « j'ai réservé », « je vous envoie une invitation », « l'invitation est envoyée »). Ne comptent pas : une fenêtre ouverte (« mardi ou mercredi ? », « early next week »), le repère `[date and time]` / `[date et heure]` (`constants.PREP_CALL_SLOT_PLACEHOLDERS`), une date du pack (une date de board), une intention (« I'll send an invitation once you confirm »), une consigne au commercial (« Send the invitation today ») |
 | chaque participant a un angle | chaque label attendu a une entrée `participants` avec un angle non vide (plans) |
 | plans A / B / C ≤ 3 | de 1 à 3 plans, étiquetés A, B, C dans l'ordre |
 | ouverture en 5 parties | objectif, temps, agenda du client, notre agenda, résultat attendu, tous non vides |
@@ -148,7 +149,8 @@ Ces contrôles sont prouvés sur des sorties écrites à la main, justes et faut
   - le récapitulatif par modèle : contrôles réussis, PARSE_ERROR par cause, durées, appels de plus de 12 s, tokens, coût, erreurs ;
   - la durée, les tokens et le coût de chaque appel ;
   - pour chaque cas, les contrôles des cellules côte à côte et les sorties résumées ;
-  - **chaque constat** (chiffre ou nom) avec la section de la sortie où il se trouve (`closing.next_step`, `messages[0].body`…) et un extrait d'environ 80 caractères autour (G13c), pour le juger dans son contexte.
+  - les constats de **tous les appels** de chaque cellule, pas seulement de l'appel 1 (G13d) ;
+  - **chaque constat** (chiffre, nom ou créneau) avec la section de la sortie où il se trouve (`closing.next_step`, `messages[0].body`…) et un extrait d'environ 80 caractères autour (G13c), pour le juger dans son contexte.
 - `<cas>__<entrée>/call_NN.json` contient, pour chaque appel :
   - le prompt envoyé et **la réponse brute** ;
   - le JSON lu ;
@@ -160,8 +162,9 @@ Ces contrôles sont prouvés sur des sorties écrites à la main, justes et faut
 
 `--dry-run` n'appelle aucune API : chaque appel reçoit une réponse fixe construite à partir de la vérité du cas.
 
-Deux cellules sont **volontairement fautives**, pour montrer les contrôles rouges :
+Trois cellules sont **volontairement fautives**, pour montrer les contrôles rouges :
 - `trap_no_figures` · gpt-4o-mini : un chiffre inventé, « 37 % … 430 hours ». Ces nombres ne peuvent pas venir d'une date du pack ;
+- `linkedin_default` · gpt-4o-mini : un créneau inventé et une action prétendue, « I've sent you an invitation for Tuesday at 10:00 » ;
 - `demo_end_of_cycle` · gpt-5.6-terra : « the price » écrit comme mot courant. Le serveur le refuse, et c'est compté comme un **faux rejet**.
 
 Le dry run prouve que la chaîne tourne ; il ne dit rien des modèles. Il est joué par `tests/ai_pipelines/test_game_plan_eval_dry_run.py`.

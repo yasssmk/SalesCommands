@@ -77,7 +77,7 @@ LANGUAGE: Write each message — its subject and its body — in the language
     the language of the evidence. Set its "language" to that tag."""
 
 
-def _system_prompt(intro, language_rule):
+def _system_prompt(intro, language_rule, rules=_RULES):
     return f"""\
 {intro}
 
@@ -91,11 +91,11 @@ ADAPT TO THE DEAL:
 
 HARD RULES — NEVER VIOLATE:
 
-{_numbered(_RULES)}
+{_numbered(rules)}
 
-{len(_RULES) + 1}. {language_rule}
+{len(rules) + 1}. {language_rule}
 
-{len(_RULES) + 2}. JSON ONLY: Return ONLY the JSON object of the response schema. No
+{len(rules) + 2}. JSON ONLY: Return ONLY the JSON object of the response schema. No
     markdown, no preamble, no commentary.
 """
 

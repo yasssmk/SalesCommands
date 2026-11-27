@@ -212,7 +212,7 @@ def test_a_valid_plan_is_persisted_in_schema_v2_with_its_deal_health_trace(
     run = _post(authed_api_a, meeting, patch_active_provider, answer)
 
     assert run.status == AIPipelineStatus.SUCCESS, run.error_message
-    assert run.prompt_versions == {'system': 'v2', 'context': 'v2', 'outline': 'v2'}
+    assert run.prompt_versions == {'system': 'v2.1', 'context': 'v2', 'outline': 'v2'}
     snapshot = _snapshot_of(meeting)
     assert snapshot.schema_version == 2
     assert snapshot.brief_mode is None

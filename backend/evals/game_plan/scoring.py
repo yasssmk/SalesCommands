@@ -150,10 +150,146 @@ def _blank(match):
     return ' ' * len(match.group(0))
 
 
+# G13d — a duration ON ITS OWN is logistics (« 15 minutes », « spend 20
+# minutes »), unless a rate follows it (« per week », « par semaine ») or a
+# gain surrounds it (« of labor », « saved », « saves 8 hours »).
+_BARE_DURATION = re.compile(
+    rf'\b(?:\d+|{_NUMBER_WORDS}){_SEP}?(?:minutes?|mins?|hours?|hrs?|heures?)\b', re.IGNORECASE,
+)
+_RATE_OR_GAIN_AFTER = re.compile(
+    r'^\s+(?:(?:per|a|an|each|every|par|chaque|toutes?\s+les)\s+'
+    r'(?:day|week|month|year|quarter|jour|semaine|mois|an|ann[ée]e|trimestre)'
+    r'|of\s+(?:labou?r|work|effort|time|savings?)|saved|gagn[ée]es?|[ée]conomis[ée]es?'
+    r'|de\s+(?:travail|gagn[ée]es?))\b',
+    re.IGNORECASE,
+)
+_GAIN_BEFORE = re.compile(
+    r'\b(?:save|saves|saved|saving|lose|loses|lost|losing|gain|gains|gained|cut|cuts|reduce'
+    r'|reduces|free|frees|freed|recover|reclaim|over|more\s+than|gagner|gagnez|gagne'
+    r'|[ée]conomiser|[ée]conomisez|perdre|perdez|perd|plus\s+de)'
+    r'\s+(?:up\s+to\s+|about\s+|around\s+|nearly\s+|jusqu[\'’]à\s+|environ\s+)?$',
+    re.IGNORECASE,
+)
+
+
+def _blank_bare_durations(text):
+    chars = list(text)
+    for match in _BARE_DURATION.finditer(text):
+        if _RATE_OR_GAIN_AFTER.match(text[match.end():]) or _GAIN_BEFORE.search(text[:match.start()]):
+            continue
+        chars[match.start():match.end()] = ' ' * (match.end() - match.start())
+    return ''.join(chars)
+
+
 def _without_meeting_durations(text):
     for pattern in (_MEETING_DURATION, _ASKED_DURATION, _FR_MEETING_DURATION):
         text = pattern.sub(_blank, text)
-    return text
+    return _blank_bare_durations(text)
+
+
+# =============================================================================
+# NO INVENTED SLOT — a precise meeting date / time, a claimed action (G13d)
+# =============================================================================
+# PO decision: never a precise meeting date or time that is not in the pack,
+# never a claimed action (an invitation sent, a meeting booked). An open
+# window (« Tuesday or Wednesday? », « early next week ») and the placeholder
+# (constants.PREP_CALL_SLOT_PLACEHOLDERS) are fine; so is a date of the pack.
+
+_MONTH_NUMBERS = {
+    **{m: i for i, m in enumerate(('january', 'february', 'march', 'april', 'may', 'june', 'july',
+                                   'august', 'september', 'october', 'november', 'december'), 1)},
+    **{m: i for i, m in enumerate(('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep',
+                                   'oct', 'nov', 'dec'), 1)},
+    'sept': 9,
+    **{m: i for i, m in enumerate(('janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet',
+                                   'aout', 'septembre', 'octobre', 'novembre', 'decembre'), 1)},
+}
+_SLOT_DATE = re.compile('|'.join((
+    r'\b(?P<iso_y>(?:19|20)\d{2})-(?P<iso_m>\d{1,2})-(?P<iso_d>\d{1,2})\b',
+    r'\b(?P<num_a>\d{1,2})/(?P<num_b>\d{1,2})(?:/\d{2,4})?\b',
+    rf'\b(?P<dm_d>\d{{1,2}})(?:st|nd|rd|th|er)?(?:\s+of)?\s+(?P<dm_m>{_generic._MONTHS})',
+    rf'\b(?P<md_m>{_generic._MONTHS})\s+(?P<md_d>\d{{1,2}})(?:st|nd|rd|th)?\b',
+)), re.IGNORECASE)
+_SLOT_TIME = re.compile(
+    r'\b(?P<h1>\d{1,2}):(?P<m1>\d{2})(?:\s*(?P<p1>am|pm|a\.m\.|p\.m\.))?'
+    r'|\b(?P<h2>\d{1,2})\s*(?P<p2>am|pm|a\.m\.|p\.m\.)'
+    r'|\b(?P<h3>\d{1,2})h(?P<m3>\d{2})?\b(?!\s*(?:par|per))'
+    r'|\bà\s+(?P<h4>\d{1,2})\s?h(?:\s?(?P<m4>\d{2}))?\b'
+    r"|\b(?P<h5>\d{1,2})\s*o['’]clock\b",
+    re.IGNORECASE,
+)
+# A claimed action — done (« I've sent », « I booked », « j'ai envoyé »,
+# « l'invitation est envoyée ») or being done on a meeting (« I'm sending you
+# an invite », « je vous envoie une invitation »). An intention (« I'll send an
+# invitation once you confirm ») and an instruction to the rep (« Send the
+# invitation today ») are not claims.
+_MEETING_OBJECT = (
+    r'(?:invit\w*|meeting|call|calendar|slot|appointment|session|demo\w*'
+    r'|r[ée]union|rendez-vous|rdv|cr[ée]neau|[ée]change|appel|visio\w*|lien|agenda)'
+)
+_CLAIMED_ACTION = re.compile('|'.join((
+    r"\bI(?:['’]ve|\s+have)?\s+(?:just\s+|already\s+)?(?:sent|booked|scheduled|set\s+up|blocked"
+    r"|reserved|put\s+(?:in|on)|added|shared)\b",
+    rf"\bI(?:['’]m|\s+am)\s+(?:now\s+)?(?:sending|booking|scheduling|setting\s+up|blocking)\b.{{0,40}}?\b{_MEETING_OBJECT}",
+    rf"\b{_MEETING_OBJECT}\s+(?:has\s+been|is|was|have\s+been)\s+(?:sent|booked|scheduled|set\s+up|blocked|added)\b",
+    r"\bj['’]ai\s+(?:d[ée]j[àa]\s+)?(?:envoy|transmis|r[ée]serv|bloqu|pos|cal|planifi|ajout|partag)\w*",
+    rf"\bje\s+(?:vous\s+|t['’]\s*)?(?:envoie|adresse|transmets|r[ée]serve|bloque|pose|cale|planifie)\b.{{0,40}}?\b{_MEETING_OBJECT}",
+    rf"\b{_MEETING_OBJECT}\s+(?:est|a\s+[ée]t[ée])\s+(?:envoy|r[ée]serv|bloqu|pos|cal|planifi)[ée]e?s?\b",
+    r"\bje\s+viens\s+d[e'’]\s*(?:vous\s+)?(?:envoyer|r[ée]server|bloquer|poser|caler|planifier)\b",
+)), re.IGNORECASE)
+
+
+def _month_number(name):
+    return _MONTH_NUMBERS.get(_fold(name).rstrip('.'))
+
+
+def _day_months(match):
+    """The (day, month) pairs a date match may mean (d/m and m/d for a numeric one)."""
+    g = match.groupdict()
+    if g['iso_y']:
+        return {(int(g['iso_d']), int(g['iso_m']))}
+    if g['num_a']:
+        a, b = int(g['num_a']), int(g['num_b'])
+        return {(a, b), (b, a)}
+    if g['dm_d']:
+        return {(int(g['dm_d']), _month_number(g['dm_m']))}
+    return {(int(g['md_d']), _month_number(g['md_m']))}
+
+
+def _clock(match):
+    """'HH:MM' of a time match (12-hour forms converted)."""
+    g = match.groupdict()
+    hour = next(int(g[k]) for k in ('h1', 'h2', 'h3', 'h4', 'h5') if g[k])
+    minute = next((int(g[k]) for k in ('m1', 'm3', 'm4') if g[k]), 0)
+    period = _fold(g['p1'] or g['p2'] or '').replace('.', '')
+    if period == 'pm' and hour < 12:
+        hour += 12
+    if period == 'am' and hour == 12:
+        hour = 0
+    return f'{hour:02d}:{minute:02d}'
+
+
+def invented_slots(parsed, input_text):
+    """[{'kind': 'slot', 'value', 'path', 'excerpt'}] — a precise date or time
+    absent from the input, or a claimed action, in the prose."""
+    known_dates = set()
+    for match in _SLOT_DATE.finditer(input_text or ''):
+        known_dates |= _day_months(match)
+    known_times = {_clock(m) for m in _SLOT_TIME.finditer(input_text or '')}
+    found = []
+    for path, text in texts(prose(parsed)):
+        for match in _SLOT_DATE.finditer(text):
+            if not (_day_months(match) & known_dates):
+                found.append({'kind': 'slot', 'value': f'date: {match.group(0).strip()}', 'path': path,
+                              'excerpt': _excerpt(text, match.start(), match.end())})
+        for match in _SLOT_TIME.finditer(text):
+            if _clock(match) not in known_times:
+                found.append({'kind': 'slot', 'value': f'heure: {match.group(0).strip()}', 'path': path,
+                              'excerpt': _excerpt(text, match.start(), match.end())})
+        for match in _CLAIMED_ACTION.finditer(text):
+            found.append({'kind': 'slot', 'value': f'action: {" ".join(match.group(0).split())}',
+                          'path': path, 'excerpt': _excerpt(text, match.start(), match.end())})
+    return found
 
 
 def spelled_gains(parsed, input_text):
@@ -359,8 +495,9 @@ def score_call(*, parsed, prompt, user_prompt, expected, meta=None, error_type=N
         'invented_names': invented_names(parsed, user_prompt),
         'rhetoric_labels': rhetoric_labels(parsed),
     })
+    metrics['invented_slots'] = invented_slots(parsed, user_prompt)          # G13d
     metrics['findings_context'] = locate_findings(
-        parsed, metrics['invented_numbers'], metrics['invented_names'])
+        parsed, metrics['invented_numbers'], metrics['invented_names']) + metrics['invented_slots']
     if kind == 'PLAN':
         metrics.update({
             'participants_without_angle': participants_covered(parsed, expected['participants']),
@@ -384,6 +521,7 @@ CHECK_LABELS = (
     ('numbers', 'aucun chiffre inventé'),
     ('names', 'aucun nom inventé'),
     ('rhetoric', 'aucun ethos/pathos/logos'),
+    ('slots', 'aucun créneau inventé'),
     ('participants', 'chaque participant a un angle'),
     ('plans', 'plans A/B/C ≤ 3'),
     ('opening', 'ouverture en 5 parties'),
@@ -405,6 +543,8 @@ def checks(metrics):
         'numbers': not metrics['invented_numbers'],
         'names': not metrics['invented_names'],
         'rhetoric': not metrics['rhetoric_labels'],
+        # Older records (before G13d) have no slot metric: recomputed by --rescore.
+        'slots': not metrics.get('invented_slots'),
         'participants': not metrics['participants_without_angle'] if plan else None,
         'plans': metrics['plans_ok'] if plan else None,
         'opening': not metrics['opening_missing'] if plan else None,

@@ -3,7 +3,8 @@
 Prompt package of the Game Plan (prep call).
 
 v2 (sprint 2 Game Plan, G10) — what the pipeline sends:
-  * system_v2  — the account executive's posture, the hard rules, the
+  * system_v2_1 (G13d; v2 kept in system_v2) — the account executive's
+    posture, the hard rules (v2.1: no invented slot, no claimed action), the
     deal health v2's output-language rule;
   * context_v2 — the input pack v2, section by section;
   * outline_v2 — the task, the field rules, the strict schema
@@ -19,7 +20,8 @@ Versioning: each layer carries its own version constant, captured in
 AIPipelineRun.prompt_versions.
 """
 
-from .system_v2 import MESSAGE_SYSTEM_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+# G13d: the system v2.1 (v2 kept, unchanged, in system_v2.py).
+from .system_v2_1 import MESSAGE_SYSTEM_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
 from .message_v2 import (
     MESSAGE_PROMPT_VERSION,
     PREP_CALL_MESSAGE_SCHEMA,

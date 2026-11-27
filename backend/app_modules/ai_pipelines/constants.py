@@ -600,6 +600,21 @@ PREP_CALL_RHETORIC_LABELS = DEAL_HEALTH_RHETORIC_LABELS
 PREP_CALL_MESSAGE_RECIPIENTS_MAX = 5
 PREP_CALL_DEFAULT_MESSAGE_LANGUAGE = 'en'
 
+# G13d (PO decision): the AI never invents a precise meeting date or time,
+# nor claims to have done an action (an invitation sent, a meeting booked).
+# It proposes an open window, or leaves this placeholder for the rep to fill
+# — written in the language of the text (a message's language; the plan is
+# in English). A language absent from the map takes the English one.
+PREP_CALL_SLOT_PLACEHOLDERS = {
+    'en': '[date and time]',
+    'fr': '[date et heure]',
+    'es': '[fecha y hora]',
+    'de': '[Datum und Uhrzeit]',
+    'it': '[data e ora]',
+    'pt': '[data e hora]',
+    'nl': '[datum en tijd]',
+}
+
 
 class PrepCallLanguageSource(models.TextChoices):
     """Where the language of a recipient's message comes from (G11)."""

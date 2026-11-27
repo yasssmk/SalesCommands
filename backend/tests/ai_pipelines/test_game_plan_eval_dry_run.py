@@ -41,6 +41,9 @@ def test_the_dry_run_plays_the_matrix_writes_the_report_and_leaves_nothing(dry_r
     assert '## Récapitulatif' in report and 'PARSE_ERROR' in report and '> 12 s' in report
     # G13c: a finding is shown with its section and its excerpt.
     assert '- `37` (chiffre) — section `context` — « Reducing IT maintenance by 37 %' in report
+    # G13d: the findings of EVERY call, and the slot findings with their excerpt.
+    assert report.count('**Constats des 1 appel(s)** :') == 12
+    assert "(créneau) — section `messages[0].body` — « Hello Ivan, I've sent you an invitation" in report
     assert (out_dir / 'summary.csv').exists() and (out_dir / 'summary.md').exists()
 
 
@@ -73,6 +76,9 @@ def test_the_checks_run_on_every_call_and_catch_the_planted_faults(dry_run):
         cell = (record['case'], record['provider_key'])
         if cell == ('trap_no_figures', 'openai_prep_call_challenger'):
             assert checks['numbers'] is False and metrics['invented_numbers'] == ['37', '430']
+        elif cell == ('linkedin_default', 'openai_prep_call_challenger'):
+            assert checks['slots'] is False
+            assert [f['value'] for f in metrics['invented_slots']] == ['heure: 10:00', "action: I've sent"]
         elif cell == ('demo_end_of_cycle', 'openai_prep_call'):
             assert metrics['answered'] is False
             assert metrics['parse_error_cause'] == 'last_name_false_reject'
@@ -105,3 +111,20 @@ def test_a_rescore_of_a_run_made_with_the_former_entries_stays_right(dry_run, tm
     report = (former / 'report_rescored.md').read_text(encoding='utf-8')
     assert '| gpt-5.6-terra (`openai_prep_call_terra`) |' in report
     assert '| gpt-4o-mini (`openai_prep_call`) |' in report
+
+
+def test_the_report_lists_the_findings_of_every_call_not_only_the_first():
+    """G13d: with --n 3, a finding of call 2 or 3 is listed too."""
+    def record(call, value):
+        return {'call': call, 'metrics': {
+            'invented_numbers': [value] if value else [],
+            'findings_context': [{'kind': 'number', 'value': value, 'path': 'context',
+                                  'excerpt': f'… {value} % …'}] if value else []}}
+
+    lines = tool._all_calls_findings([record(1, None), record(2, '15'), record(3, '40')])
+
+    text = '\n'.join(lines)
+    assert '**Constats des 3 appel(s)** :' in text
+    assert '- appel 1 : aucun' in text
+    assert '- `15` (chiffre) — section `context` — « … 15 % … »' in text
+    assert '- `40` (chiffre)' in text and '- appel 3 :' in text

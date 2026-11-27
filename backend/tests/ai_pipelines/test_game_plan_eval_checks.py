@@ -286,3 +286,73 @@ def test_a_message_finding_names_its_message():
                             'body': 'Bonjour Claire, nos clients gagnent 15 % de temps.'}]}
     [finding] = scoring.locate_findings(parsed, ['15'], [])
     assert finding['path'] == 'messages[0].body' and '15 %' in finding['excerpt']
+
+
+# =============================================================================
+# G13d — a duration on its own is logistics; no invented slot, no claimed action
+# =============================================================================
+
+_SLOT_PACK = ('Corvane Foods. The board reviews the budget on 2026-12-09. '
+              'The meeting is planned on 2026-11-28.')
+
+
+@pytest.mark.parametrize('text', [
+    '15 minutes suffiront.',
+    'Spend 20 minutes on the review.',
+    '45 minutes, then questions.',
+    'Rendez-vous à 10 h.',                        # a time (the slot check judges it)
+])
+def test_a_duration_on_its_own_is_logistics(text):
+    assert scoring.invented_numbers({'context': text}, _SLOT_PACK) == [], text
+
+
+@pytest.mark.parametrize('text, found', [
+    ('Take 30 minutes per week.', ['30']),        # a rate
+    ('It saves 8 hours.', ['8']),                 # a gain before
+    ('Over 8 hours of labor saved.', ['8']),      # a gain after
+    ('Gagnez 10 heures par semaine.', ['10']),
+])
+def test_a_duration_with_a_rate_or_a_gain_stays_invented(text, found):
+    assert scoring.invented_numbers({'context': text}, _SLOT_PACK) == found, text
+
+
+@pytest.mark.parametrize('text, values', [
+    ('Je vous envoie une invitation de 30 minutes pour mardi 1er décembre à 10 h.',
+     ['date: 1er décembre', 'heure: à 10 h', 'action: Je vous envoie une invitation']),   # the real case
+    ("I've sent you an invitation for Tuesday at 10:00.", ['heure: 10:00', "action: I've sent"]),
+    ('I booked a slot.', ['action: I booked']),
+    ("I'm sending you a calendar invite.", ["action: I'm sending you a calendar"]),
+    ("L'invitation est envoyée.", ['action: invitation est envoyée']),
+    ("J'ai réservé un créneau.", ["action: J'ai réservé"]),
+    ('Shall we meet at 3pm?', ['heure: 3pm']),
+    ('Shall we meet on 3 December?', ['date: 3 December']),
+    ('How about 12/03?', ['date: 12/03']),
+])
+def test_an_invented_slot_or_a_claimed_action_is_caught(text, values):
+    assert [f['value'] for f in scoring.invented_slots({'messages': [{'body': text}]}, _SLOT_PACK)] == values
+
+
+@pytest.mark.parametrize('text', [
+    'Mardi ou mercredi ?',
+    'Would Tuesday or Wednesday work?',
+    'En début de semaine prochaine ?',
+    'Early next week: [date and time]?',
+    'Je vous propose [date et heure].',
+    'Before the board on 9 December.',            # a date of the pack
+    'Send the invitation today.',                 # an instruction to the rep
+    "I'll send an invitation once you confirm.",  # an intention, not a claim
+    'Je vous envoie ce message pour faire le point.',
+    'A 30-minute call next week.',
+])
+def test_an_open_window_a_placeholder_or_a_pack_date_is_fine(text):
+    assert scoring.invented_slots({'messages': [{'body': text}]}, _SLOT_PACK) == [], text
+
+
+def test_the_slot_check_is_in_the_recap_and_carries_its_excerpt():
+    parsed = _messages(subject='Prochaine étape')
+    parsed['messages'][0]['body'] = 'Je vous envoie une invitation pour mardi 1er décembre à 10 h.'
+    metrics = _score(parsed, _EXPECTED_EMAIL, prompt='Claire')
+    assert scoring.checks(metrics)['slots'] is False
+    slot = next(f for f in metrics['findings_context'] if f['kind'] == 'slot')
+    assert slot['path'] == 'messages[0].body' and 'mardi 1er décembre' in slot['excerpt']
+    assert scoring.checks(_score(_PLAN))['slots'] is True

@@ -183,6 +183,7 @@ _DATES_AND_TIMES = re.compile('|'.join((
     r'\b\d{1,2}:\d{2}(?:\s*(?:am|pm|a\.m\.|p\.m\.))?',           # 10:00, 2:30 pm
     r'\b\d{1,2}\s*(?:am|pm|a\.m\.|p\.m\.)',                       # 10am, 2 p.m.
     r'\b\d{1,2}h(?:\d{2})?\b',                                    # 14h, 14h30
+    r'\bà\s+\d{1,2}\s?h(?:\s?\d{2})?\b',                            # à 10 h, à 10 h 30 (G13d)
 )), re.IGNORECASE)
 
 

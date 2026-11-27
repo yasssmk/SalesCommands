@@ -394,15 +394,22 @@ def _dry_messages(expected):
 
 def _dry_answer(case, model_key):
     """A valid answer built from the case's truth, through the real parse /
-    validate path. Two cells are deliberately faulty, to show red checks:
+    validate path. Three cells are deliberately faulty, to show red checks:
       * trap_no_figures · openai_prep_call_challenger: an INVENTED figure (the RED
         RUBAN fault, with numbers no date can hold: « 37 % … 430 hours »);
+      * linkedin_default · openai_prep_call_challenger: an invented slot and a
+        claimed action (« I've sent you an invitation for Tuesday at 10:00 »);
       * demo_end_of_cycle · openai_prep_call: « the price » written as
         a common word — the server refuses it (Sarah's last name is Price): a
         PARSE_ERROR counted as a FALSE rejection."""
     expected = _expected(case)
     if expected['output_kind'] == 'MESSAGE':
-        return _dry_messages(expected)
+        answer = _dry_messages(expected)
+        if case == 'linkedin_default' and model_key == 'openai_prep_call_challenger':
+            # G13d — an invented slot and a claimed action (no time is ever in a pack).
+            answer['messages'][0]['body'] = ("Hello Ivan, I've sent you an invitation "
+                                             "for Tuesday at 10:00.")
+        return answer
     answer = _dry_plan(case, expected)
     if case == 'trap_no_figures' and model_key == 'openai_prep_call_challenger':
         answer['context'] = ('Reducing IT maintenance by 37 % saves 430 hours a year: '
@@ -603,37 +610,56 @@ def write_report(out_dir, records, prices=None, suffix=''):
             if not parsed:
                 lines += [f'Erreur ({metrics.get("parse_error_cause") or metrics.get("error_type")}) : '
                           f'`{_short(record.get("error"), 300)}`', '']
-                continue
-            findings = {k: metrics.get(k) for k in (
-                'schema_errors', 'last_names_in_output', 'invented_numbers', 'invented_names',
-                'rhetoric_labels', 'participants_without_angle', 'opening_missing',
-                'wrong_languages') if metrics.get(k)}
-            if expected['output_kind'] == 'MESSAGE':
-                for message in parsed.get('messages') or []:
-                    lines.append(f'- **{message.get("ref")}** ({message.get("language")}) — '
-                                 f'{_short(message.get("subject"), 80) or "sans subject"} : '
-                                 f'{_short(message.get("body"), 300)}')
             else:
-                plans = '; '.join(f'{p.get("label")}: {p.get("goal")}'
-                                  for p in (parsed.get('objective') or {}).get('plans') or [])
-                angles = '; '.join(f'{p.get("ref")}: {p.get("angle")}' for p in parsed.get('participants') or [])
-                lines += [
-                    f'- **Contexte** : {_short(parsed.get("context"), 300)}',
-                    f'- **Plans** : {_short(plans, 300)}',
-                    f'- **Angles** : {_short(angles, 400) or "—"}',
-                    f'- **Closing** : {_short((parsed.get("closing") or {}).get("next_step"), 200)}',
-                    f'- **campaign_diagnostic** : {_short(json.dumps(parsed.get("campaign_diagnostic"), ensure_ascii=False), 200)}',
-                ]
-            lines += [f'- **Constats** : {json.dumps(findings, ensure_ascii=False) if findings else "aucun"}']
-            # G13c — every invented figure / name with its section and an
-            # excerpt (~80 characters around it), to judge it in context.
-            lines += [f'  - `{f["value"]}` ({"chiffre" if f["kind"] == "number" else "nom"}) — '
-                      f'section `{f["path"]}` — « {f["excerpt"]} »'
-                      for f in metrics.get('findings_context') or []]
+                lines += _call_summary(parsed, expected)
+            lines += _all_calls_findings(recs)
             lines.append('')
     path = out_dir / f'report{suffix}.md'
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return path
+
+
+_KIND_LABELS = {'number': 'chiffre', 'name': 'nom', 'slot': 'créneau'}
+
+
+def _all_calls_findings(recs):
+    """G13d — the findings of EVERY call of the cell (not only call 1): per
+    call, the list of its metrics' findings, then each invented figure / name
+    / slot with its section and excerpt (G13c)."""
+    lines = ['', f'**Constats des {len(recs)} appel(s)** :']
+    for record in recs:
+        metrics = record['metrics']
+        listed = {k: metrics.get(k) for k in (
+            'schema_errors', 'last_names_in_output', 'invented_numbers', 'invented_names',
+            'rhetoric_labels', 'participants_without_angle', 'opening_missing',
+            'wrong_languages') if metrics.get(k)}
+        if metrics.get('parse_error_cause') or metrics.get('error_type'):
+            listed['erreur'] = metrics.get('parse_error_cause') or metrics.get('error_type')
+        context = metrics.get('findings_context') or []
+        lines.append(f'- appel {record["call"]} : '
+                     + (json.dumps(listed, ensure_ascii=False) if listed or context else 'aucun'))
+        lines += [f'  - `{f["value"]}` ({_KIND_LABELS.get(f["kind"], f["kind"])}) — '
+                  f'section `{f["path"]}` — « {f["excerpt"]} »' for f in context]
+    return lines
+
+
+def _call_summary(parsed, expected):
+    """The outputs of a call, summarised (the cell's call 1)."""
+    if expected['output_kind'] == 'MESSAGE':
+        return [f'- **{message.get("ref")}** ({message.get("language")}) — '
+                f'{_short(message.get("subject"), 80) or "sans subject"} : '
+                f'{_short(message.get("body"), 300)}'
+                for message in parsed.get('messages') or []]
+    plans = '; '.join(f'{p.get("label")}: {p.get("goal")}'
+                      for p in (parsed.get('objective') or {}).get('plans') or [])
+    angles = '; '.join(f'{p.get("ref")}: {p.get("angle")}' for p in parsed.get('participants') or [])
+    return [
+        f'- **Contexte** : {_short(parsed.get("context"), 300)}',
+        f'- **Plans** : {_short(plans, 300)}',
+        f'- **Angles** : {_short(angles, 400) or "—"}',
+        f'- **Closing** : {_short((parsed.get("closing") or {}).get("next_step"), 200)}',
+        f'- **campaign_diagnostic** : {_short(json.dumps(parsed.get("campaign_diagnostic"), ensure_ascii=False), 200)}',
+    ]
 
 
 def _recap(rows):
