@@ -624,7 +624,13 @@ def write_report(out_dir, records, prices=None, suffix=''):
                     f'- **Closing** : {_short((parsed.get("closing") or {}).get("next_step"), 200)}',
                     f'- **campaign_diagnostic** : {_short(json.dumps(parsed.get("campaign_diagnostic"), ensure_ascii=False), 200)}',
                 ]
-            lines += [f'- **Constats** : {json.dumps(findings, ensure_ascii=False) if findings else "aucun"}', '']
+            lines += [f'- **Constats** : {json.dumps(findings, ensure_ascii=False) if findings else "aucun"}']
+            # G13c — every invented figure / name with its section and an
+            # excerpt (~80 characters around it), to judge it in context.
+            lines += [f'  - `{f["value"]}` ({"chiffre" if f["kind"] == "number" else "nom"}) — '
+                      f'section `{f["path"]}` — « {f["excerpt"]} »'
+                      for f in metrics.get('findings_context') or []]
+            lines.append('')
     path = out_dir / f'report{suffix}.md'
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return path

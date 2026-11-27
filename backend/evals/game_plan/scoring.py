@@ -27,6 +27,7 @@ import re
 from app_modules.ai_pipelines.prompts.prep_call.message_v2 import PREP_CALL_MESSAGE_SCHEMA
 from app_modules.ai_pipelines.prompts.prep_call.outline_v2 import PREP_CALL_OUTLINE_SCHEMA
 
+from evals.deal_health import scoring as _generic
 from evals.deal_health.scoring import (
     _fold,
     invented_names as _invented_names,
@@ -87,17 +88,37 @@ _NUMBER_WORDS = (
 )
 _DURATION_UNIT = r'(?:minutes?|mins?|hours?|hrs?)'
 _QUANTITY = rf'(?:\d+|{_NUMBER_WORDS}|an?)'
+# G13c — a separator is a space (non-breaking included) or ANY hyphen / dash
+# (« 20‑minute » with U+2011, « 20–minute »): models write the typographic ones.
+_SEP = r'[\s\-\u2010-\u2015]'
 # « 30-minute working session », « 45 minutes demo », « a one-hour call »
 _MEETING_DURATION = re.compile(
-    rf'\b{_QUANTITY}[\s-]?{_DURATION_UNIT}(?:\s+|-)(?:[a-z-]+\s+){{0,2}}{_MEETING_NOUNS}\b',
+    rf'\b{_QUANTITY}{_SEP}?{_DURATION_UNIT}{_SEP}+(?:[a-z\-\u2010-\u2015]+\s+){{0,2}}{_MEETING_NOUNS}\b',
     re.IGNORECASE,
 )
 # « ask for 30 minutes », « take 20 minutes » — never « … per week », « … of labor »
 _ASKED_DURATION = re.compile(
     rf'\b(?:for|take|takes|taking|book|block|ask(?:\s+for)?|need|needs|schedule|keep\s+it\s+to)'
-    rf'\s+(?:about\s+|around\s+|only\s+)?{_QUANTITY}[\s-]?{_DURATION_UNIT}\b'
+    rf'\s+(?:about\s+|around\s+|only\s+)?{_QUANTITY}{_SEP}?{_DURATION_UNIT}\b'
     rf'(?!\s+(?:per|a|an|each|every)\s+(?:day|week|month|year|quarter))'
     rf'(?!\s+of\s+(?:labou?r|work|effort|time|savings?))',
+    re.IGNORECASE,
+)
+# G13c — the same durations in French: « un échange de 30 minutes »,
+# « un point rapide de 20 min », « 30 minutes d'échange », « proposer 30 min » —
+# never « … par semaine / par jour / par mois / par an ».
+_FR_MEETING_NOUNS = (
+    r'(?:[ée]change|appel|rendez-vous|rdv|point|r[ée]union|entretien|visio|visioconf[ée]rence'
+    r'|d[ée]mo|d[ée]monstration|atelier|session|cr[ée]neau|call|conversation|pr[ée]sentation)s?'
+)
+_FR_UNIT = r'(?:minutes?|min|heures?|h)'
+_FR_NOT_A_RATE = r'(?!\s+(?:par|chaque|toutes?\s+les)\s+(?:jour|semaine|mois|an|ann[ée]e|trimestre))'
+_FR_MEETING_DURATION = re.compile(
+    rf'\b{_FR_MEETING_NOUNS}(?:\s+(?:rapide|court|bref|de\s+travail))?\s+'
+    rf'(?:de|d[\'’]environ|d[\'’]une?\s+dur[ée]e\s+de)\s+(?:\d+|une?|une\s+demi)\s*-?\s*{_FR_UNIT}\b{_FR_NOT_A_RATE}'
+    rf'|\b\d+\s*{_FR_UNIT}\s+(?:d[\'’]|de\s+)?{_FR_MEETING_NOUNS}\b'
+    rf'|\b(?:propos\w*|demand\w*|pren\w*|bloqu\w*|r[ée]serv\w*|cal\w*|accord\w*|consacr\w*)'
+    rf'\s+(?:environ\s+|seulement\s+|juste\s+)?\d+\s*{_FR_UNIT}\b{_FR_NOT_A_RATE}',
     re.IGNORECASE,
 )
 _GAIN_UNIT = (
@@ -107,8 +128,8 @@ _GAIN_UNIT = (
 # A gain or a volume in WORDS (the digit detector does not see it).
 _SPELLED_GAIN = re.compile(
     rf'\b(?:(?:save|saves|saved|saving|lose|loses|lost|losing|gain|gains|cut|cuts|reduce|reduces'
-    rf'|free|frees|over|more\s+than|up\s+to|nearly|almost)\s+{_NUMBER_WORDS}[\s-]+{_GAIN_UNIT}'
-    rf'|{_NUMBER_WORDS}[\s-]+{_GAIN_UNIT}\s+of\s+(?:labou?r|work|effort))\b',
+    rf'|free|frees|over|more\s+than|up\s+to|nearly|almost)\s+{_NUMBER_WORDS}{_SEP}+{_GAIN_UNIT}'
+    rf'|{_NUMBER_WORDS}{_SEP}+{_GAIN_UNIT}\s+of\s+(?:labou?r|work|effort))\b',
     re.IGNORECASE,
 )
 
@@ -123,8 +144,16 @@ def _map_strings(value, fn):
     return value
 
 
+def _blank(match):
+    """A span blanked out at its own length — the positions stay those of the
+    original text (the excerpts of the report, G13c)."""
+    return ' ' * len(match.group(0))
+
+
 def _without_meeting_durations(text):
-    return _ASKED_DURATION.sub(' ', _MEETING_DURATION.sub(' ', text))
+    for pattern in (_MEETING_DURATION, _ASKED_DURATION, _FR_MEETING_DURATION):
+        text = pattern.sub(_blank, text)
+    return text
 
 
 def spelled_gains(parsed, input_text):
@@ -146,6 +175,44 @@ def invented_numbers(parsed, input_text):
     proposes, plus the gains / volumes written in words."""
     digits = _invented_numbers(_map_strings(parsed, _without_meeting_durations), input_text)
     return digits + spelled_gains(parsed, input_text)
+
+
+# =============================================================================
+# WHERE A FINDING IS — its section and an excerpt (the report, G13c)
+# =============================================================================
+
+EXCERPT_RADIUS = 40     # ~80 characters around the occurrence
+
+
+def _excerpt(text, start, end):
+    left, right = max(0, start - EXCERPT_RADIUS), min(len(text), end + EXCERPT_RADIUS)
+    snippet = ' '.join(text[left:right].split())
+    return f"{'…' if left else ''}{snippet}{'…' if right < len(text) else ''}"
+
+
+def locate_findings(parsed, numbers, names):
+    """[{'kind', 'value', 'path', 'excerpt'}] — every occurrence of an
+    invented figure or name in the prose, with its section (« closing.
+    with_whom », « messages[0].body ») and ~80 characters around it. A figure
+    is searched where the detector reads it: dates, times and meeting
+    durations blanked out first."""
+    numbers, found = set(numbers or []), []
+    for path, text in texts(prose(parsed)):
+        masked = _without_meeting_durations(_generic._DATES_AND_TIMES.sub(_blank, text))
+        for match in _generic._NUMBER.finditer(masked):
+            for value in _generic._numbers(match.group(0)) & numbers:
+                found.append({'kind': 'number', 'value': value, 'path': path,
+                              'excerpt': _excerpt(text, match.start(), match.end())})
+        for match in _SPELLED_GAIN.finditer(text):
+            phrase = ' '.join(match.group(0).split())
+            if phrase in numbers:
+                found.append({'kind': 'number', 'value': phrase, 'path': path,
+                              'excerpt': _excerpt(text, match.start(), match.end())})
+        for name in names or []:
+            for match in re.finditer(rf'(?<![\w]){re.escape(name)}(?![\w])', text):
+                found.append({'kind': 'name', 'value': name, 'path': path,
+                              'excerpt': _excerpt(text, match.start(), match.end())})
+    return found
 
 
 def schema_for(output_kind):
@@ -292,6 +359,8 @@ def score_call(*, parsed, prompt, user_prompt, expected, meta=None, error_type=N
         'invented_names': invented_names(parsed, user_prompt),
         'rhetoric_labels': rhetoric_labels(parsed),
     })
+    metrics['findings_context'] = locate_findings(
+        parsed, metrics['invented_numbers'], metrics['invented_names'])
     if kind == 'PLAN':
         metrics.update({
             'participants_without_angle': participants_covered(parsed, expected['participants']),

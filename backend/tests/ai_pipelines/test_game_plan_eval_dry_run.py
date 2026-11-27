@@ -39,6 +39,8 @@ def test_the_dry_run_plays_the_matrix_writes_the_report_and_leaves_nothing(dry_r
     for case in tool.CASES:
         assert f'## Cas `{case}`' in report
     assert '## Récapitulatif' in report and 'PARSE_ERROR' in report and '> 12 s' in report
+    # G13c: a finding is shown with its section and its excerpt.
+    assert '- `37` (chiffre) — section `context` — « Reducing IT maintenance by 37 %' in report
     assert (out_dir / 'summary.csv').exists() and (out_dir / 'summary.md').exists()
 
 

@@ -236,3 +236,53 @@ def test_a_known_name_compound_or_a_weekday_is_not_invented(text):
 def test_a_compound_of_a_common_word_stays_a_finding():
     assert scoring.invented_names({'context': 'Like Contoso-data deals.'},
                                   'The data is booked.') == ['Contoso-data']
+
+
+# =============================================================================
+# G13c — the uncovered duration forms, and the excerpt of every finding
+# =============================================================================
+
+@pytest.mark.parametrize('text', [
+    'Book a 20‑minute discovery meeting.',         # non-breaking hyphen U+2011
+    'A 45–minute demo on their data.',              # en dash
+    'Propose a 30 minute call.',                    # non-breaking space
+    'Je vous propose un échange de 30 minutes.',
+    'Un point rapide de 20 min jeudi ?',
+    '30 minutes d’échange suffiront.',
+    'Pouvez-vous m’accorder 10 minutes ?',
+])
+def test_a_typographic_or_french_meeting_duration_is_not_invented(text):
+    assert scoring.invented_numbers({'messages': [{'body': text}]}, _PACK) == [], text
+
+
+@pytest.mark.parametrize('text, found', [
+    ('Un appel de 30 minutes par semaine.', ['30']),     # a rate, not a meeting
+    ('Gagnez 10 heures par semaine.', ['10']),
+    ('Reducing IT maintenance by 20 % saves 8 hours per week.', ['20', '8']),   # RED RUBAN
+])
+def test_a_french_or_typographic_rate_stays_invented(text, found):
+    assert scoring.invented_numbers({'messages': [{'body': text}]}, _PACK) == found, text
+
+
+def test_each_finding_carries_its_section_and_an_excerpt():
+    parsed = _plan(
+        closing={**_PLAN['closing'], 'next_step': 'Book a 30-minute call. Lead with the 20 % gain '
+                                                  'they will see in the first weeks of the pilot.'},
+        context='It frees over one month of labor. Like Contoso did.',
+    )
+    metrics = _score(parsed)
+    context = {(f['kind'], f['value']): f for f in metrics['findings_context']}
+
+    assert context[('number', '20')]['path'] == 'closing.next_step'
+    assert '20 % gain' in context[('number', '20')]['excerpt']
+    assert ('number', '30') not in context                       # the meeting duration is allowed
+    assert context[('number', 'over one month')]['path'] == 'context'
+    assert context[('name', 'Contoso')]['excerpt'].endswith('Like Contoso did.')
+    assert len(context[('number', '20')]['excerpt']) <= 2 * scoring.EXCERPT_RADIUS + 10
+
+
+def test_a_message_finding_names_its_message():
+    parsed = {'messages': [{'ref': 'Claire', 'language': 'fr', 'subject': 's',
+                            'body': 'Bonjour Claire, nos clients gagnent 15 % de temps.'}]}
+    [finding] = scoring.locate_findings(parsed, ['15'], [])
+    assert finding['path'] == 'messages[0].body' and '15 %' in finding['excerpt']
