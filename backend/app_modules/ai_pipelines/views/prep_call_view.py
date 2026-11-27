@@ -276,7 +276,10 @@ class PrepCallByActivityView(BaseAPIView):
     """
     GET /module-ai-pipelines/prep-call/by-activity/<uuid>/
 
-    Returns the latest PrepCallSnapshot for the given Activity.
+    Returns the latest PrepCallSnapshot for the given Activity. Without any
+    Game Plan yet: data null and `game_plan_freshness` (G14) — the deal
+    health's freshness of the activity's cycle ({applies, has_new_info,
+    last_analysis_at, reasons}), or null for an activity without cycle.
     """
 
     authentication_classes = [CustomJWTAuthentication]
@@ -308,8 +311,13 @@ class PrepCallByActivityView(BaseAPIView):
         )
 
         if not snapshot:
+            # G14 — before the activity's FIRST Game Plan only: the banner
+            # predicate (the deal health's freshness of its cycle; None for
+            # an activity without cycle). The display comes with the UI step.
+            from ..services.game_plan_freshness import game_plan_freshness
             return Response(
-                {'success': True, 'data': None},
+                {'success': True, 'data': None,
+                 'game_plan_freshness': game_plan_freshness(activity)},
             )
 
         serializer = PrepCallSnapshotSerializer(
