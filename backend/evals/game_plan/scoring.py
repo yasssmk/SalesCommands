@@ -30,7 +30,7 @@ from app_modules.ai_pipelines.prompts.prep_call.outline_v2 import PREP_CALL_OUTL
 from evals.deal_health.scoring import (
     _fold,
     invented_names as _invented_names,
-    invented_numbers,
+    invented_numbers as _invented_numbers,
     last_names_found,
     rhetoric_labels,
     schema_errors,
@@ -64,6 +64,88 @@ def invented_names(parsed, input_text):
     own vocabulary (plans B / C, the channels)."""
     return [n for n in _invented_names(prose(parsed), input_text)
             if _fold(n) not in _GAME_PLAN_ALLOWLIST]
+
+
+# =============================================================================
+# FIGURES — what a Game Plan may write, what it may never invent (G13b)
+# =============================================================================
+# ALLOWED (the generic detector already leaves dates and times out): the
+# duration of a meeting the plan proposes — « a 30-minute working session »,
+# « a 45-minute targeted demonstration », « ask for 20 minutes ».
+# ALWAYS INVENTED when absent from the pack: a percentage, an amount, a gain
+# or a volume — in figures (« 20 % », « saves 8 hours per week ») or in words
+# (« over one month of labor »).
+
+_MEETING_NOUNS = (
+    r'(?:session|meeting|call|demo|demonstration|workshop|slot|discussion|review|check-in'
+    r'|conversation|walkthrough|walk-through|presentation|follow-up|chat|visit|exchange'
+    r'|appointment|catch-up|sync|briefing|interview)s?'
+)
+_NUMBER_WORDS = (
+    r'(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty'
+    r'|thirty|forty|forty-five|fifty|sixty|ninety|hundred|thousand|half|a\s+half|a\s+dozen|dozen)'
+)
+_DURATION_UNIT = r'(?:minutes?|mins?|hours?|hrs?)'
+_QUANTITY = rf'(?:\d+|{_NUMBER_WORDS}|an?)'
+# « 30-minute working session », « 45 minutes demo », « a one-hour call »
+_MEETING_DURATION = re.compile(
+    rf'\b{_QUANTITY}[\s-]?{_DURATION_UNIT}(?:\s+|-)(?:[a-z-]+\s+){{0,2}}{_MEETING_NOUNS}\b',
+    re.IGNORECASE,
+)
+# « ask for 30 minutes », « take 20 minutes » — never « … per week », « … of labor »
+_ASKED_DURATION = re.compile(
+    rf'\b(?:for|take|takes|taking|book|block|ask(?:\s+for)?|need|needs|schedule|keep\s+it\s+to)'
+    rf'\s+(?:about\s+|around\s+|only\s+)?{_QUANTITY}[\s-]?{_DURATION_UNIT}\b'
+    rf'(?!\s+(?:per|a|an|each|every)\s+(?:day|week|month|year|quarter))'
+    rf'(?!\s+of\s+(?:labou?r|work|effort|time|savings?))',
+    re.IGNORECASE,
+)
+_GAIN_UNIT = (
+    r'(?:full\s+)?(?:hours?|days?|weeks?|months?|years?|percent|per\s+cent|people'
+    r'|employees|ftes?|euros?|dollars?)'
+)
+# A gain or a volume in WORDS (the digit detector does not see it).
+_SPELLED_GAIN = re.compile(
+    rf'\b(?:(?:save|saves|saved|saving|lose|loses|lost|losing|gain|gains|cut|cuts|reduce|reduces'
+    rf'|free|frees|over|more\s+than|up\s+to|nearly|almost)\s+{_NUMBER_WORDS}[\s-]+{_GAIN_UNIT}'
+    rf'|{_NUMBER_WORDS}[\s-]+{_GAIN_UNIT}\s+of\s+(?:labou?r|work|effort))\b',
+    re.IGNORECASE,
+)
+
+
+def _map_strings(value, fn):
+    if isinstance(value, str):
+        return fn(value)
+    if isinstance(value, dict):
+        return {k: _map_strings(v, fn) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_map_strings(v, fn) for v in value]
+    return value
+
+
+def _without_meeting_durations(text):
+    return _ASKED_DURATION.sub(' ', _MEETING_DURATION.sub(' ', text))
+
+
+def spelled_gains(parsed, input_text):
+    """The gains / volumes written in words (« over one month of labor »),
+    absent from the input."""
+    known = _fold(input_text)
+    found = []
+    for _path, text in texts(parsed):
+        for match in _SPELLED_GAIN.finditer(text):
+            phrase = ' '.join(match.group(0).split())
+            if _fold(phrase) not in known and phrase not in found:
+                found.append(phrase)
+    return found
+
+
+def invented_numbers(parsed, input_text):
+    """The invented figures of a Game Plan: the generic detector (its dates
+    and times left out) on the prose without the meeting durations it
+    proposes, plus the gains / volumes written in words."""
+    digits = _invented_numbers(_map_strings(parsed, _without_meeting_durations), input_text)
+    return digits + spelled_gains(parsed, input_text)
 
 
 def schema_for(output_kind):

@@ -15,7 +15,7 @@ Plomberie commune : `evals/common/eval_kit.py`.
 - les options `--n` / `--only` / `--out` / `--rescore` / `--dry-run` ;
 - les fichiers `summary.csv` / `.md`.
 
-Les contrôles génériques sont **importés** de `evals/deal_health/scoring.py`, et non recopiés :
+Les contrôles génériques sont **importés** de `evals/deal_health/scoring.py`, et non recopiés (G13b : ses défauts de dates mal découpées, de noms composés et de jours de la semaine y ont été corrigés, ce qui profite aussi à l'eval du deal health) :
 - schéma valide (étendu à `anyOf`, pour le `campaign_diagnostic` nullable) ;
 - chiffres inventés ;
 - noms inventés ;
@@ -123,8 +123,8 @@ Avant tout appel, le script vérifie que l'activité préparée est éligible (G
 |---|---|
 | schéma valide | la réponse contre `PREP_CALL_OUTLINE_SCHEMA` ou `PREP_CALL_MESSAGE_SCHEMA` (le validateur du deal health, avec `anyOf`) |
 | prénoms seulement | aucun nom de famille planté, **ni dans le prompt ni dans la sortie** |
-| aucun chiffre inventé | chaque nombre de la sortie (y compris un pourcentage ou une durée en chiffres) doit exister dans le **pack et la requête**. Le prompt système n'en fait pas partie : un « 70% » recopié de la consigne est inventé. Séparateurs ignorés (48 000 = 48,000 = 48000) ; un chiffre collé à des lettres (P1, v2) est un libellé. Heuristique : un nombre écrit en lettres n'est pas vu, et les dates du pack rendent leurs chiffres « connus » |
-| aucun nom inventé | l'heuristique du deal health, sur la prose seulement : les refs, labels et langues ne sont pas lus, ni le vocabulaire du Game Plan (plans B / C, canaux). Les mots trouvés sont listés pour relecture |
+| aucun chiffre inventé | chaque nombre de la sortie doit exister dans le **pack et la requête**. Le prompt système n'en fait pas partie : un « 70% » recopié de la consigne est inventé. Séparateurs ignorés (48 000 = 48,000 = 48000) ; un chiffre collé à des lettres (P1, v2) est un libellé. **Autorisés** (G13b) : une durée de réunion proposée (« a 30-minute working session », « ask for 20 minutes ») ; une date, y compris « 2 December 2026 », « December 2, 2026 », « 2026-12-02 », ou une année après une préposition (« in 2026 ») ; une heure (« 10:00 », « 2 pm », « 14h30 »). **Toujours inventés** s'ils sont absents du pack : un pourcentage, un montant, un gain ou un volume, en chiffres (« 20 % », « saves 8 hours per week », « 2000 hours ») ou en lettres (« over one month of labor », « saves two days ») |
+| aucun nom inventé | l'heuristique du deal health, sur la prose seulement : les refs, labels et langues ne sont pas lus, ni le vocabulaire du Game Plan (plans B / C, canaux). Ne comptent pas comme inventés les jours de la semaine, les mois et leurs abréviations, ni un nom composé sur un nom de l'entrée (« Corvane-data »). Les mots trouvés sont listés pour relecture |
 | aucun ethos / pathos / logos | `constants.PREP_CALL_RHETORIC_LABELS`, mots entiers |
 | chaque participant a un angle | chaque label attendu a une entrée `participants` avec un angle non vide (plans) |
 | plans A / B / C ≤ 3 | de 1 à 3 plans, étiquetés A, B, C dans l'ordre |

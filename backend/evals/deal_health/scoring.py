@@ -160,12 +160,44 @@ def _numbers(text):
     return found
 
 
+# Dates and times are not quantities (sprint 2 Game Plan, G13b — a defect of
+# THIS generic detector, so of the deal-health eval too: « December 2, 2026 »
+# was read as the number 22026, « 10:00 » as 0 and 10). Removed from the
+# output before its numbers are read. A bare year counts as a date only next
+# to a month or after a preposition (« in 2026 »): « saves 2000 hours » stays
+# a figure.
+_MONTHS = (
+    r'(?:january|february|march|april|may|june|july|august|september|october|november|december'
+    r'|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec'
+    r'|janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre)\.?'
+)
+_DAY = r'\d{1,2}(?:st|nd|rd|th|er)?'
+_YEAR = r'(?:19|20)\d{2}'
+_DATES_AND_TIMES = re.compile('|'.join((
+    rf'\b{_YEAR}-\d{{1,2}}-\d{{1,2}}\b',                       # 2026-12-02
+    r'\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b',                        # 02/12/2026, 2/12
+    rf'\b{_DAY}(?:\s+of)?\s+{_MONTHS}(?:,?\s+{_YEAR})?\b',        # 2 December 2026, 2nd of Dec
+    rf'\b{_MONTHS}\s+{_DAY}(?:,?\s+{_YEAR})?\b',                 # December 2, 2026
+    rf'\b{_MONTHS}\s+{_YEAR}\b',                                 # December 2026
+    rf'\b(?:in|by|since|until|before|after|from|during|of|early|mid|late|end)\s+{_YEAR}\b',
+    r'\b\d{1,2}:\d{2}(?:\s*(?:am|pm|a\.m\.|p\.m\.))?',           # 10:00, 2:30 pm
+    r'\b\d{1,2}\s*(?:am|pm|a\.m\.|p\.m\.)',                       # 10am, 2 p.m.
+    r'\b\d{1,2}h(?:\d{2})?\b',                                    # 14h, 14h30
+)), re.IGNORECASE)
+
+
+def without_dates_and_times(text):
+    """The text with its dates and times blanked out (not quantities)."""
+    return _DATES_AND_TIMES.sub(' ', text or '')
+
+
 def invented_numbers(output, input_text):
     """The numbers of the output's text absent from the input (separators
-    ignored: 48 000 = 48,000 = 48000). Structural integers of the answer
+    ignored: 48 000 = 48,000 = 48000), its dates and times left out (they are
+    not quantities). Structural integers of the answer
     (evidence_scope.validated_signals_count) are not text and not checked."""
     known = _numbers(input_text)
-    return sorted(n for n in _numbers(_all_text(output)) if n not in known)
+    return sorted(n for n in _numbers(without_dates_and_times(_all_text(output))) if n not in known)
 
 
 # Name-like words that are vocabulary, not names: the sales and schema
@@ -178,6 +210,10 @@ _NAME_ALLOWLIST = {
     'security', 'sales', 'marketing', 'hr', 'ops', 'it', 'gdpr', 'soc', 'iso',
     'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'january', 'february', 'march',
     'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+    # G13b — the whole week and the abbreviations (were missing: « Sunday »,
+    # « Tue or Wed » flagged as names).
+    'saturday', 'sunday', 'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun',
+    'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
     'based', 'captured', 'evidence',
 }
 
@@ -213,7 +249,12 @@ def invented_names(output, input_text):
     (_CODE_FIELDS) are not scanned. A heuristic: it flags an invented
     customer, reference, competitor or product name (« Contoso »); the
     findings are listed in the report for review."""
-    known = set(_fold(w) for w in _WORD.findall(input_text or ''))
+    input_words = _WORD.findall(input_text or '')
+    known = set(_fold(w) for w in input_words)
+    # The NAMES of the input (capitalised words): a compound is not invented
+    # only when it is built on one of them (« Corvane-data »), not on a
+    # common word of the input (« Contoso-data » stays a finding).
+    known_names = set(_fold(w) for w in input_words if w[:1].isupper())
     found = set()
     for path, text in texts(output):
         if _field(path) in _CODE_FIELDS:
@@ -228,6 +269,11 @@ def invented_names(output, input_text):
                 name = _without_possessive(word).strip("'’-")
                 folded = _fold(name)
                 if not folded or folded in known or folded in _NAME_ALLOWLIST:
+                    continue
+                # A compound of a known name (« Corvane-data »): not invented
+                # (G13b — a defect of this generic heuristic).
+                if '-' in folded and any(len(part) >= 3 and part in known_names
+                                         for part in folded.split('-')):
                     continue
                 found.add(name)
     return sorted(found)

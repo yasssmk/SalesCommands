@@ -183,3 +183,56 @@ def test_the_nullable_campaign_diagnostic_is_schema_valid():
 ])
 def test_the_parse_error_cause(error, raw, cause):
     assert scoring.parse_error_cause(error, raw, ['Price', 'Becker']) == cause
+
+
+# =============================================================================
+# G13b — the false positives of the first real run, and what stays invented
+# =============================================================================
+
+_PACK = 'Corvane Foods. The demo is planned on 2026-12-02. Ivan books the dock slots by phone.'
+
+
+@pytest.mark.parametrize('text', [
+    # Meeting durations the plan proposes.
+    'Propose a 30-minute working session.',
+    'Run a 45-minute targeted demonstration.',
+    'Book a 20-minute discovery meeting.',
+    'Ask for 30 minutes.',
+    'A one-hour call with Tom.',
+    # Dates (were read as 22026 / 32026) and times.
+    'Meet on December 2, 2026 or December 3, 2026.',
+    'On 2 December 2026 at 10:00.',
+    'Confirm 2026-12-02.',
+    'Le 2 décembre 2026 à 14h30.',
+    'By Friday 10am or 2:30 pm.',
+])
+def test_a_meeting_duration_a_date_or_a_time_is_not_invented(text):
+    assert scoring.invented_numbers({'context': text}, _PACK) == [], text
+
+
+@pytest.mark.parametrize('text, found', [
+    ('Reducing IT maintenance by 20 % saves 8 hours per week.', ['20', '8']),   # RED RUBAN
+    ('Lead with a 20 % gain.', ['20']),
+    ('It frees over one month of labor a year.', ['over one month']),
+    ('We lose 8 hours per week.', ['8']),
+    ('Take 30 minutes per week to review.', ['30']),
+    ('A budget of 50 000 euros.', ['50000']),
+    ('In 2026 the team saves 2000 hours.', ['2000']),       # a year is a date, a volume is not
+])
+def test_a_percentage_an_amount_a_gain_or_a_volume_stays_invented(text, found):
+    assert scoring.invented_numbers({'context': text}, _PACK) == found, text
+
+
+@pytest.mark.parametrize('text', [
+    'Show the plan on Corvane-data.',                       # a compound of a known name
+    'Would Tuesday or Wednesday work, Ivan?',
+    'Saturday or Sunday works.',
+    'Shall we meet Tue or Wed?',
+])
+def test_a_known_name_compound_or_a_weekday_is_not_invented(text):
+    assert scoring.invented_names({'context': text}, _PACK) == [], text
+
+
+def test_a_compound_of_a_common_word_stays_a_finding():
+    assert scoring.invented_names({'context': 'Like Contoso-data deals.'},
+                                  'The data is booked.') == ['Contoso-data']
