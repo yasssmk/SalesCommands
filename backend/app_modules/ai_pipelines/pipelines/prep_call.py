@@ -32,6 +32,8 @@ import logging
 
 from django.db import transaction
 
+from app_modules.activities.constants import ActivityType
+
 from .. import config as ai_config
 from ..constants import (
     AIPipelineStatus,
@@ -44,6 +46,10 @@ from ..constants import (
 )
 from ..prompts.base import PromptParseError
 from ..prompts.prep_call import (
+    MESSAGE_PROMPT_VERSION,
+    MESSAGE_SYSTEM_PROMPT,
+    PREP_CALL_MESSAGE_SCHEMA,
+    build_message_request,
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_VERSION,
     build_context_layer,
@@ -65,7 +71,7 @@ from ..providers.base import (
     LLMTimeoutError,
 )
 from ..services.llm_people import roster_last_names
-from ..services.prep_call.plan_validator import validate_plan
+from ..services.prep_call.plan_validator import validate_messages, validate_plan
 from .base import BasePipeline
 
 
@@ -129,6 +135,12 @@ class PrepCallPipeline(BasePipeline):
         'system':  SYSTEM_PROMPT_VERSION,
         'context': CONTEXT_VERSION,
         'outline': OUTLINE_PROMPT_VERSION,
+    }
+    # G11 — the AI message's layers (its own request, its own system variant).
+    MESSAGE_PROMPT_VERSIONS = {
+        'system':  SYSTEM_PROMPT_VERSION,
+        'context': CONTEXT_VERSION,
+        'message': MESSAGE_PROMPT_VERSION,
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.PREP_CALL]
@@ -195,6 +207,12 @@ class PrepCallPipeline(BasePipeline):
             )
             return self._blocked(PREP_CALL_NOTHING_NEW_CODE, last)
 
+        # G11 — an email / a LinkedIn message: the message prompt and schema
+        # (one message per recipient, in ONE call); a conversation: the plan.
+        is_message = output_kind == PrepCallOutputKind.MESSAGE
+        if is_message:
+            self.PROMPT_VERSIONS = self.MESSAGE_PROMPT_VERSIONS
+
         # Bound before the try: a crash inside _create_run leaves no run to
         # finalise (S4 — was an UnboundLocalError hiding the original error).
         run = None
@@ -210,27 +228,41 @@ class PrepCallPipeline(BasePipeline):
 
                 try:
                     context_layer = build_context_layer(input_pack)
-                    request_layer = build_outline_request(input_pack)
+                    request_layer = (
+                        build_message_request(input_pack) if is_message
+                        else build_outline_request(input_pack)
+                    )
 
                     parsed, sub_call_meta = self._call_llm(
-                        system_prompt=SYSTEM_PROMPT,
+                        system_prompt=MESSAGE_SYSTEM_PROMPT if is_message else SYSTEM_PROMPT,
                         context=context_layer,
                         request=request_layer,
-                        response_schema=PREP_CALL_OUTLINE_SCHEMA,
+                        response_schema=(
+                            PREP_CALL_MESSAGE_SCHEMA if is_message else PREP_CALL_OUTLINE_SCHEMA
+                        ),
                     )
 
-                    # G10 — validated server side (the deal health v2
+                    # G10 / G11 — validated server side (the deal health v2
                     # writer's pattern): a refusal is a PromptParseError,
                     # nothing is written.
-                    plan, ref_counts = validate_plan(
-                        parsed,
-                        people=people,
-                        last_names=(
-                            roster_last_names(people.roster, client_id)
-                            if people is not None else frozenset()
-                        ),
-                        has_campaign=bool(input_pack.get('campaign')),
+                    last_names = (
+                        roster_last_names(people.roster, client_id)
+                        if people is not None else frozenset()
                     )
+                    if is_message:
+                        plan, ref_counts = validate_messages(
+                            parsed,
+                            recipients=input_pack.get('recipients') or [],
+                            last_names=last_names,
+                            is_email=activity.activity_type == ActivityType.EMAIL,
+                        )
+                    else:
+                        plan, ref_counts = validate_plan(
+                            parsed,
+                            people=people,
+                            last_names=last_names,
+                            has_campaign=bool(input_pack.get('campaign')),
+                        )
 
                     snapshot = self._persist_snapshot(
                         plan=plan,
@@ -252,6 +284,7 @@ class PrepCallPipeline(BasePipeline):
                         error=None,
                         dropped_count=(
                             len(ref_counts['unknown_refs']) + len(ref_counts['ambiguous_refs'])
+                            + len(ref_counts.get('wrong_language_refs', []))
                         ),
                         persist_counts=ref_counts,
                     )
@@ -377,6 +410,12 @@ class PrepCallPipeline(BasePipeline):
             ),
             'previous_activities': input_pack.get('previous_activities') or [],
             'campaign': input_pack.get('campaign'),               # G8
+            # G11: the recipients and their language (overrides included) —
+            # only for an AI message, so a plan's hash is unchanged.
+            **({'recipients': [
+                f"{r['contact_id']}:{r['language']}:{r['source']}"
+                for r in input_pack['recipients']
+            ]} if input_pack.get('recipients') is not None else {}),
         }, sort_keys=True, default=str)
         return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 

@@ -42,7 +42,10 @@ from permissions.mixins import ScopedPermission
 from ..constants import (
     AIPipelineStatus,
     PREP_CALL_ACTIVITY_CLOSED_CODE,
+    PREP_CALL_MESSAGE_RECIPIENTS_MAX,
+    PREP_CALL_MESSAGE_TYPES,
     PREP_CALL_NO_CAMPAIGN_NO_DC_CODE,
+    PREP_CALL_NO_RECIPIENT_CODE,
     PREP_CALL_NOTHING_NEW_CODE,
     PREP_CALL_TYPE_NOT_ELIGIBLE_CODE,
 )
@@ -68,6 +71,7 @@ _BLOCKED_MESSAGES = {
     PREP_CALL_ACTIVITY_CLOSED_CODE:   AIPipelineErrorMessages.PREP_CALL_ACTIVITY_CLOSED,
     PREP_CALL_NO_CAMPAIGN_NO_DC_CODE: AIPipelineErrorMessages.PREP_CALL_NO_CAMPAIGN_NO_DC,
     PREP_CALL_NOTHING_NEW_CODE:       AIPipelineErrorMessages.PREP_CALL_NOTHING_NEW,   # G9
+    PREP_CALL_NO_RECIPIENT_CODE:      AIPipelineErrorMessages.PREP_CALL_NO_RECIPIENT,  # G11
 }
 
 
@@ -134,11 +138,21 @@ class PrepCallRunView(BaseAPIView):
         # prevents duplicate snapshots.
         # G10: no brief mode (the mode resolver and its extra deal-health
         # read are gone): the pack reads the latest snapshot ONCE.
+        # G11: the languages chosen for an AI message — the recipient is
+        # resolved by the roster here (an unknown one: a standard 400).
         assembler = PrepInputPackAssembler()
         input_pack = assembler.build(
             activity=activity,
             target_contact=target_contact,
+            language_overrides=validated.get('language_overrides'),
         )
+
+        # G11 (Q2) — an AI message needs a participant with a contact: a
+        # business rule, 200 + INFO, nothing run.
+        if input_pack.get('recipients') == []:
+            logger.info('prep_call_run.blocked',
+                        extra={'activity_id': str(activity.id), 'code': PREP_CALL_NO_RECIPIENT_CODE})
+            return Response(_blocked_body(PREP_CALL_NO_RECIPIENT_CODE), status=http_status.HTTP_200_OK)
 
         try:
             pipeline = PrepCallPipeline()
@@ -272,3 +286,52 @@ class PrepCallByActivityView(BaseAPIView):
             context={'request': request},
         )
         return Response({'success': True, 'data': serializer.data})
+
+
+class PrepCallMessageLanguagesView(BaseAPIView):
+    """
+    GET /module-ai-pipelines/prep-call/message-languages/<uuid>/
+
+    Sprint 2 Game Plan, G11 — the languages preview of an AI message, BEFORE
+    the generation: per recipient {ref, first_name, language, source}
+    (services/prep_call/message_language — Q2 / Q3 / Q7). Who may see it:
+    who may generate (can_run_game_plan, a real 403). [] for an activity that
+    is not an email / a LinkedIn message.
+    """
+
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes     = [IsAuthenticated, ScopedPermission]
+    module                 = 'ai_pipelines'
+    http_method_names      = ['get', 'head', 'options']
+
+    def get(self, request, activity_id, *args, **kwargs):
+        from app_modules.activities.models import Activity
+        from ..services.llm_people import activity_roster
+        from ..services.prep_call.message_language import message_recipients
+
+        activity = (
+            Activity.objects.select_related('decision_cycle', 'account')
+            .filter(id=activity_id, client_id=request.user.client_id).first()
+        )
+        if activity is None:
+            return Response(
+                {'success': False, 'error': str(AIPipelineErrorMessages.ACTIVITY_NOT_FOUND)},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+        if not can_run_game_plan(request, activity):
+            raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
+
+        recipients, omitted = [], 0
+        if activity.activity_type in PREP_CALL_MESSAGE_TYPES:
+            recipients, omitted = message_recipients(activity_roster(activity))
+        return Response({
+            'success': True,
+            'data': {
+                'recipients': [
+                    {key: r[key] for key in ('ref', 'first_name', 'language', 'source')}
+                    for r in recipients
+                ],
+                'max_recipients': PREP_CALL_MESSAGE_RECIPIENTS_MAX,
+                'omitted_count': omitted,
+            },
+        })

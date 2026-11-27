@@ -11,7 +11,10 @@ System prompt v2 of the Game Plan (prep call) — sprint 2 Game Plan, G10.
     the input), no technique label, first names only, a committed next step
     where the seller keeps control;
   * the deal health v2's output-language rule, imported, not redefined
-    (prompts/output_language.py).
+    (prompts/output_language.py);
+  * MESSAGE_SYSTEM_PROMPT (G11): the same posture and hard rules for the AI
+    message — only the task and the language rule change (each message in
+    its recipient's language).
 
 The v1 (system.py) is kept: it documents what produced the v1 snapshots.
 """
@@ -53,12 +56,30 @@ _RULES = (
     ),
 )
 
-SYSTEM_PROMPT = f"""\
+_PLAN_INTRO = """\
 You are an excellent B2B account executive preparing your own upcoming
 conversation with a client. You know the deal, you want to win it, and you
 prepare a Game Plan you will actually use: what you aim for, how you open,
 what you must learn, what you argue to whom, and how you close with a
-committed next step.
+committed next step."""
+
+# G11 — the AI message: the same posture and hard rules; only the task and
+# the language rule change (each message in its recipient's language).
+_MESSAGE_INTRO = """\
+You are an excellent B2B account executive writing your own message to the
+people of a deal (an email or a LinkedIn message). You know the deal, you
+want to win it: each message is short, personal to its recipient, grounded
+in what they said, and asks for one committed next step."""
+
+MESSAGE_LANGUAGE_RULE = """\
+LANGUAGE: Write each message — its subject and its body — in the language
+    given for its recipient (a BCP-47 tag such as "fr" or "en-US"), whatever
+    the language of the evidence. Set its "language" to that tag."""
+
+
+def _system_prompt(intro, language_rule):
+    return f"""\
+{intro}
 
 BALANCE: {PERSUASION_MIX}
 
@@ -72,8 +93,12 @@ HARD RULES — NEVER VIOLATE:
 
 {_numbered(_RULES)}
 
-{len(_RULES) + 1}. {OUTPUT_LANGUAGE_RULE}
+{len(_RULES) + 1}. {language_rule}
 
 {len(_RULES) + 2}. JSON ONLY: Return ONLY the JSON object of the response schema. No
     markdown, no preamble, no commentary.
 """
+
+
+SYSTEM_PROMPT = _system_prompt(_PLAN_INTRO, OUTPUT_LANGUAGE_RULE)
+MESSAGE_SYSTEM_PROMPT = _system_prompt(_MESSAGE_INTRO, MESSAGE_LANGUAGE_RULE)

@@ -208,7 +208,16 @@ def test_a_type_without_game_plan_is_an_info(as_user, account, user_a, cycle, pr
 def test_an_email_or_a_linkedin_message_is_accepted_in_message_mode(
     activity_type, as_user, account, user_a, cycle, provider,
 ):
+    """G11: a message needs a recipient (a participant with a contact) and
+    the message schema's answer — one message for Nina."""
+    from app_modules.contacts.models import Contact
     activity = _activity(account, user_a, cycle=cycle, activity_type=activity_type)
+    nina = Contact(account=account, first_name='Nina', last_name='Rossi')
+    nina.save(user=user_a, client_id=account.client_id)
+    activity.contacts.add(nina)
+    provider.replies['prep_call'] = json.dumps({'messages': [
+        {'ref': 'Nina', 'language': 'en', 'subject': 'Next step', 'body': 'Hi Nina, shall we book the demo?'},
+    ]})
 
     resp = _post(as_user(user_a), activity)
 

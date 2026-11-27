@@ -751,6 +751,16 @@ class AIPipelineErrorMessages:
     PREP_CALL_NOTHING_NEW = _(
         "Nothing new since the last Game Plan ({date})."
     )
+    # G11 (PO decision Q2): a message goes to a participant with a contact —
+    # none on the activity: 200 + INFO, nothing run.
+    PREP_CALL_NO_RECIPIENT = _(
+        "No recipient for this message: add a contact to the activity first."
+    )
+    # G11: a language override names a recipient the activity does not have
+    # (unknown or foreign: the same answer) — a standard 400, never guessed.
+    PREP_CALL_UNKNOWN_RECIPIENT = _(
+        "Unknown recipient '{ref}' for this message."
+    )
 
     # -----------------------------------------------------------------
     # Provider errors

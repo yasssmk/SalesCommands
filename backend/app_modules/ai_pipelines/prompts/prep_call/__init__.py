@@ -7,7 +7,9 @@ v2 (sprint 2 Game Plan, G10) — what the pipeline sends:
     deal health v2's output-language rule;
   * context_v2 — the input pack v2, section by section;
   * outline_v2 — the task, the field rules, the strict schema
-    PREP_CALL_OUTLINE_SCHEMA.
+    PREP_CALL_OUTLINE_SCHEMA;
+  * message_v2 (G11) — the AI message: one per recipient, in its language,
+    the strict schema PREP_CALL_MESSAGE_SCHEMA (with MESSAGE_SYSTEM_PROMPT).
 
 v1 (system.py, context.py, brief_v1.py, guide_v1.py) is kept, frozen: it
 documents what produced the v1 snapshots (schema_version 1), which stay
@@ -17,7 +19,12 @@ Versioning: each layer carries its own version constant, captured in
 AIPipelineRun.prompt_versions.
 """
 
-from .system_v2 import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+from .system_v2 import MESSAGE_SYSTEM_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+from .message_v2 import (
+    MESSAGE_PROMPT_VERSION,
+    PREP_CALL_MESSAGE_SCHEMA,
+    build_message_request,
+)
 from .context_v2 import build_context_layer, CONTEXT_VERSION
 from .outline_v2 import (
     OUTLINE_PROMPT_VERSION,
@@ -34,4 +41,8 @@ __all__ = [
     'build_outline_request',
     'OUTLINE_PROMPT_VERSION',
     'PREP_CALL_OUTLINE_SCHEMA',
+    'MESSAGE_SYSTEM_PROMPT',
+    'build_message_request',
+    'MESSAGE_PROMPT_VERSION',
+    'PREP_CALL_MESSAGE_SCHEMA',
 ]

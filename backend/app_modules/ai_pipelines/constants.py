@@ -570,6 +570,7 @@ PREP_CALL_TYPE_NOT_ELIGIBLE_CODE = 'PREP_CALL_TYPE_NOT_ELIGIBLE'
 PREP_CALL_ACTIVITY_CLOSED_CODE = 'PREP_CALL_ACTIVITY_CLOSED'
 PREP_CALL_NO_CAMPAIGN_NO_DC_CODE = 'PREP_CALL_NO_CAMPAIGN_NO_DC'
 PREP_CALL_NOTHING_NEW_CODE = 'PREP_CALL_NOTHING_NEW'
+PREP_CALL_NO_RECIPIENT_CODE = 'PREP_CALL_NO_RECIPIENT'   # G11
 
 # The input pack v2 (G7): the previous conversations the Game Plan reads —
 # the COMPLETED activities of the same cycle or of the same sequence, the most
@@ -585,3 +586,21 @@ PREP_CALL_MAX_CHARS_PER_SOURCE = DEAL_HEALTH_MAX_CHARS_PER_SOURCE
 PREP_CALL_PLAN_LABELS = ('A', 'B', 'C')
 PREP_CALL_ARGUMENTS_MAX = DEAL_HEALTH_TOP_ARGUMENTS_MAX
 PREP_CALL_RHETORIC_LABELS = DEAL_HEALTH_RHETORIC_LABELS
+
+# The AI message of a Game Plan (G11, PO decisions Q2 / Q3 / Q7): one message
+# per recipient — a participant of the roster WITH a contact (Q2) — in ONE
+# LLM call, at most PREP_CALL_MESSAGE_RECIPIENTS_MAX recipients (Q7), each
+# in its language: the stakeholder profile's communication_language — a
+# manual value (MANUAL, or an AI value a user edited: LLM_MODIFIED) -> PROFILE,
+# an AI value (LLM_EXTRACTED) -> EXCHANGES — else the default -> DEFAULT (Q3);
+# a language chosen in the UI for this generation -> OVERRIDE.
+PREP_CALL_MESSAGE_RECIPIENTS_MAX = 5
+PREP_CALL_DEFAULT_MESSAGE_LANGUAGE = 'en'
+
+
+class PrepCallLanguageSource(models.TextChoices):
+    """Where the language of a recipient's message comes from (G11)."""
+    PROFILE   = 'PROFILE',   _('Stakeholder profile')
+    EXCHANGES = 'EXCHANGES', _('Detected in the exchanges')
+    DEFAULT   = 'DEFAULT',   _('Default')
+    OVERRIDE  = 'OVERRIDE',  _('Chosen for this message')

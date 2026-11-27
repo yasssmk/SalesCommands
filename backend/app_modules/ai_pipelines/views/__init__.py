@@ -14,7 +14,11 @@ view classes here and to __all__.
 from .activity_extraction_view import ActivityExtractionView
 from .deal_health_view import DealHealthRunView
 from .last_run_view import LastRunView
-from .prep_call_view import PrepCallByActivityView, PrepCallRunView
+from .prep_call_view import (
+    PrepCallByActivityView,
+    PrepCallMessageLanguagesView,
+    PrepCallRunView,
+)
 
 
 __all__ = [
@@ -22,5 +26,6 @@ __all__ = [
     'DealHealthRunView',
     'LastRunView',
     'PrepCallByActivityView',
+    'PrepCallMessageLanguagesView',
     'PrepCallRunView',
 ]

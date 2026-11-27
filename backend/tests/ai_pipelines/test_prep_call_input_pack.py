@@ -109,6 +109,8 @@ EXPECTED_TOP_KEYS = {
     'seller_profile', 'previous_activities',
     # G8: the light campaign diagnostic's data (None inside a cycle).
     'campaign',
+    # G11: the recipients of an AI message (None for a conversation).
+    'recipients',
 }
 
 

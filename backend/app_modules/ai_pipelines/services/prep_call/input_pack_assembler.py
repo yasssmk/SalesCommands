@@ -41,14 +41,17 @@ class PrepInputPackAssembler:
     """
 
     people = None
+    recipients_omitted = 0
 
-    def build(self, *, activity, target_contact=None):
+    def build(self, *, activity, target_contact=None, language_overrides=None):
         """
         Build the input pack dict.
 
         Args:
             activity: Activity instance.
             target_contact: Contact instance or None.
+            language_overrides: [{'ref', 'language'}] — the languages chosen
+                for this generation of an AI message (G11), tags validated.
 
         Returns:
             dict matching the §3.2 Prep Input Pack contract. The roster the
@@ -119,7 +122,24 @@ class PrepInputPackAssembler:
                 self._build_campaign(activity)
                 if activity.campaign_id and not activity.decision_cycle_id else None
             ),
+            # G11: the recipients of an AI message (an email / a LinkedIn
+            # message) and their language — None for a conversation.
+            'recipients': self._build_recipients(activity, people, language_overrides),
         }
+
+    def _build_recipients(self, activity, people, language_overrides):
+        """The recipients of an AI message (services/prep_call/
+        message_language.message_recipients — Q2 / Q3 / Q7), None for a
+        conversation. Raises the standard 400 for an override to an unknown
+        recipient."""
+        from app_modules.ai_pipelines.constants import PREP_CALL_MESSAGE_TYPES
+        from app_modules.ai_pipelines.services.prep_call.message_language import (
+            message_recipients,
+        )
+        if activity.activity_type not in PREP_CALL_MESSAGE_TYPES:
+            return None
+        recipients, self.recipients_omitted = message_recipients(people, language_overrides)
+        return recipients
 
     # =========================================================================
     # PREP CONTEXT

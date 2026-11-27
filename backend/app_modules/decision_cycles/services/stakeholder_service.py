@@ -375,15 +375,30 @@ def _check_profile_tenant(stakeholder, client_id):
         _profile_refusal(DecisionCycleErrorMessages.PROFILE_TENANT_MISMATCH)
 
 
+def validate_language_tag(value):
+    """
+    THE language-tag check (BCP-47: "fr", "en-US", "pt-BR" — the
+    PROFILE_LANGUAGE_PATTERN / _MAX_LENGTH convention): the value, or the
+    standard refusal (StandardizedValidationError, PROFILE_INVALID_LANGUAGE).
+    Shared by the stakeholder profile and the Game Plan's language overrides
+    (sprint 2 Game Plan, G11).
+    """
+    import re
+    from core.error_messages import DecisionCycleErrorMessages
+    from ..constants import PROFILE_LANGUAGE_MAX_LENGTH, PROFILE_LANGUAGE_PATTERN
+
+    if (not isinstance(value, str) or len(value) > PROFILE_LANGUAGE_MAX_LENGTH
+            or not re.fullmatch(PROFILE_LANGUAGE_PATTERN, value)):
+        _profile_refusal(DecisionCycleErrorMessages.PROFILE_INVALID_LANGUAGE.format(value=value))
+    return value
+
+
 def _clean_profile_value(field, value, *, allow_empty_text):
     """The validated value of `field`, or a standard refusal."""
-    import re
     from core.error_messages import DecisionCycleErrorMessages
     from ..constants import (
         PROFILE_COMMUNICATION_LANGUAGE,
         PROFILE_CONVICTION_STATE,
-        PROFILE_LANGUAGE_MAX_LENGTH,
-        PROFILE_LANGUAGE_PATTERN,
         PROFILE_TEXT_MAX_LENGTH,
         STAKEHOLDER_PROFILE_FIELDS,
         ConvictionState,
@@ -398,10 +413,7 @@ def _clean_profile_value(field, value, *, allow_empty_text):
                 value=value, field=field, allowed=', '.join(ConvictionState.values)))
         return value
     if field == PROFILE_COMMUNICATION_LANGUAGE:
-        if (not isinstance(value, str) or len(value) > PROFILE_LANGUAGE_MAX_LENGTH
-                or not re.fullmatch(PROFILE_LANGUAGE_PATTERN, value)):
-            _profile_refusal(DecisionCycleErrorMessages.PROFILE_INVALID_LANGUAGE.format(value=value))
-        return value
+        return validate_language_tag(value)
     # Free text (a user may clear it: '' is kept, so the AI never refills it).
     if not isinstance(value, str) or len(value) > PROFILE_TEXT_MAX_LENGTH or (
             not allow_empty_text and not value.strip()):

@@ -16,6 +16,21 @@ from core.exceptions import StandardizedValidationError
 from ..models import PrepCallSnapshot
 
 
+class _LanguageOverrideSerializer(serializers.Serializer):
+    """One language chosen for a recipient of an AI message (G11): its ref
+    (the roster label the languages preview returned) and a BCP-47 tag —
+    validated by the decision_cycles validator (the profile's own rule)."""
+
+    ref = serializers.CharField(max_length=200)
+    language = serializers.CharField(max_length=50)
+
+    def validate_language(self, value):
+        from app_modules.decision_cycles.services.stakeholder_service import (
+            validate_language_tag,
+        )
+        return validate_language_tag(value)
+
+
 class PrepCallRunInputSerializer(
     ClientScopeManager.SerializerMixin,
     serializers.Serializer,
@@ -25,7 +40,8 @@ class PrepCallRunInputSerializer(
 
     Expected payload:
         {
-            "activity_id": "<uuid>"
+            "activity_id": "<uuid>",
+            "language_overrides": [{"ref": "<label>", "language": "fr"}]   # optional, G11
         }
 
     No `contact_id` (sprint 2 Game Plan, S2 — C2-11 / TD-325, PO decision
@@ -43,6 +59,9 @@ class PrepCallRunInputSerializer(
         write_only=True,
         help_text='UUID of the Activity to prepare for.',
     )
+    # G11: per recipient, the language of its AI message for THIS generation
+    # (the recipient is resolved by the roster in the view, never guessed).
+    language_overrides = _LanguageOverrideSerializer(many=True, required=False, write_only=True)
 
     def validate(self, attrs):
         client_id = self._get_client_id_from_context()

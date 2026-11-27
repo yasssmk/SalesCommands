@@ -29,6 +29,8 @@ from ..constants import (
     LLM_PERSON_REF_FORMAT,
     people_role_for_prompt,
 )
+from app_modules.decision_cycles.constants import PROFILE_COMMUNICATION_LANGUAGE
+
 from .participant_refs import _normalize_person_name, ordered_participants
 
 
@@ -347,10 +349,12 @@ class ActivityRoster:
     roster       — the LLMPeopleRoster of the prompt (the cycle's people + the
                    participants, all registered: labels are final);
     participants — [{'label', 'contact_id', 'stakeholder_id', 'role',
-                   'department', 'profile', 'identity'}], one per person, in
-                   the order contacts (ordered_participants) then
-                   stakeholders. 'contact_id' / 'stakeholder_id' / 'identity'
-                   are server-side (never rendered in a prompt).
+                   'department', 'profile', 'identity', 'recipient_contact_id',
+                   'language_entry'}], one per person, in the order contacts
+                   (ordered_participants) then stakeholders. 'contact_id' /
+                   'stakeholder_id' / 'identity' / 'recipient_contact_id' /
+                   'language_entry' are server-side (never rendered in a
+                   prompt).
     """
 
     def __init__(self, roster, participants):
@@ -478,5 +482,16 @@ def activity_roster(activity):
             'department': _department_of(person),
             'profile': profile,
             'identity': identity,
+            # Server side only (G11, never in a prompt): the contact a message
+            # goes to — the participant's contact, or its stakeholder's — and
+            # the raw entry {value, source} of its communication language.
+            'recipient_contact_id': (
+                str(contact.id) if contact is not None
+                else (str(stakeholder.contact_id) if stakeholder.contact_id else None)
+            ),
+            'language_entry': (
+                (stakeholder.profile or {}).get(PROFILE_COMMUNICATION_LANGUAGE)
+                if stakeholder is not None else None
+            ),
         })
     return ActivityRoster(roster, participants)

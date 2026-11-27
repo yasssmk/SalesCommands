@@ -17,6 +17,12 @@ and apply_profiles):
     list is ambiguous: all its entries are dropped. Both traced;
   * campaign_diagnostic is null unless the pack carries a campaign block
     (a campaign activity outside a cycle, G8).
+
+validate_messages (G11) applies the SAME refusals to the AI message, and
+resolves each message's ref against the RECIPIENTS of the pack (exact
+label): unknown / repeated -> dropped, a language other than the
+recipient's -> dropped, a recipient left without message -> traced. The
+subject is required for an email, null for a LinkedIn message.
 """
 
 import copy
@@ -31,7 +37,7 @@ from app_modules.ai_pipelines.prompts.base import PromptParseError
 from app_modules.ai_pipelines.services.participant_refs import names_appearing_in_text
 
 
-__all__ = ['validate_plan']
+__all__ = ['validate_messages', 'validate_plan']
 
 _RHETORIC_RE = re.compile(
     r'\b(' + '|'.join(re.escape(w) for w in PREP_CALL_RHETORIC_LABELS) + r')\b', re.IGNORECASE,
@@ -64,14 +70,7 @@ def validate_plan(parsed, *, people, last_names, has_campaign):
         PromptParseError — structure, a rhetoric label, a last name.
     """
     _check_structure(parsed)
-
-    texts = list(_strings(parsed))
-    if any(_RHETORIC_RE.search(text) for text in texts):
-        raise PromptParseError('The Game Plan names a classical rhetoric label.')
-    written = names_appearing_in_text(last_names, '\n'.join(texts))
-    if written:
-        # The names themselves are not logged (the run's error_message).
-        raise PromptParseError(f'The Game Plan writes {len(written)} last name(s).')
+    _refuse_labels_and_last_names(parsed, last_names)
 
     plan = copy.deepcopy(parsed)
     counts = {'unknown_refs': [], 'ambiguous_refs': []}
@@ -80,6 +79,78 @@ def validate_plan(parsed, *, people, last_names, has_campaign):
     if not has_campaign:
         plan['campaign_diagnostic'] = None
     return plan, counts
+
+
+def validate_messages(parsed, *, recipients, last_names, is_email):
+    """
+    Validate an AI-message answer (G11) and return what is persisted.
+
+    Args:
+        parsed:     the JSON answer ({'messages': [...]}).
+        recipients: the pack's recipients [{'ref', 'language', ...}].
+        last_names: frozenset of normalised last names (never written).
+        is_email:   an email (subject required) or a LinkedIn message
+                    (subject null).
+
+    Returns:
+        (messages, counts) — messages: {'messages': [...]} in the recipients'
+        order, one per recipient at most; counts: {'unknown_refs',
+        'ambiguous_refs', 'wrong_language_refs', 'missing_refs'}.
+
+    Raises:
+        PromptParseError — structure, a rhetoric label, a last name.
+    """
+    if not isinstance(parsed, dict) or not isinstance(parsed.get('messages'), list):
+        raise PromptParseError('Missing or invalid "messages" (expected list).')
+    for message in parsed['messages']:
+        if not isinstance(message, dict):
+            raise PromptParseError('Invalid "messages" entry.')
+        for key in ('ref', 'language', 'body'):
+            _require_str(message, key, 'messages.')
+        if not message['body'].strip():
+            raise PromptParseError('Empty "messages.body".')
+        if is_email and (not isinstance(message.get('subject'), str) or not message['subject'].strip()):
+            raise PromptParseError('Missing "messages.subject" for an email.')
+    _refuse_labels_and_last_names(parsed, last_names)
+
+    expected = {r['ref']: r for r in recipients}
+    counts = {'unknown_refs': [], 'ambiguous_refs': [], 'wrong_language_refs': [], 'missing_refs': []}
+    per_ref = {}
+    for message in parsed['messages']:
+        per_ref[message['ref']] = per_ref.get(message['ref'], 0) + 1
+    kept = {}
+    for message in parsed['messages']:
+        ref = message['ref']
+        recipient = expected.get(ref)
+        if recipient is None:
+            counts['unknown_refs'].append(ref)
+        elif per_ref[ref] > 1:
+            counts['ambiguous_refs'].append(ref)
+        elif message['language'].lower() != recipient['language'].lower():
+            counts['wrong_language_refs'].append(ref)
+        else:
+            kept[ref] = {
+                'ref': ref,
+                'language': recipient['language'],
+                # PROFILE / EXCHANGES / DEFAULT / OVERRIDE — the UI warns on
+                # DEFAULT (no known language for that person).
+                'language_source': recipient['source'],
+                'subject': message['subject'] if is_email else None,
+                'body': message['body'],
+            }
+    counts['missing_refs'] = [r['ref'] for r in recipients if r['ref'] not in kept]
+    return {'messages': [kept[r['ref']] for r in recipients if r['ref'] in kept]}, counts
+
+
+def _refuse_labels_and_last_names(parsed, last_names):
+    """THE refusals shared by the plan and the message (G10 / G11)."""
+    texts = list(_strings(parsed))
+    if any(_RHETORIC_RE.search(text) for text in texts):
+        raise PromptParseError('The Game Plan names a classical rhetoric label.')
+    written = names_appearing_in_text(last_names, '\n'.join(texts))
+    if written:
+        # The names themselves are not logged (the run's error_message).
+        raise PromptParseError(f'The Game Plan writes {len(written)} last name(s).')
 
 
 def _resolved(entries, people, counts):

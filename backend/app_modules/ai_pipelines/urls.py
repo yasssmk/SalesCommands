@@ -22,6 +22,7 @@ from .views import (
     DealHealthRunView,
     LastRunView,
     PrepCallByActivityView,
+    PrepCallMessageLanguagesView,
     PrepCallRunView,
 )
 
@@ -51,5 +52,11 @@ urlpatterns = [
         'prep-call/by-activity/<uuid:activity_id>/',
         PrepCallByActivityView.as_view(),
         name='prep-call-by-activity',
+    ),
+    # Sprint 2 Game Plan, G11 — the languages preview of an AI message.
+    path(
+        'prep-call/message-languages/<uuid:activity_id>/',
+        PrepCallMessageLanguagesView.as_view(),
+        name='prep-call-message-languages',
     ),
 ]
