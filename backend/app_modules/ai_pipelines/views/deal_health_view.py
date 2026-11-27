@@ -40,7 +40,6 @@ Response (502 Bad Gateway):
 """
 
 import logging
-import uuid
 
 from rest_framework import status as http_status
 from rest_framework.permissions import IsAuthenticated
@@ -49,19 +48,8 @@ from rest_framework.response import Response
 from core.apps_shared_methods import BaseAPIView
 from core.error_messages import AIPipelineErrorMessages, CoreErrorMessages
 from core.exceptions import StandardizedPermissionDenied
-from core.idempotency import (
-    compute_payload_hash,
-    complete_op,
-    fail_op,
-    get_owner_from_request,
-    start_op,
-)
 from core.jwt_helpers import CustomJWTAuthentication
-from core.timeout_conventions import (
-    IDEMPOTENCY_REDIS_TTL_SECONDS,
-    POLLING_ENDPOINT_PATTERN,
-    POLLING_INTERVAL_SECONDS,
-)
+from core.timeout_conventions import IDEMPOTENCY_REDIS_TTL_SECONDS
 
 from core.throttling import AIRateThrottle
 from permissions.mixins import ScopedPermission
@@ -75,10 +63,10 @@ from ..constants import (
     AIPipelineStatus,
     DEAL_HEALTH_CYCLE_CLOSED_CODE,
     DEAL_HEALTH_NO_NEW_SOURCES_CODE,
-    DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS,
 )
 from ..pipelines.deal_health import DealHealthPipeline
 from ..serializers.deal_health_serializer import DealHealthRunInputSerializer
+from .run_idempotency import IdempotentRun
 
 
 logger = logging.getLogger(__name__)
@@ -139,28 +127,15 @@ class DealHealthRunView(BaseAPIView):
         # -----------------------------------------------------------------
         # Layer 1 — Redis idempotency (activity_extraction_view.py:208-242)
         # -----------------------------------------------------------------
-        idempotency_key = self._extract_idempotency_key(request)
-        log_ctx['idempotency_key_prefix'] = idempotency_key[:16]
-        try:
-            existing_op = start_op(
-                client_id=client_id_str,
-                key=idempotency_key,
-                payload_hash=compute_payload_hash(request.data),
-                owner=get_owner_from_request(request),
-                ttl=IDEMPOTENCY_REDIS_TTL_SECONDS,
-            )
-        except ValueError as conflict_err:
-            logger.warning('deal_health_run.idempotency_conflict', extra=log_ctx)
-            return Response(
-                {
-                    'success': False,
-                    'error':   str(conflict_err),
-                    'code':    'IDEMPOTENCY_CONFLICT',
-                },
-                status=http_status.HTTP_409_CONFLICT,
-            )
-        if existing_op is not None:
-            return self._respond_existing_op(existing_op, idempotency_key, log_ctx)
+        # (views/run_idempotency.py — shared with the Game Plan since G12.)
+        idem = IdempotentRun(
+            request, client_id_str, event='deal_health_run',
+            running_message='A deal health analysis is already in progress for this deal.',
+            log_ctx=log_ctx,
+        )
+        replay = idem.start()
+        if replay is not None:
+            return replay
 
         # -----------------------------------------------------------------
         # The run (its guards first — DealHealthPipeline, A10)
@@ -174,7 +149,7 @@ class DealHealthRunView(BaseAPIView):
             )
         except Exception as exc:
             logger.exception('deal_health_run.pipeline_hard_crash', extra=log_ctx)
-            self._record_failure(client_id_str, idempotency_key, exc, log_ctx)
+            idem.record_failure(exc)
             return Response(
                 {
                     'success': False,
@@ -186,12 +161,9 @@ class DealHealthRunView(BaseAPIView):
         blocked = result.get('blocked')
         if blocked:
             logger.info('deal_health_run.blocked', extra={**log_ctx, 'code': blocked})
-            return self._complete_and_respond(
-                client_id_str, idempotency_key,
-                body=self._blocked_body(blocked, result.get('last_snapshot')),
-                response_status=http_status.HTTP_200_OK,
-                ttl=DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS,
-                log_ctx=log_ctx,
+            return idem.respond_short(
+                self._blocked_body(blocked, result.get('last_snapshot')),
+                http_status.HTTP_200_OK,
             )
 
         run = result['run']
@@ -213,24 +185,19 @@ class DealHealthRunView(BaseAPIView):
         }
 
         if run.status == AIPipelineStatus.SUCCESS:
-            return self._complete_and_respond(
-                client_id_str, idempotency_key,
-                body={'success': True, 'data': body},
-                response_status=http_status.HTTP_201_CREATED,
+            return idem.respond(
+                {'success': True, 'data': body},
+                http_status.HTTP_201_CREATED,
                 ttl=IDEMPOTENCY_REDIS_TTL_SECONDS,
-                log_ctx=log_ctx,
             )
 
-        return self._complete_and_respond(
-            client_id_str, idempotency_key,
-            body={
+        return idem.respond_short(
+            {
                 'success': False,
                 'error': run.error_message or 'Pipeline did not succeed.',
                 'data': body,
             },
-            response_status=http_status.HTTP_502_BAD_GATEWAY,
-            ttl=DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS,
-            log_ctx=log_ctx,
+            http_status.HTTP_502_BAD_GATEWAY,
         )
 
     # =========================================================================
@@ -256,105 +223,6 @@ class DealHealthRunView(BaseAPIView):
                 'last_analysis_at': last_at.isoformat() if last_at else None,
             },
         }
-
-    # =========================================================================
-    # IDEMPOTENCY HELPERS (activity_extraction_view.py:607-705)
-    # =========================================================================
-
-    @staticmethod
-    def _extract_idempotency_key(request):
-        key = (
-            request.headers.get('Idempotency-Key')
-            or request.META.get('HTTP_IDEMPOTENCY_KEY')
-        )
-        if not key:
-            key = str(uuid.uuid4())
-            logger.warning(
-                'deal_health_run.missing_idempotency_key',
-                extra={'generated_uuid_prefix': key[:16]},
-            )
-        return key
-
-    @staticmethod
-    def _respond_existing_op(op, idempotency_key, log_ctx):
-        op_status = op.get('status')
-
-        if op_status == 'succeeded':
-            cached = op.get('result') or {}
-            http_code = cached.get('http_status', http_status.HTTP_200_OK)
-            body = cached.get('data')
-            if body is None:
-                body = cached
-            logger.info(
-                'deal_health_run.idempotency_replay',
-                extra={**log_ctx, 'replay_http_status': http_code},
-            )
-            return Response(body, status=http_code)
-
-        if op_status == 'failed':
-            logger.info('deal_health_run.idempotency_replay_failed', extra=log_ctx)
-            return Response(
-                {
-                    'success': False,
-                    'error':   op.get('error') or 'Previous attempt failed',
-                    'code':    'IDEMPOTENCY_REPLAY_FAILED',
-                },
-                status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        if op_status == 'running':
-            poll_url = POLLING_ENDPOINT_PATTERN.format(key=idempotency_key)
-            logger.info(
-                'deal_health_run.already_running',
-                extra={**log_ctx, 'poll_url': poll_url},
-            )
-            return Response(
-                {
-                    'poll_url': poll_url,
-                    'status':   'running',
-                    'message':  'A deal health analysis is already in progress for this deal.',
-                },
-                status=http_status.HTTP_202_ACCEPTED,
-                headers={'Retry-After': str(POLLING_INTERVAL_SECONDS)},
-            )
-
-        logger.error(
-            'deal_health_run.unknown_op_state',
-            extra={**log_ctx, 'op_status': op_status},
-        )
-        return Response(
-            {
-                'success': False,
-                'error':   'Unknown operation state in idempotency store.',
-                'code':    'IDEMPOTENCY_UNKNOWN_STATE',
-            },
-            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-    @staticmethod
-    def _complete_and_respond(client_id_str, key, *, body, response_status, ttl, log_ctx):
-        try:
-            complete_op(
-                client_id=client_id_str,
-                key=key,
-                result={'http_status': response_status, 'data': body},
-                ttl=ttl,
-            )
-        except Exception:
-            logger.exception('deal_health_run.complete_op_failed', extra=log_ctx)
-        return Response(body, status=response_status)
-
-    @staticmethod
-    def _record_failure(client_id_str, key, exc, log_ctx):
-        try:
-            fail_op(
-                client_id=client_id_str,
-                key=key,
-                error=str(exc),
-                ttl=DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS,
-            )
-        except Exception:
-            logger.exception('deal_health_run.fail_op_failed', extra=log_ctx)
 
     @staticmethod
     def _serialize_run(run):

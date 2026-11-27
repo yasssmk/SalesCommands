@@ -7,8 +7,14 @@ Endpoint:
     POST /module-ai-pipelines/prep-call/run/
 
 Request:
-    { "activity_id": "<uuid>" }
+    Header: Idempotency-Key: <deterministic key from the front> (G12, optional:
+            without one the run goes on as before)
+    { "activity_id": "<uuid>", "language_overrides": [...] (G11, optional) }
     (no contact_id — sprint 2 Game Plan, S2: a contact_id sent is ignored)
+
+Response (200 OK + an INFO code): a business rule (G3 / G9 / G11) — nothing run.
+Response (202 Accepted): the same Idempotency-Key is already running (G12).
+Response (409 Conflict): the same Idempotency-Key with another payload (G12).
 
 Response (201 Created):
     {
@@ -34,7 +40,8 @@ from rest_framework.response import Response
 
 from core.apps_shared_methods import BaseAPIView
 from core.error_messages import AIPipelineErrorMessages, CoreErrorMessages
-from core.exceptions import StandardizedPermissionDenied
+from core.exceptions import StandardizedPermissionDenied, StandardizedValidationError
+from core.timeout_conventions import IDEMPOTENCY_REDIS_TTL_SECONDS
 from core.jwt_helpers import CustomJWTAuthentication
 from core.throttling import AIRateThrottle
 from permissions.mixins import ScopedPermission
@@ -43,11 +50,11 @@ from ..constants import (
     AIPipelineStatus,
     PREP_CALL_ACTIVITY_CLOSED_CODE,
     PREP_CALL_MESSAGE_RECIPIENTS_MAX,
-    PREP_CALL_MESSAGE_TYPES,
     PREP_CALL_NO_CAMPAIGN_NO_DC_CODE,
     PREP_CALL_NO_RECIPIENT_CODE,
     PREP_CALL_NOTHING_NEW_CODE,
     PREP_CALL_TYPE_NOT_ELIGIBLE_CODE,
+    PrepCallOutputKind,
 )
 from ..pipelines.prep_call import PrepCallPipeline
 from ..serializers.prep_call_serializer import (
@@ -60,6 +67,7 @@ from ..services.game_plan_access import (
     game_plan_output_kind,
 )
 from ..services.prep_call.input_pack_assembler import PrepInputPackAssembler
+from .run_idempotency import IdempotentRun
 
 
 logger = logging.getLogger(__name__)
@@ -126,16 +134,42 @@ class PrepCallRunView(BaseAPIView):
                         extra={'activity_id': str(activity.id)})
             raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
 
+        # G12 — Layer 1: Redis idempotency (TD-50), the deal health's
+        # mechanics (views/run_idempotency.py), AFTER the 403 and before any
+        # rule, read or LLM call: the same key while running -> 202, once
+        # answered -> replayed (a success for IDEMPOTENCY_REDIS_TTL_SECONDS, an
+        # INFO / a failure for AI_RUN_SHORT_REPLAY_TTL_SECONDS). No key: a
+        # random one — the run goes on as before (no 400).
+        log_ctx = {'activity_id': str(activity.id)}
+        idem = IdempotentRun(
+            request, client_id, event='prep_call_run',
+            running_message='A Game Plan is already being generated for this activity.',
+            log_ctx=log_ctx,
+        )
+        replay = idem.start()
+        if replay is not None:
+            return replay
+        try:
+            return self._run(request, idem, activity, client_id, target_contact,
+                             validated.get('language_overrides'), log_ctx)
+        except StandardizedValidationError as exc:
+            # The standard 400 (G11: an override to an unknown recipient) —
+            # answered and replayed briefly, never left « running ».
+            response = self.handle_exception(exc)
+            return idem.respond_short(response.data, response.status_code)
+        except Exception as exc:
+            idem.record_failure(exc)
+            raise
+
+    def _run(self, request, idem, activity, client_id, target_contact, language_overrides, log_ctx):
+        """The rules, then the generation — every answer recorded by `idem`."""
         # G3 — the business rules: 200 + an INFO code, nothing run.
         blocked = game_plan_blocked_reason(activity)
         if blocked:
-            logger.info('prep_call_run.blocked',
-                        extra={'activity_id': str(activity.id), 'code': blocked})
-            return Response(_blocked_body(blocked), status=http_status.HTTP_200_OK)
+            logger.info('prep_call_run.blocked', extra={**log_ctx, 'code': blocked})
+            return idem.respond_short(_blocked_body(blocked), http_status.HTTP_200_OK)
 
-        # Idempotence layer 1 (Redis) intentionally omitted — matches
-        # DealHealth pattern. Layer 2 (DB hash dedup in the pipeline)
-        # prevents duplicate snapshots.
+        # Layer 2 — the DB hash dedup in the pipeline (G9: nothing new).
         # G10: no brief mode (the mode resolver and its extra deal-health
         # read are gone): the pack reads the latest snapshot ONCE.
         # G11: the languages chosen for an AI message — the recipient is
@@ -144,15 +178,14 @@ class PrepCallRunView(BaseAPIView):
         input_pack = assembler.build(
             activity=activity,
             target_contact=target_contact,
-            language_overrides=validated.get('language_overrides'),
+            language_overrides=language_overrides,
         )
 
         # G11 (Q2) — an AI message needs a participant with a contact: a
         # business rule, 200 + INFO, nothing run.
         if input_pack.get('recipients') == []:
-            logger.info('prep_call_run.blocked',
-                        extra={'activity_id': str(activity.id), 'code': PREP_CALL_NO_RECIPIENT_CODE})
-            return Response(_blocked_body(PREP_CALL_NO_RECIPIENT_CODE), status=http_status.HTTP_200_OK)
+            logger.info('prep_call_run.blocked', extra={**log_ctx, 'code': PREP_CALL_NO_RECIPIENT_CODE})
+            return idem.respond_short(_blocked_body(PREP_CALL_NO_RECIPIENT_CODE), http_status.HTTP_200_OK)
 
         try:
             pipeline = PrepCallPipeline()
@@ -165,13 +198,9 @@ class PrepCallRunView(BaseAPIView):
                 output_kind=game_plan_output_kind(activity),
                 people=assembler.people,
             )
-        except Exception:
-            logger.exception(
-                'prep_call_run.pipeline_hard_crash',
-                extra={
-                    'activity_id': str(activity.id),
-                },
-            )
+        except Exception as exc:
+            logger.exception('prep_call_run.pipeline_hard_crash', extra=log_ctx)
+            idem.record_failure(exc)
             return Response(
                 {
                     'success': False,
@@ -183,10 +212,11 @@ class PrepCallRunView(BaseAPIView):
         # G9 — nothing new since the last Game Plan: 200 + INFO, after the
         # permission (403) and the business rules of G3 (INFO) above.
         if result.get('blocked'):
-            logger.info('prep_call_run.blocked',
-                        extra={'activity_id': str(activity.id), 'code': result['blocked']})
-            return Response(_blocked_body(result['blocked'], result.get('last_snapshot')),
-                            status=http_status.HTTP_200_OK)
+            logger.info('prep_call_run.blocked', extra={**log_ctx, 'code': result['blocked']})
+            return idem.respond_short(
+                _blocked_body(result['blocked'], result.get('last_snapshot')),
+                http_status.HTTP_200_OK,
+            )
 
         run = result['run']
         snapshot = result.get('snapshot')
@@ -207,12 +237,13 @@ class PrepCallRunView(BaseAPIView):
         }
 
         if run and run.status == AIPipelineStatus.SUCCESS:
-            return Response(
+            return idem.respond(
                 {'success': True, 'data': body},
-                status=http_status.HTTP_201_CREATED,
+                http_status.HTTP_201_CREATED,
+                ttl=IDEMPOTENCY_REDIS_TTL_SECONDS,
             )
 
-        return Response(
+        return idem.respond_short(
             {
                 'success': False,
                 'error': (
@@ -220,7 +251,7 @@ class PrepCallRunView(BaseAPIView):
                 ) or 'Pipeline did not succeed.',
                 'data': body,
             },
-            status=http_status.HTTP_502_BAD_GATEWAY,
+            http_status.HTTP_502_BAD_GATEWAY,
         )
 
     @staticmethod
@@ -322,7 +353,7 @@ class PrepCallMessageLanguagesView(BaseAPIView):
             raise StandardizedPermissionDenied(CoreErrorMessages.PERMISSION_DENIED)
 
         recipients, omitted = [], 0
-        if activity.activity_type in PREP_CALL_MESSAGE_TYPES:
+        if game_plan_output_kind(activity) == PrepCallOutputKind.MESSAGE:
             recipients, omitted = message_recipients(activity_roster(activity))
         return Response({
             'success': True,

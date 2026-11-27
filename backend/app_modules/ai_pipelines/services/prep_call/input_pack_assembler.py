@@ -132,11 +132,12 @@ class PrepInputPackAssembler:
         message_language.message_recipients — Q2 / Q3 / Q7), None for a
         conversation. Raises the standard 400 for an override to an unknown
         recipient."""
-        from app_modules.ai_pipelines.constants import PREP_CALL_MESSAGE_TYPES
+        from app_modules.ai_pipelines.constants import PrepCallOutputKind
+        from app_modules.ai_pipelines.services.game_plan_access import game_plan_output_kind
         from app_modules.ai_pipelines.services.prep_call.message_language import (
             message_recipients,
         )
-        if activity.activity_type not in PREP_CALL_MESSAGE_TYPES:
+        if game_plan_output_kind(activity) != PrepCallOutputKind.MESSAGE:
             return None
         recipients, self.recipients_omitted = message_recipients(people, language_overrides)
         return recipients

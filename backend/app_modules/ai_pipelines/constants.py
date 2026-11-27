@@ -400,8 +400,11 @@ DEAL_HEALTH_CYCLE_CLOSED_CODE = 'DEAL_HEALTH_CYCLE_CLOSED'
 # standard IDEMPOTENCY_REDIS_TTL_SECONDS (its new snapshot changes the front's
 # key anyway). An INFO answer or a failure is kept only long enough to absorb
 # a double click / a second tab, so the rule is evaluated again on the next
-# click (a source added, a retry after an LLM error).
-DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS = 10
+# click (a source added, a retry after an LLM error). ONE value for every AI
+# run endpoint (views/run_idempotency.py — the deal health and, since sprint 2
+# Game Plan G12, the Game Plan); the deal-health name is kept as its alias.
+AI_RUN_SHORT_REPLAY_TTL_SECONDS = 10
+DEAL_HEALTH_SHORT_REPLAY_TTL_SECONDS = AI_RUN_SHORT_REPLAY_TTL_SECONDS
 
 # =============================================================================
 # DEAL HEALTH — FRESHNESS (Sprint « Deal health v2 », step 8, A13)

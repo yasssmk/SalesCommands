@@ -9,7 +9,8 @@ Coverage:
   - A type without Game Plan → 200 + INFO (G3; was a 400).
   - Cross-tenant activity → 400.
   - Unauthenticated → 401.
-  - Idempotency: 2 identical POSTs → 1 LLM call.
+  - Idempotency: 2 identical POSTs → 1 LLM call — announced here, written in
+    tests/ai_pipelines/test_prep_call_idempotency.py (sprint 2 Game Plan, G12).
   - GET by-activity: returns latest snapshot.
   - GET by-activity: returns null when no snapshot.
 """

@@ -124,6 +124,50 @@ def check_prep_call_provider(choice, provider_config):
 check_prep_call_provider(ai_config.PREP_CALL_LLM_PROVIDER, ai_config.PROVIDER_CONFIG)
 
 
+def _validate_plan_output(parsed, *, activity, input_pack, people, last_names):
+    return validate_plan(
+        parsed, people=people, last_names=last_names,
+        has_campaign=bool(input_pack.get('campaign')),
+    )
+
+
+def _validate_message_output(parsed, *, activity, input_pack, people, last_names):
+    return validate_messages(
+        parsed, recipients=input_pack.get('recipients') or [], last_names=last_names,
+        is_email=activity.activity_type == ActivityType.EMAIL,
+    )
+
+
+# G12 — THE single choice of what the pipeline produces, by output_kind
+# (game_plan_output_kind, G3): its system prompt, its request layer, its
+# strict response schema, its prompt versions and its server-side validation.
+_OUTPUTS = {
+    PrepCallOutputKind.PLAN: {
+        'system': SYSTEM_PROMPT,
+        'request': build_outline_request,
+        'schema': PREP_CALL_OUTLINE_SCHEMA,
+        'versions': {
+            'system':  SYSTEM_PROMPT_VERSION,
+            'context': CONTEXT_VERSION,
+            'outline': OUTLINE_PROMPT_VERSION,
+        },
+        'validate': _validate_plan_output,
+    },
+    # G11 — the AI message: one per recipient, in ONE call.
+    PrepCallOutputKind.MESSAGE: {
+        'system': MESSAGE_SYSTEM_PROMPT,
+        'request': build_message_request,
+        'schema': PREP_CALL_MESSAGE_SCHEMA,
+        'versions': {
+            'system':  SYSTEM_PROMPT_VERSION,
+            'context': CONTEXT_VERSION,
+            'message': MESSAGE_PROMPT_VERSION,
+        },
+        'validate': _validate_message_output,
+    },
+}
+
+
 class PrepCallPipeline(BasePipeline):
     """
     See module docstring for the full pipeline contract and lifecycle.
@@ -131,17 +175,9 @@ class PrepCallPipeline(BasePipeline):
 
     PIPELINE_TYPE = AIPipelineType.PREP_CALL
 
-    PROMPT_VERSIONS = {
-        'system':  SYSTEM_PROMPT_VERSION,
-        'context': CONTEXT_VERSION,
-        'outline': OUTLINE_PROMPT_VERSION,
-    }
-    # G11 — the AI message's layers (its own request, its own system variant).
-    MESSAGE_PROMPT_VERSIONS = {
-        'system':  SYSTEM_PROMPT_VERSION,
-        'context': CONTEXT_VERSION,
-        'message': MESSAGE_PROMPT_VERSION,
-    }
+    # The plan's layers (BasePipeline requires them); a run takes the ones of
+    # its output kind (_OUTPUTS).
+    PROMPT_VERSIONS = _OUTPUTS[PrepCallOutputKind.PLAN]['versions']
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.PREP_CALL]
 
@@ -207,11 +243,10 @@ class PrepCallPipeline(BasePipeline):
             )
             return self._blocked(PREP_CALL_NOTHING_NEW_CODE, last)
 
-        # G11 — an email / a LinkedIn message: the message prompt and schema
-        # (one message per recipient, in ONE call); a conversation: the plan.
-        is_message = output_kind == PrepCallOutputKind.MESSAGE
-        if is_message:
-            self.PROMPT_VERSIONS = self.MESSAGE_PROMPT_VERSIONS
+        # G12 — the ONE choice by output_kind: a conversation -> the plan, an
+        # email / a LinkedIn message -> the messages (G11).
+        output = _OUTPUTS[output_kind]
+        self.PROMPT_VERSIONS = output['versions']
 
         # Bound before the try: a crash inside _create_run leaves no run to
         # finalise (S4 — was an UnboundLocalError hiding the original error).
@@ -228,18 +263,13 @@ class PrepCallPipeline(BasePipeline):
 
                 try:
                     context_layer = build_context_layer(input_pack)
-                    request_layer = (
-                        build_message_request(input_pack) if is_message
-                        else build_outline_request(input_pack)
-                    )
+                    request_layer = output['request'](input_pack)
 
                     parsed, sub_call_meta = self._call_llm(
-                        system_prompt=MESSAGE_SYSTEM_PROMPT if is_message else SYSTEM_PROMPT,
+                        system_prompt=output['system'],
                         context=context_layer,
                         request=request_layer,
-                        response_schema=(
-                            PREP_CALL_MESSAGE_SCHEMA if is_message else PREP_CALL_OUTLINE_SCHEMA
-                        ),
+                        response_schema=output['schema'],
                     )
 
                     # G10 / G11 — validated server side (the deal health v2
@@ -249,20 +279,10 @@ class PrepCallPipeline(BasePipeline):
                         roster_last_names(people.roster, client_id)
                         if people is not None else frozenset()
                     )
-                    if is_message:
-                        plan, ref_counts = validate_messages(
-                            parsed,
-                            recipients=input_pack.get('recipients') or [],
-                            last_names=last_names,
-                            is_email=activity.activity_type == ActivityType.EMAIL,
-                        )
-                    else:
-                        plan, ref_counts = validate_plan(
-                            parsed,
-                            people=people,
-                            last_names=last_names,
-                            has_campaign=bool(input_pack.get('campaign')),
-                        )
+                    plan, ref_counts = output['validate'](
+                        parsed, activity=activity, input_pack=input_pack,
+                        people=people, last_names=last_names,
+                    )
 
                     snapshot = self._persist_snapshot(
                         plan=plan,
