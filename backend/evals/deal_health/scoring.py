@@ -233,6 +233,13 @@ _CODE_FIELDS = {
 _POSSESSIVE = re.compile(r"(?:['’]s|['’])$", re.IGNORECASE)
 
 
+# An English contraction (« I’d », « I'll », « we’re », « they’ve », « I’m »,
+# « don’t », « can’t ») is not a name (sprint 2 Game Plan, G13e — a defect of
+# this generic heuristic). A name with an apostrophe (« O’Neil », « D’Angelo »)
+# is not a contraction: its part after the apostrophe is not one of these.
+_CONTRACTION = re.compile(r"^[a-z]+['’](?:d|ll|re|ve|m)$|^[a-z]+n['’]t$", re.IGNORECASE)
+
+
 def _without_possessive(word):
     return _POSSESSIVE.sub('', word)
 
@@ -266,6 +273,8 @@ def invented_names(output, input_text):
                 inner_capital = any(c.isupper() for c in word[1:])
                 capitalised = word[0].isupper() and index > 0
                 if not (capitalised or (inner_capital and len(word) >= 3)):
+                    continue
+                if _CONTRACTION.match(word):
                     continue
                 name = _without_possessive(word).strip("'’-")
                 folded = _fold(name)

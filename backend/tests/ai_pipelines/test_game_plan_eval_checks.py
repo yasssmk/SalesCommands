@@ -356,3 +356,26 @@ def test_the_slot_check_is_in_the_recap_and_carries_its_excerpt():
     slot = next(f for f in metrics['findings_context'] if f['kind'] == 'slot')
     assert slot['path'] == 'messages[0].body' and 'mardi 1er décembre' in slot['excerpt']
     assert scoring.checks(_score(_PLAN))['slots'] is True
+
+
+# =============================================================================
+# G13e — an English contraction is not a name
+# =============================================================================
+
+@pytest.mark.parametrize('text', [
+    'Then I’d suggest a review.',
+    'Then I’ll call you.',
+    "Great, I'll send it.",                       # straight apostrophe
+    'Thanks — We’re ready.',
+    'So I’m sure.',
+    'Good, They’ve agreed.',
+    'Yes, Don’t push.',
+    'Fine, Can’t wait.',
+    'Sure, Won’t hurt.',
+])
+def test_an_english_contraction_is_not_an_invented_name(text):
+    assert scoring.invented_names({'context': text}, 'Claire Corvane.') == [], text
+
+
+def test_a_name_with_an_apostrophe_stays_a_finding():
+    assert scoring.invented_names({'context': 'Ask O’Neil first.'}, 'Claire Corvane.') == ['O’Neil']
