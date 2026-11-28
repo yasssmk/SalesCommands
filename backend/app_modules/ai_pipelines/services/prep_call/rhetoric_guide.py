@@ -127,3 +127,73 @@ MESSAGE_NEXT_EXCHANGE_RULE = (
     'THE MESSAGE PROPOSES TO AGREE ON A NEXT EXCHANGE, with no invented '
     'precision (no date, no time, no duration).'
 )
+
+
+# =============================================================================
+# v2.3 (sprint 2 Game Plan, G13g — PO decision of 28/11), read by
+# prompts/prep_call/system_v2_3.py: the rhetorical frame is EXPLICIT in the
+# prompt as an INTERNAL reasoning tool — the right argumentative line, at the
+# right moment, to the right person — and NEVER shown in the output (plain
+# sales language). Rebuilt from the v1 guide (prompts/prep_call/guide_v1.py:
+# its registers, maturity modulations and mixing rule), the brief modes left
+# out. The v2 texts above (« HOW YOU CONVINCE », the guard rails) stay those
+# of v2 / v2.1 / v2.2.
+# =============================================================================
+
+# The three levers — chosen per participant and per section.
+RHETORIC_LEVERS = (
+    (
+        'ETHOS — credibility: proof and references from the input ONLY (the '
+        'seller profile\'s references and certifications, the facts of the deal). '
+        'Without proof, lean on what the client said.'
+    ),
+    (
+        'PATHOS, measured — what the client expressed themselves (urgency, '
+        'frustration, desire), brought back in their own words; never forced, '
+        'never asserted for them.'
+    ),
+    (
+        'LOGOS — facts and logic: the facts, the causal chain, the figures of '
+        'the input ONLY.'
+    ),
+    (
+        'BAC for each argument — the Benefit for them, the Advantage over their '
+        'current way, the Characteristic that makes it possible (a capability of '
+        'the input only).'
+    ),
+)
+
+# The pivots — adapt them, never follow them to the letter (v1's registers:
+# narrative contrast, deliberative call to act, analogy, short formula).
+RHETORIC_PIVOTS = (
+    'contrast their frustration today with the relief after — from what they '
+    'feel to what changes;',
+    '« endure or steer »: put the cost of the status quo against acting, to '
+    'move to the next step;',
+    'a short, concrete analogy to make a complex point simple — never alone;',
+    'a short, memorable line to end a section — sparingly.',
+)
+
+# Adapt to the deal (v1's maturity modulations, in lever terms).
+RHETORIC_ADJUSTMENTS = (
+    'credibility weak or unknown: ethos first — proof from the input, never '
+    'emphasis or enthusiasm;',
+    'urgency missing: a light cost of the status quo, through a question, '
+    'without pressure;',
+    'felt pain unproven: let them say it — questions, not assertions;',
+    'a process actor (finance, procurement, legal): logos on THEIR decision '
+    'criteria, not product pains.',
+)
+
+# v1's mixing rule.
+RHETORIC_MIX = (
+    'One dominant lever per section, at most one secondary: beyond that the '
+    'message blurs.'
+)
+
+# The output — plain sales language (G13g).
+PLAIN_LANGUAGE_RULE = (
+    'PLAIN SALES LANGUAGE: the output never names the frame — no ethos, pathos, '
+    'logos, BAC, lever, register, pivot, nor any other jargon. Every line can be '
+    'said as is in the meeting.'
+)

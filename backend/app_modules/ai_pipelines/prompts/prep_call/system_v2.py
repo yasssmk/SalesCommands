@@ -77,14 +77,16 @@ LANGUAGE: Write each message — its subject and its body — in the language
     the language of the evidence. Set its "language" to that tag."""
 
 
-def _system_prompt(intro, language_rule, rules=_RULES):
+def _system_prompt(intro, language_rule, rules=_RULES, convince_block=None):
+    # convince_block (G13g, v2.3): the block that tells how to convince; by
+    # default v2's « HOW YOU CONVINCE » — v2 / v2.1 / v2.2 unchanged.
+    convince_block = convince_block or f"HOW YOU CONVINCE:\n{_bullets(CONVICTION_LEVERS)}"
     return f"""\
 {intro}
 
 BALANCE: {PERSUASION_MIX}
 
-HOW YOU CONVINCE:
-{_bullets(CONVICTION_LEVERS)}
+{convince_block}
 
 ADAPT TO THE DEAL:
 {_bullets(MATURITY_ADJUSTMENTS)}

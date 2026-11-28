@@ -63,7 +63,7 @@ def test_the_plan_is_generated_with_v2_2_and_the_outline_v2_1(
     assert 'two date options' not in system and 'two date options' not in call['user']
     assert system_v2_1.SLOT_RULE in system                            # v2.1's rule kept
     assert call['extra']['response_schema'] == outline_v2_1.PREP_CALL_OUTLINE_SCHEMA
-    assert run.prompt_versions == {'system': 'v2.2', 'context': 'v2', 'outline': 'v2.1'}
+    assert run.prompt_versions == {'system': 'v2.3', 'context': 'v2', 'outline': 'v2.1'}   # v2.3 keeps v2.2
 
 
 def test_the_message_proposes_a_next_exchange_and_is_not_bound_by_the_plan_lines(
@@ -83,7 +83,7 @@ def test_the_message_proposes_a_next_exchange_and_is_not_bound_by_the_plan_lines
     assert rhetoric_guide.MESSAGE_NEXT_EXCHANGE_RULE in call['system']
     assert rhetoric_guide.NEXT_STEP_RULE in call['system']
     assert rhetoric_guide.readability_rule(PREP_CALL_LINE_MAX_WORDS) not in call['system']
-    assert run.prompt_versions['system'] == 'v2.2'
+    assert run.prompt_versions['system'] == 'v2.3'   # v2.3 keeps v2.2
 
 
 def test_the_outline_keeps_the_v2_keys_and_describes_the_closing_and_the_opening():

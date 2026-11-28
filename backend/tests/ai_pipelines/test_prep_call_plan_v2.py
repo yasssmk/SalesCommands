@@ -216,7 +216,7 @@ def test_a_valid_plan_is_persisted_in_schema_v2_with_its_deal_health_trace(
     run = _post(authed_api_a, meeting, patch_active_provider, answer)
 
     assert run.status == AIPipelineStatus.SUCCESS, run.error_message
-    assert run.prompt_versions == {'system': 'v2.2', 'context': 'v2', 'outline': 'v2.1'}
+    assert run.prompt_versions == {'system': 'v2.3', 'context': 'v2', 'outline': 'v2.1'}
     snapshot = _snapshot_of(meeting)
     assert snapshot.schema_version == 2
     assert snapshot.brief_mode is None
@@ -266,18 +266,26 @@ def test_the_prompt_is_the_v2(authed_api_a, scene, patch_active_provider):
     assert OUTPUT_LANGUAGE_RULE in system                 # the deal health v2's rule
     assert 'NEVER INVENT' in system and 'percentage' in system
     assert 'BRIEF MODE' not in user and 'DOMINANT REGISTER' not in user
-    for text in (system, user):
-        assert not re.search(r'\b(ethos|pathos|logos)\b', text, re.IGNORECASE)
+    # G13g (PO decision of 28/11): the classical labels are the system's
+    # INTERNAL frame (v2.3), never in the pack / request, never in the output.
+    assert not re.search(r'\b(ethos|pathos|logos)\b', user, re.IGNORECASE)
+    assert 'an INTERNAL frame' in system and 'PLAIN SALES LANGUAGE' in system
 
 
-def test_the_persuasion_guide_names_no_classical_label():
+def test_the_v2_guide_texts_name_no_classical_label():
+    """Renamed from test_the_persuasion_guide_names_no_classical_label (G13g:
+    the guide now ALSO holds v2.3's internal frame, with the classical names).
+    The texts of v2 / v2.1 / v2.2 still name none, and no brief mode is back."""
     import inspect
 
-    from app_modules.ai_pipelines.services.prep_call import rhetoric_guide
-    source = inspect.getsource(rhetoric_guide).lower()
-    for word in ('ethos', 'pathos', 'logos', 'epideictic', 'deliberative',
-                 'demonstrative', 'aphoristic', 'brief_mode', 'discovery_mode'):
-        assert word not in source, word
+    from app_modules.ai_pipelines.services.prep_call import rhetoric_guide as g
+    v2_texts = ' '.join([g.PERSUASION_MIX, *g.CONVICTION_LEVERS, *g.MATURITY_ADJUSTMENTS, *g.GUARDRAILS,
+                         g.NEXT_STEP_RULE, g.OPENING_TIME_RULE, g.readability_rule(15),
+                         g.MESSAGE_NEXT_EXCHANGE_RULE]).lower()
+    for word in ('ethos', 'pathos', 'logos', 'epideictic', 'deliberative', 'demonstrative', 'aphoristic'):
+        assert word not in v2_texts, word
+    source = inspect.getsource(g).lower()
+    assert 'brief_mode' not in source and 'discovery_mode' not in source
 
 
 def test_the_deal_health_reads_the_shared_language_rule():

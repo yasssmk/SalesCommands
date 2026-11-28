@@ -20,8 +20,8 @@ Versioning: each layer carries its own version constant, captured in
 AIPipelineRun.prompt_versions.
 """
 
-# G13f: the system v2.2 and the outline v2.1 (v2 / v2.1 kept, unchanged).
-from .system_v2_2 import MESSAGE_SYSTEM_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+# G13g: the system v2.3 (v2 / v2.1 / v2.2 kept, unchanged); G13f: the outline v2.1.
+from .system_v2_3 import MESSAGE_SYSTEM_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
 from .message_v2 import (
     MESSAGE_PROMPT_VERSION,
     PREP_CALL_MESSAGE_SCHEMA,
