@@ -73,7 +73,7 @@ from django.db import transaction  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
 from app_modules.ai_pipelines import config as ai_config  # noqa: E402
-from app_modules.ai_pipelines.constants import AIPipelineStatus  # noqa: E402
+from app_modules.ai_pipelines.constants import AIPipelineStatus, PREP_CALL_LINE_MAX_WORDS  # noqa: E402
 from app_modules.ai_pipelines.pipelines.prep_call import PrepCallPipeline, _OUTPUTS  # noqa: E402
 from app_modules.ai_pipelines.prompts.base import PromptBuilder, PromptParseError  # noqa: E402
 from app_modules.ai_pipelines.providers import (  # noqa: E402
@@ -355,7 +355,7 @@ def _dry_plan(case, expected):
             {'label': 'B', 'goal': 'Learn who decides.', 'success_criteria': 'The decider is named.'},
         ]},
         'client_expectations': ['A clear view of how the planning would work.'],
-        'opening': {'objective': 'Agree on the next step.', 'time': 'Ask for the time they have.',
+        'opening': {'objective': 'Agree on the next step.', 'time': 'Confirm the time they have.',
                     'client_agenda': 'Ask what they want from the call.',
                     'our_agenda': 'Their planning today, then the next step.',
                     'expected_outcome': 'A next step accepted.'},
@@ -371,8 +371,9 @@ def _dry_plan(case, expected):
                                                        'advantage': 'No manual rework.',
                                                        'feature': 'The planning engine.'}]}
                           for ref in expected['participants']],
-        'closing': {'next_step': 'Book the next meeting.', 'with_whom': first,
-                    'when': 'Two dates next week.', 'keep_control': 'Send the invitation today.'},
+        'closing': {'next_step': f'Agree on the next step that validates this stage.', 'with_whom': first,
+                    'when': 'After the recap, before the end of the call.',
+                    'keep_control': f'Get {first}’s agreement on it and book it before hanging up.'},
         'product_pitch': [],
         'participants': [{'ref': ref, 'angle': 'Their own words first.'} for ref in expected['participants']],
         'campaign_diagnostic': (
@@ -394,7 +395,9 @@ def _dry_messages(expected):
 
 def _dry_answer(case, model_key):
     """A valid answer built from the case's truth, through the real parse /
-    validate path. Three cells are deliberately faulty, to show red checks:
+    validate path. Four cells are deliberately faulty, to show red checks:
+      * call_mid_cycle · openai_prep_call_challenger: a closing that is not
+        sober (a duration, a precise slot, no agreement asked);
       * trap_no_figures · openai_prep_call_challenger: an INVENTED figure (the RED
         RUBAN fault, with numbers no date can hold: « 37 % … 430 hours »);
       * linkedin_default · openai_prep_call_challenger: an invented slot and a
@@ -411,6 +414,10 @@ def _dry_answer(case, model_key):
                                              "for Tuesday at 10:00.")
         return answer
     answer = _dry_plan(case, expected)
+    if case == 'call_mid_cycle' and model_key == 'openai_prep_call_challenger':
+        # G13f — a closing that is not sober: a duration, a precise slot, no agreement asked.
+        answer['closing'] = {'next_step': 'A 45-minute security review.', 'with_whom': 'Nadia',
+                             'when': 'On 3 December at 10:00.', 'keep_control': 'Send the deck today.'}
     if case == 'trap_no_figures' and model_key == 'openai_prep_call_challenger':
         answer['context'] = ('Reducing IT maintenance by 37 % saves 430 hours a year: '
                              'lead with it.')
@@ -548,9 +555,10 @@ def write_report(out_dir, records, prices=None, suffix=''):
         '## Récapitulatif (par modèle : contrôles réussis sur les appels où ils s’appliquent)',
         '',
         '| Modèle | ' + ' | '.join(label for _k, label in scoring.CHECK_LABELS)
+        + f' | lisibilité : part > {PREP_CALL_LINE_MAX_WORDS} mots / mots moy. (plans)'
         + ' | PARSE_ERROR (rhétorique / nom / faux rejet / structure) | durée moy. (s) '
           '| durée max (s) | > 12 s | tokens moy. (in/out) | coût estimé ($) | erreurs |',
-        '|' + '---|' * (len(scoring.CHECK_LABELS) + 8),
+        '|' + '---|' * (len(scoring.CHECK_LABELS) + 9),
     ]
     for model_key in cells:
         recs = [r for r in records if r['provider_key'] == model_key]
@@ -560,9 +568,15 @@ def write_report(out_dir, records, prices=None, suffix=''):
         causes = [r['metrics'].get('parse_error_cause') for r in recs]
         costs = [_cost(r, prices) for r in recs]
         errors = [r['metrics'].get('error_type') for r in recs if r['metrics'].get('error_type')]
+        legible = [r['metrics'].get('readability') for r in recs
+                   if (r['metrics'].get('readability') or {}).get('items')]
+        legibility = (f'{round(100 * sum(x["over_share"] for x in legible) / len(legible))} % / '
+                      f'{round(sum(x["mean_words"] for x in legible) / len(legible), 1)}'
+                      if legible else '—')
         lines.append(
             f'| {model_of[model_key]} (`{model_key}`) | '
             + ' | '.join(rate(recs, key) for key, _label in scoring.CHECK_LABELS)
+            + f' | {legibility}'
             + ' | ' + ' / '.join(str(causes.count(c)) for c in scoring.PARSE_CAUSES)
             + f' ({sum(1 for c in causes if c)}/{len(recs)})'
             f' | {round(sum(durations) / len(durations) / 1000, 1) if durations else "—"}'
@@ -635,6 +649,11 @@ def _all_calls_findings(recs):
             'wrong_languages') if metrics.get(k)}
         if metrics.get('parse_error_cause') or metrics.get('error_type'):
             listed['erreur'] = metrics.get('parse_error_cause') or metrics.get('error_type')
+        closing = metrics.get('closing_findings') or {}
+        if closing.get('durations') or closing.get('slots') or (closing and not closing.get('agreement')):
+            listed['closing'] = closing                                    # G13f
+        if (metrics.get('readability') or {}).get('over'):
+            listed[f'lignes > {PREP_CALL_LINE_MAX_WORDS} mots'] = metrics['readability']['over']
         context = metrics.get('findings_context') or []
         lines.append(f'- appel {record["call"]} : '
                      + (json.dumps(listed, ensure_ascii=False) if listed or context else 'aucun'))

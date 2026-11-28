@@ -122,7 +122,7 @@ def test_the_plan_schema_is_sent_as_the_response_schema(authed_api_a, scene, pat
     sent = call['extra'].get('response_schema')
     assert sent is not None, call['extra']                 # before G10: none was sent
     assert resp.status_code == 201, resp.content
-    from app_modules.ai_pipelines.prompts.prep_call.outline_v2 import PREP_CALL_OUTLINE_SCHEMA
+    from app_modules.ai_pipelines.prompts.prep_call import PREP_CALL_OUTLINE_SCHEMA
     assert sent == PREP_CALL_OUTLINE_SCHEMA
     schema = PREP_CALL_OUTLINE_SCHEMA['schema']
     assert set(schema['required']) == {
@@ -212,7 +212,7 @@ def test_a_valid_plan_is_persisted_in_schema_v2_with_its_deal_health_trace(
     run = _post(authed_api_a, meeting, patch_active_provider, answer)
 
     assert run.status == AIPipelineStatus.SUCCESS, run.error_message
-    assert run.prompt_versions == {'system': 'v2.1', 'context': 'v2', 'outline': 'v2'}
+    assert run.prompt_versions == {'system': 'v2.2', 'context': 'v2', 'outline': 'v2.1'}
     snapshot = _snapshot_of(meeting)
     assert snapshot.schema_version == 2
     assert snapshot.brief_mode is None

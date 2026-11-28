@@ -24,8 +24,9 @@ New checks (README.md « Contrôles automatiques »):
 
 import re
 
+from app_modules.ai_pipelines.constants import PREP_CALL_LINE_MAX_WORDS
 from app_modules.ai_pipelines.prompts.prep_call.message_v2 import PREP_CALL_MESSAGE_SCHEMA
-from app_modules.ai_pipelines.prompts.prep_call.outline_v2 import PREP_CALL_OUTLINE_SCHEMA
+from app_modules.ai_pipelines.prompts.prep_call import PREP_CALL_OUTLINE_SCHEMA  # the one sent
 
 from evals.deal_health import scoring as _generic
 from evals.deal_health.scoring import (
@@ -351,6 +352,57 @@ def locate_findings(parsed, numbers, names):
     return found
 
 
+# =============================================================================
+# THE CLOSING, SOBER — and READABLE IN THE MIDDLE OF A MEETING (G13f)
+# =============================================================================
+# PO decisions of 28/11: the closing gets the person's agreement on the next
+# step and locks it in during the conversation — no duration, no date, no
+# time; every item of a section one short line (PREP_CALL_LINE_MAX_WORDS).
+
+_CLOSING_FIELDS = ('next_step', 'with_whom', 'when', 'keep_control')
+_AGREEMENT = re.compile(
+    r'\b(?:agree\w*|agreement|accord|commit\w*|confirm\w*|buy-in|sign[\s-]?off|go-ahead'
+    r'|green\s+light|consent\w*|approv\w*|yes|valider|validation|obtenir|engag\w*)\b',
+    re.IGNORECASE,
+)
+
+
+def closing_findings(parsed):
+    """{'durations': [...], 'slots': [...], 'agreement': bool} of the
+    closing: any duration, any date or time (even one of the pack: the next
+    meeting is never detailed), and whether an agreement is asked for."""
+    closing = (parsed or {}).get('closing') or {}
+    text = ' \n '.join(str(closing.get(f) or '') for f in _CLOSING_FIELDS)
+    spans = [(m.start(), m.end()) for pattern in
+             (_MEETING_DURATION, _ASKED_DURATION, _FR_MEETING_DURATION, _BARE_DURATION)
+             for m in pattern.finditer(text)]
+    # The longest match only: « 45-minute » inside « 45-minute security review ».
+    durations = {' '.join(text[a:b].split()) for a, b in spans
+                 if not any(c <= a and b <= d and (c, d) != (a, b) for c, d in spans)}
+    slots = {m.group(0).strip() for m in _SLOT_DATE.finditer(text)}
+    slots |= {m.group(0).strip() for m in _SLOT_TIME.finditer(text)}
+    return {'durations': sorted(durations), 'slots': sorted(slots),
+            'agreement': bool(_AGREEMENT.search(text))}
+
+
+def closing_sober(parsed):
+    found = closing_findings(parsed)
+    return not found['durations'] and not found['slots'] and found['agreement']
+
+
+def readability(parsed, max_words=PREP_CALL_LINE_MAX_WORDS):
+    """The items of the plan's sections (every text but the context, the refs,
+    the labels): {'items', 'over': [(path, words)], 'over_share', 'mean_words'}."""
+    items = [(path, len(text.split())) for path, text in texts(prose(parsed))
+             if path != 'context' and text.strip()]
+    if not items:
+        return {'items': 0, 'over': [], 'over_share': None, 'mean_words': None}
+    over = [(path, words) for path, words in items if words > max_words]
+    return {'items': len(items), 'over': over,
+            'over_share': round(len(over) / len(items), 3),
+            'mean_words': round(sum(w for _p, w in items) / len(items), 1)}
+
+
 def schema_for(output_kind):
     return PREP_CALL_MESSAGE_SCHEMA if output_kind == 'MESSAGE' else PREP_CALL_OUTLINE_SCHEMA
 
@@ -505,6 +557,8 @@ def score_call(*, parsed, prompt, user_prompt, expected, meta=None, error_type=N
             'opening_missing': opening_missing(parsed),
             'discovery_covers_dh': discovery_covers_dh(parsed, expected.get('dh_missing_any_of')),
             'campaign_diagnostic_ok': campaign_diagnostic_ok(parsed, expected['campaign_diagnostic']),
+            'closing_findings': closing_findings(parsed),                  # G13f
+            'readability': readability(parsed),
         })
     else:
         metrics.update({
@@ -527,6 +581,7 @@ CHECK_LABELS = (
     ('opening', 'ouverture en 5 parties'),
     ('discovery', 'découverte = info manquante DH'),
     ('campaign', 'campaign_diagnostic au bon cas'),
+    ('closing', 'closing sobre (accord, ni durée ni date)'),
     ('language', 'langue par destinataire'),
     ('subject', 'subject email / pas LinkedIn'),
 )
@@ -550,6 +605,12 @@ def checks(metrics):
         'opening': not metrics['opening_missing'] if plan else None,
         'discovery': metrics['discovery_covers_dh'] if plan else None,
         'campaign': metrics['campaign_diagnostic_ok'] if plan else None,
+        # Older records (before G13f) have no closing metric: recomputed by --rescore.
+        'closing': (
+            (not metrics['closing_findings']['durations'] and not metrics['closing_findings']['slots']
+             and metrics['closing_findings']['agreement'])
+            if plan and metrics.get('closing_findings') is not None else None
+        ),
         'language': not metrics['wrong_languages'] if not plan else None,
         'subject': metrics['subject_ok'] if not plan else None,
     }

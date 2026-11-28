@@ -88,3 +88,42 @@ GUARDRAILS = (
         'filler, no platitude ("ask open-ended questions" is banned).'
     ),
 )
+
+
+# =============================================================================
+# v2.2 (sprint 2 Game Plan, G13f — PO decisions of 28/11), read by
+# prompts/prep_call/system_v2_2.py. The rules above stay those of v2 / v2.1.
+# =============================================================================
+
+# Decision 1 — the next step and the closing: less precise, « closer ».
+# Replaces, in v2.2, the v2 rule « THE NEXT STEP IS A COMMITMENT » (which
+# asked for two date options).
+NEXT_STEP_RULE = (
+    'THE NEXT STEP IS THE NEXT LOGICAL STEP OF THEIR BUYING PROCESS: the one '
+    'that validates the current step (its criteria, the missing information). '
+    'The closing makes the rep get the person\'s agreement on that next step '
+    'and lock it in during the conversation ("Get agreement on the security '
+    'review and book it before hanging up"). No date, no time, no duration and '
+    'no detailed content of the next meeting.'
+)
+
+# Decision 1 — the opening's time.
+OPENING_TIME_RULE = (
+    'THE TIME OF THE OPENING: confirm the time the person has; never invent a '
+    'duration — reuse one only when the input gives it.'
+)
+
+# Decision 2 — readable in the middle of a meeting (the plan only).
+def readability_rule(max_words):
+    return (
+        'READABLE AT A GLANCE: each item of a section is ONE short line, at most '
+        f'{max_words} words, opening on an action verb (ask, confirm, get, show) — '
+        'no paragraph. The context stays 2 to 3 short sentences.'
+    )
+
+
+# Decision 1 — the AI message.
+MESSAGE_NEXT_EXCHANGE_RULE = (
+    'THE MESSAGE PROPOSES TO AGREE ON A NEXT EXCHANGE, with no invented '
+    'precision (no date, no time, no duration).'
+)

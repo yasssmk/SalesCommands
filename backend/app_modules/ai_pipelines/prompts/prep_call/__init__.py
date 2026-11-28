@@ -20,15 +20,15 @@ Versioning: each layer carries its own version constant, captured in
 AIPipelineRun.prompt_versions.
 """
 
-# G13d: the system v2.1 (v2 kept, unchanged, in system_v2.py).
-from .system_v2_1 import MESSAGE_SYSTEM_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+# G13f: the system v2.2 and the outline v2.1 (v2 / v2.1 kept, unchanged).
+from .system_v2_2 import MESSAGE_SYSTEM_PROMPT, SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
 from .message_v2 import (
     MESSAGE_PROMPT_VERSION,
     PREP_CALL_MESSAGE_SCHEMA,
     build_message_request,
 )
 from .context_v2 import build_context_layer, CONTEXT_VERSION
-from .outline_v2 import (
+from .outline_v2_1 import (
     OUTLINE_PROMPT_VERSION,
     PREP_CALL_OUTLINE_SCHEMA,
     build_outline_request,

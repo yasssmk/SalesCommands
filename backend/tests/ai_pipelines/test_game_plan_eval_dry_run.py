@@ -39,6 +39,7 @@ def test_the_dry_run_plays_the_matrix_writes_the_report_and_leaves_nothing(dry_r
     for case in tool.CASES:
         assert f'## Cas `{case}`' in report
     assert '## Récapitulatif' in report and 'PARSE_ERROR' in report and '> 12 s' in report
+    assert 'closing sobre' in report and 'lisibilité : part > 15 mots / mots moy.' in report   # G13f
     # G13c: a finding is shown with its section and its excerpt.
     assert '- `37` (chiffre) — section `context` — « Reducing IT maintenance by 37 %' in report
     # G13d: the findings of EVERY call, and the slot findings with their excerpt.
@@ -66,7 +67,7 @@ def test_each_case_takes_its_output_kind_and_schema(dry_run):
         assert record['output_kind'] == expected['output_kind']
         sent = record['attempts'][0]['response_schema']
         assert sent == ('prep_call_messages_v2' if expected['output_kind'] == 'MESSAGE'
-                        else 'prep_call_game_plan_v2')
+                        else 'prep_call_game_plan_v2_1')
 
 
 def test_the_checks_run_on_every_call_and_catch_the_planted_faults(dry_run):
@@ -74,7 +75,13 @@ def test_the_checks_run_on_every_call_and_catch_the_planted_faults(dry_run):
     for record in records:
         metrics, checks = record['metrics'], scoring.checks(record['metrics'])
         cell = (record['case'], record['provider_key'])
-        if cell == ('trap_no_figures', 'openai_prep_call_challenger'):
+        if cell == ('call_mid_cycle', 'openai_prep_call_challenger'):
+            # G13f — the closing is not sober (and its slot is an invented one).
+            assert checks['closing'] is False and checks['slots'] is False
+            assert metrics['closing_findings'] == {
+                'durations': ['45-minute security review'], 'slots': ['10:00', '3 December'],
+                'agreement': False}
+        elif cell == ('trap_no_figures', 'openai_prep_call_challenger'):
             assert checks['numbers'] is False and metrics['invented_numbers'] == ['37', '430']
         elif cell == ('linkedin_default', 'openai_prep_call_challenger'):
             assert checks['slots'] is False

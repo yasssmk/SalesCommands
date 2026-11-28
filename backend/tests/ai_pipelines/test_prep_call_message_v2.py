@@ -150,7 +150,7 @@ def test_one_llm_call_with_the_message_schema_and_the_recipients(
     assert 'Nina — language: en' in call['user']
     assert "in the language\n    given for its recipient" in call['system']
     run = AIPipelineRun.objects.get(source_activity=scene['email'])
-    assert run.prompt_versions == {'system': 'v2.1', 'context': 'v2', 'message': 'v2'}
+    assert run.prompt_versions == {'system': 'v2.2', 'context': 'v2', 'message': 'v2'}
 
 
 def test_a_user_edited_ai_value_is_a_profile_language():

@@ -47,7 +47,7 @@ def test_the_plan_is_generated_with_the_slot_rule(authed_api_a, account, user_a,
 
     [call] = patch_active_provider.calls_for('prep_call')
     assert system_v2_1.SLOT_RULE in call['system']
-    assert run.prompt_versions['system'] == 'v2.1'
+    assert run.prompt_versions['system'] == 'v2.2'   # v2.2 keeps the slot rule (G13f)
 
 
 def test_the_message_is_generated_with_the_slot_rule(authed_api_a, account, user_a, patch_active_provider):
@@ -63,7 +63,7 @@ def test_the_message_is_generated_with_the_slot_rule(authed_api_a, account, user
 
     [call] = patch_active_provider.calls_for('prep_call')
     assert system_v2_1.SLOT_RULE in call['system']
-    assert run.prompt_versions['system'] == 'v2.1'
+    assert run.prompt_versions['system'] == 'v2.2'   # v2.2 keeps the slot rule (G13f)
 
 
 def test_the_rule_gives_the_placeholder_in_every_language():

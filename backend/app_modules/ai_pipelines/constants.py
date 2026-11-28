@@ -605,6 +605,11 @@ PREP_CALL_DEFAULT_MESSAGE_LANGUAGE = 'en'
 # It proposes an open window, or leaves this placeholder for the rep to fill
 # — written in the language of the text (a message's language; the plan is
 # in English). A language absent from the map takes the English one.
+# G13f (PO decision 2, 28/11 — readable in the middle of a meeting): each item
+# of a Game Plan section is ONE short line, at most this many words, opening
+# on an action verb; the context stays 2 to 3 sentences.
+PREP_CALL_LINE_MAX_WORDS = 15
+
 PREP_CALL_SLOT_PLACEHOLDERS = {
     'en': '[date and time]',
     'fr': '[date et heure]',

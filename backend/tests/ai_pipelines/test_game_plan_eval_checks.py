@@ -23,7 +23,8 @@ _PLAN = {
                   'conviction': {axis: {'reading': 'r', 'question': 'q'}
                                  for axis in ('needs_and_urgency', 'credibility', 'fit_and_value')}},
     'argumentation': [],
-    'closing': {'next_step': 'n', 'with_whom': 'Nadia', 'when': 'w', 'keep_control': 'k'},
+    'closing': {'next_step': 'n', 'with_whom': 'Nadia', 'when': 'w',
+                'keep_control': 'Get agreement on it before hanging up.'},   # G13f: an agreement asked
     'product_pitch': [],
     'participants': [{'ref': 'Nadia', 'angle': 'Her words.'}, {'ref': 'P1 Marc (IT)', 'angle': 'Security.'}],
     'campaign_diagnostic': None,
@@ -379,3 +380,59 @@ def test_an_english_contraction_is_not_an_invented_name(text):
 
 def test_a_name_with_an_apostrophe_stays_a_finding():
     assert scoring.invented_names({'context': 'Ask O’Neil first.'}, 'Claire Corvane.') == ['O’Neil']
+
+
+# =============================================================================
+# G13f — the closing, sober; readable in the middle of a meeting
+# =============================================================================
+
+_SOBER = {'next_step': 'Run the security review that validates technical fit.', 'with_whom': 'Marc',
+          'when': 'After the pilot recap.',
+          'keep_control': 'Get agreement on the security review and book it before hanging up.'}
+
+
+def test_a_sober_closing_passes():
+    parsed = _plan(closing=_SOBER)
+    assert scoring.closing_findings(parsed) == {'durations': [], 'slots': [], 'agreement': True}
+    assert scoring.checks(_score(parsed))['closing'] is True
+
+
+@pytest.mark.parametrize('field, text, key', [
+    ('next_step', 'A 45-minute security review.', 'durations'),
+    ('when', 'Spend 20 minutes on it.', 'durations'),
+    ('when', 'On 3 December.', 'slots'),
+    ('when', 'Tuesday at 10:00.', 'slots'),
+    ('when', 'Le 3 décembre à 10 h.', 'slots'),
+])
+def test_a_duration_a_date_or_a_time_in_the_closing_is_caught(field, text, key):
+    parsed = _plan(closing={**_SOBER, field: text})
+    assert scoring.closing_findings(parsed)[key], text
+    assert scoring.checks(_score(parsed))['closing'] is False
+
+
+def test_a_closing_without_an_agreement_asked_is_caught():
+    parsed = _plan(closing={**_SOBER, 'keep_control': 'Send the deck today.',
+                            'next_step': 'Run the security review.'})
+    assert scoring.closing_findings(parsed)['agreement'] is False
+    assert scoring.checks(_score(parsed))['closing'] is False
+
+
+@pytest.mark.parametrize('text', [
+    "Obtenir l'accord de Marc et caler la revue avant de raccrocher.",
+    'Confirm the review with Marc before the end.',
+    'Get his commitment to the pilot.',
+])
+def test_an_agreement_is_recognised(text):
+    assert scoring.closing_findings(_plan(closing={**_SOBER, 'keep_control': text}))['agreement'], text
+
+
+def test_readability_measures_the_lines_over_the_maximum():
+    from app_modules.ai_pipelines.constants import PREP_CALL_LINE_MAX_WORDS
+    long_line = ' '.join(['word'] * (PREP_CALL_LINE_MAX_WORDS + 1))
+    parsed = _plan(context=' '.join(['long'] * 60),                      # the context is not an item
+                   client_expectations=[long_line, 'Show the pilot plan.'])
+    found = scoring.readability(parsed)
+    assert found['over'] == [('client_expectations[0]', PREP_CALL_LINE_MAX_WORDS + 1)]
+    assert found['over_share'] == round(1 / found['items'], 3)
+    assert found['mean_words'] > 0
+    assert scoring.readability(_PLAN)['over'] == []
