@@ -21,7 +21,8 @@ Now:
     the decision_cycles validator, the recipient resolved by the roster — an
     unknown one is a standard 400 (unknown / foreign: the same answer); an
     override enters the hash v2;
-  * the plan's guardrails: no rhetoric label, no last name, refs resolved,
+  * the plan's guardrails: no last name (no longer: no rhetoric label, G13g),
+    refs resolved,
     never guessed.
 
 Real path: POST /module-ai-pipelines/prep-call/run/ (real view and
@@ -298,19 +299,26 @@ def test_an_override_enters_the_hash(authed_api_a, scene, patch_active_provider)
 # THE GUARDRAILS — the plan's validation
 # =============================================================================
 
-@pytest.mark.parametrize('body, cause', [
-    ('Hello Claire, a word on pathos.', 'rhetoric label'),
-    ('Hello Claire Morel, shall we meet?', 'last name'),
-])
-def test_a_label_or_a_last_name_is_refused(authed_api_a, scene, patch_active_provider, body, cause):
-    answer = {'messages': [_message('Claire', 'fr', body=body), _message('Omar', 'es'),
-                           _message('Nina', 'en')]}
+def test_a_last_name_is_refused(authed_api_a, scene, patch_active_provider):
+    """Renamed from test_a_label_or_a_last_name_is_refused (G13g: the
+    rhetoric label is no longer refused — the last name still is, TD-317)."""
+    answer = {'messages': [_message('Claire', 'fr', body='Hello Claire Morel, shall we meet?'),
+                           _message('Omar', 'es'), _message('Nina', 'en')]}
 
     _post(authed_api_a, scene['email'], patch_active_provider, answer, status=502)
 
     run = AIPipelineRun.objects.get(source_activity=scene['email'])
-    assert run.status == AIPipelineStatus.PARSE_ERROR and cause in run.error_message
+    assert run.status == AIPipelineStatus.PARSE_ERROR and 'last name' in run.error_message
     assert not PrepCallSnapshot.objects.filter(activity=scene['email']).exists()
+
+
+def test_a_rhetoric_label_in_a_message_is_no_longer_refused(authed_api_a, scene, patch_active_provider):
+    answer = {'messages': [_message('Claire', 'fr', body='Hello Claire, a word on pathos.'),
+                           _message('Omar', 'es'), _message('Nina', 'en')]}
+
+    _post(authed_api_a, scene['email'], patch_active_provider, answer)
+
+    assert PrepCallSnapshot.objects.filter(activity=scene['email']).exists()
 
 
 def test_a_message_in_another_language_than_its_recipients_is_dropped(

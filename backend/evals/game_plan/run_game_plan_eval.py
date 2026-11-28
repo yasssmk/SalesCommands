@@ -408,6 +408,9 @@ def _dry_answer(case, model_key):
     expected = _expected(case)
     if expected['output_kind'] == 'MESSAGE':
         answer = _dry_messages(expected)
+        if case == 'email_fr_profile' and model_key == 'openai_prep_call_challenger':
+            # G13g — theory jargon visible in the output (a measure).
+            answer['messages'][0]['body'] = 'Bonjour Claire, un mot de pathos sur votre projet.'
         if case == 'linkedin_default' and model_key == 'openai_prep_call_challenger':
             # G13d — an invented slot and a claimed action (no time is ever in a pack).
             answer['messages'][0]['body'] = ("Hello Ivan, I've sent you an invitation "
@@ -556,9 +559,10 @@ def write_report(out_dir, records, prices=None, suffix=''):
         '',
         '| Modèle | ' + ' | '.join(label for _k, label in scoring.CHECK_LABELS)
         + f' | lisibilité : part > {PREP_CALL_LINE_MAX_WORDS} mots / mots moy. (plans)'
+        + ' | jargon théorique visible (appels)'
         + ' | PARSE_ERROR (rhétorique / nom / faux rejet / structure) | durée moy. (s) '
           '| durée max (s) | > 12 s | tokens moy. (in/out) | coût estimé ($) | erreurs |',
-        '|' + '---|' * (len(scoring.CHECK_LABELS) + 9),
+        '|' + '---|' * (len(scoring.CHECK_LABELS) + 10),
     ]
     for model_key in cells:
         recs = [r for r in records if r['provider_key'] == model_key]
@@ -577,6 +581,8 @@ def write_report(out_dir, records, prices=None, suffix=''):
             f'| {model_of[model_key]} (`{model_key}`) | '
             + ' | '.join(rate(recs, key) for key, _label in scoring.CHECK_LABELS)
             + f' | {legibility}'
+            + f' | {sum(1 for r in recs if r["metrics"].get("theory_jargon"))}/'
+              f'{sum(1 for r in recs if r["metrics"].get("answered"))}'
             + ' | ' + ' / '.join(str(causes.count(c)) for c in scoring.PARSE_CAUSES)
             + f' ({sum(1 for c in causes if c)}/{len(recs)})'
             f' | {round(sum(durations) / len(durations) / 1000, 1) if durations else "—"}'
@@ -633,7 +639,7 @@ def write_report(out_dir, records, prices=None, suffix=''):
     return path
 
 
-_KIND_LABELS = {'number': 'chiffre', 'name': 'nom', 'slot': 'créneau'}
+_KIND_LABELS = {'number': 'chiffre', 'name': 'nom', 'slot': 'créneau', 'jargon': 'jargon'}
 
 
 def _all_calls_findings(recs):
@@ -645,7 +651,7 @@ def _all_calls_findings(recs):
         metrics = record['metrics']
         listed = {k: metrics.get(k) for k in (
             'schema_errors', 'last_names_in_output', 'invented_numbers', 'invented_names',
-            'rhetoric_labels', 'participants_without_angle', 'opening_missing',
+            'theory_jargon', 'participants_without_angle', 'opening_missing',
             'wrong_languages') if metrics.get(k)}
         if metrics.get('parse_error_cause') or metrics.get('error_type'):
             listed['erreur'] = metrics.get('parse_error_cause') or metrics.get('error_type')

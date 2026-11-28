@@ -6,7 +6,8 @@ pack v2 (G7 / G8).
 
 Single stage: one LLM call with the strict schema PREP_CALL_OUTLINE_SCHEMA,
 one server-side validation (services/prep_call/plan_validator.py — refs
-resolved against the activity's roster, no rhetoric label, no last name),
+resolved against the activity's roster, no last name — G13g: a rhetoric
+label is no longer refused),
 the snapshot persisted in schema_version 2 with its deal-health trace, one
 sub-call audit entry.
 

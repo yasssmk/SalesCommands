@@ -7,9 +7,11 @@ and apply_profiles):
   * the structure of PREP_CALL_OUTLINE_SCHEMA, the bounds (plans A / B / C,
     3 at most, in order; PREP_CALL_ARGUMENTS_MAX arguments per participant);
   * REFUSED (PromptParseError — nothing written, the run is a PARSE_ERROR):
-    a classical rhetoric label (PREP_CALL_RHETORIC_LABELS, whole word, any
-    case) or a last name of the roster (llm_people.roster_last_names)
-    anywhere in the text;
+    a last name of the roster (llm_people.roster_last_names) anywhere in the
+    text — data protection (TD-317). A classical rhetoric label is NO LONGER
+    refused (G13g, PO decision of 28/11: ethos / pathos / logos are the
+    prompt's INTERNAL reasoning frame; their absence from the output is
+    measured by the evaluation, not enforced here);
   * every `ref` (participants, argumentation) is resolved server side
     against the activity's roster (G4, ActivityRoster.participant_for_label):
     an unknown ref — not a participant's exact label — is DROPPED, never
@@ -18,7 +20,7 @@ and apply_profiles):
   * campaign_diagnostic is null unless the pack carries a campaign block
     (a campaign activity outside a cycle, G8).
 
-validate_messages (G11) applies the SAME refusals to the AI message, and
+validate_messages (G11) applies the SAME refusal to the AI message, and
 resolves each message's ref against the RECIPIENTS of the pack (exact
 label): unknown / repeated -> dropped, a language other than the
 recipient's -> dropped, a recipient left without message -> traced. The
@@ -26,22 +28,16 @@ subject is required for an email, null for a LinkedIn message.
 """
 
 import copy
-import re
 
 from app_modules.ai_pipelines.constants import (
     PREP_CALL_ARGUMENTS_MAX,
     PREP_CALL_PLAN_LABELS,
-    PREP_CALL_RHETORIC_LABELS,
 )
 from app_modules.ai_pipelines.prompts.base import PromptParseError
 from app_modules.ai_pipelines.services.participant_refs import names_appearing_in_text
 
 
 __all__ = ['validate_messages', 'validate_plan']
-
-_RHETORIC_RE = re.compile(
-    r'\b(' + '|'.join(re.escape(w) for w in PREP_CALL_RHETORIC_LABELS) + r')\b', re.IGNORECASE,
-)
 
 _OPENING_KEYS = ('objective', 'time', 'client_agenda', 'our_agenda', 'expected_outcome')
 _CLOSING_KEYS = ('next_step', 'with_whom', 'when', 'keep_control')
@@ -67,10 +63,10 @@ def validate_plan(parsed, *, people, last_names, has_campaign):
         {'unknown_refs': [...], 'ambiguous_refs': [...]}.
 
     Raises:
-        PromptParseError — structure, a rhetoric label, a last name.
+        PromptParseError — structure, a last name.
     """
     _check_structure(parsed)
-    _refuse_labels_and_last_names(parsed, last_names)
+    _refuse_last_names(parsed, last_names)
 
     plan = copy.deepcopy(parsed)
     counts = {'unknown_refs': [], 'ambiguous_refs': []}
@@ -98,7 +94,7 @@ def validate_messages(parsed, *, recipients, last_names, is_email):
         'ambiguous_refs', 'wrong_language_refs', 'missing_refs'}.
 
     Raises:
-        PromptParseError — structure, a rhetoric label, a last name.
+        PromptParseError — structure, a last name.
     """
     if not isinstance(parsed, dict) or not isinstance(parsed.get('messages'), list):
         raise PromptParseError('Missing or invalid "messages" (expected list).')
@@ -111,7 +107,7 @@ def validate_messages(parsed, *, recipients, last_names, is_email):
             raise PromptParseError('Empty "messages.body".')
         if is_email and (not isinstance(message.get('subject'), str) or not message['subject'].strip()):
             raise PromptParseError('Missing "messages.subject" for an email.')
-    _refuse_labels_and_last_names(parsed, last_names)
+    _refuse_last_names(parsed, last_names)
 
     expected = {r['ref']: r for r in recipients}
     counts = {'unknown_refs': [], 'ambiguous_refs': [], 'wrong_language_refs': [], 'missing_refs': []}
@@ -142,11 +138,10 @@ def validate_messages(parsed, *, recipients, last_names, is_email):
     return {'messages': [kept[r['ref']] for r in recipients if r['ref'] in kept]}, counts
 
 
-def _refuse_labels_and_last_names(parsed, last_names):
-    """THE refusals shared by the plan and the message (G10 / G11)."""
+def _refuse_last_names(parsed, last_names):
+    """THE refusal shared by the plan and the message (G10 / G11): a last
+    name of the roster (data protection, TD-317)."""
     texts = list(_strings(parsed))
-    if any(_RHETORIC_RE.search(text) for text in texts):
-        raise PromptParseError('The Game Plan names a classical rhetoric label.')
     written = names_appearing_in_text(last_names, '\n'.join(texts))
     if written:
         # The names themselves are not logged (the run's error_message).

@@ -155,7 +155,9 @@ def test_the_plan_letters_and_refs_are_not_invented_names():
 
 def test_a_last_name_and_a_rhetoric_label_are_caught():
     assert scoring.checks(_score(_plan(context='Nadia Okafor decides.')))['first_names'] is False
-    assert scoring.checks(_score(_plan(context='Use pathos here.')))['rhetoric'] is False
+    # G13g: theory jargon is a MEASURE, not a check.
+    assert 'rhetoric' not in scoring.checks(_score(_PLAN))
+    assert [f['value'] for f in _score(_plan(context='Use pathos here.'))['theory_jargon']] == ['pathos']
 
 
 def test_the_nullable_campaign_diagnostic_is_schema_valid():
@@ -436,3 +438,30 @@ def test_readability_measures_the_lines_over_the_maximum():
     assert found['over_share'] == round(1 / found['items'], 3)
     assert found['mean_words'] > 0
     assert scoring.readability(_PLAN)['over'] == []
+
+
+
+# =============================================================================
+# G13g — no theory jargon visible (a measure)
+# =============================================================================
+
+@pytest.mark.parametrize('text, found', [
+    ('Lead with ethos: their own reference first.', ['ethos']),
+    ('Un peu de Pathos ici.', ['Pathos']),
+    ('Use the BAC on Marc.', ['BAC']),
+    ('Check the BANT and MEDDPICC.', ['BANT', 'MEDDPICC']),
+    ('A rhetorical pivot to close.', ['rhetorical']),
+    ('Pivot rhétorique avant le closing.', ['rhétorique']),
+])
+def test_theory_jargon_is_measured(text, found):
+    assert [f['value'] for f in scoring.theory_jargon({'context': text})] == found
+
+
+@pytest.mark.parametrize('text', [
+    'Show the proof from Norvik Freight.',
+    'Bring back the frustration they named.',
+    'Remind them of the late trucks.',
+    'Le bac de collecte est plein.',             # a common word, in lower case
+])
+def test_plain_sales_language_is_not_jargon(text):
+    assert scoring.theory_jargon({'context': text}) == []

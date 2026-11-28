@@ -24,7 +24,7 @@ New checks (README.md « Contrôles automatiques »):
 
 import re
 
-from app_modules.ai_pipelines.constants import PREP_CALL_LINE_MAX_WORDS
+from app_modules.ai_pipelines.constants import PREP_CALL_LINE_MAX_WORDS, PREP_CALL_RHETORIC_LABELS
 from app_modules.ai_pipelines.prompts.prep_call.message_v2 import PREP_CALL_MESSAGE_SCHEMA
 from app_modules.ai_pipelines.prompts.prep_call import PREP_CALL_OUTLINE_SCHEMA  # the one sent
 
@@ -34,7 +34,6 @@ from evals.deal_health.scoring import (
     invented_names as _invented_names,
     invented_numbers as _invented_numbers,
     last_names_found,
-    rhetoric_labels,
     schema_errors,
     texts,
 )
@@ -403,6 +402,36 @@ def readability(parsed, max_words=PREP_CALL_LINE_MAX_WORDS):
             'mean_words': round(sum(w for _p, w in items) / len(items), 1)}
 
 
+# =============================================================================
+# NO THEORY JARGON VISIBLE (G13g — a measure, like the readability)
+# =============================================================================
+# PO decision of 28/11: ethos / pathos / logos, BAC and the rhetorical pivots
+# are the prompt's INTERNAL reasoning frame; the rep sees plain sales
+# language, said as is in the meeting. The server no longer refuses them: the
+# evaluation measures whether the output shows them.
+
+THEORY_WORDS = (*PREP_CALL_RHETORIC_LABELS, 'kairos', 'epideictic', 'épidictique',
+                'deliberative', 'délibératif', 'délibérative', 'syllogism', 'syllogisme',
+                'rhetoric', 'rhetorical', 'rhétorique')
+THEORY_ACRONYMS = ('BAC', 'BANT', 'MEDDPICC')        # as written, in capitals
+_THEORY_RE = re.compile(
+    r'(?<![\w])(?:' + '|'.join(re.escape(w) for w in THEORY_WORDS) + r')(?![\w])', re.IGNORECASE,
+)
+_ACRONYM_RE = re.compile(r'(?<![\w])(?:' + '|'.join(THEORY_ACRONYMS) + r')(?![\w])')
+
+
+def theory_jargon(parsed):
+    """[{'kind': 'jargon', 'value', 'path', 'excerpt'}] — a theory name or a
+    method acronym written in the prose."""
+    found = []
+    for path, text in texts(prose(parsed)):
+        for pattern in (_THEORY_RE, _ACRONYM_RE):
+            for match in pattern.finditer(text):
+                found.append({'kind': 'jargon', 'value': match.group(0), 'path': path,
+                              'excerpt': _excerpt(text, match.start(), match.end())})
+    return found
+
+
 def schema_for(output_kind):
     return PREP_CALL_MESSAGE_SCHEMA if output_kind == 'MESSAGE' else PREP_CALL_OUTLINE_SCHEMA
 
@@ -488,7 +517,8 @@ PARSE_CAUSES = ('rhetoric', 'last_name', 'last_name_false_reject', 'structure')
 def parse_error_cause(error, raw_answer, last_names):
     """
     Why the server refused the answer (services/prep_call/plan_validator.py
-    messages): 'rhetoric' (a classical rhetoric label), 'last_name' (a
+    messages): 'rhetoric' (a classical rhetoric label — refused until G13g
+    only: kept to read the older runs), 'last_name' (a
     roster last name), 'structure' (anything else: schema, bounds, JSON).
     A last-name refusal is a FALSE rejection ('last_name_false_reject') when
     every occurrence of the planted last names in the raw answer is written
@@ -545,11 +575,12 @@ def score_call(*, parsed, prompt, user_prompt, expected, meta=None, error_type=N
             '\n'.join(t for _p, t in texts(parsed)), expected['planted_last_names']),
         'invented_numbers': invented_numbers(prose(parsed), user_prompt),
         'invented_names': invented_names(parsed, user_prompt),
-        'rhetoric_labels': rhetoric_labels(parsed),
+        'theory_jargon': theory_jargon(parsed),                             # G13g: a measure
     })
     metrics['invented_slots'] = invented_slots(parsed, user_prompt)          # G13d
     metrics['findings_context'] = locate_findings(
-        parsed, metrics['invented_numbers'], metrics['invented_names']) + metrics['invented_slots']
+        parsed, metrics['invented_numbers'], metrics['invented_names']) + metrics['invented_slots'] \
+        + metrics['theory_jargon']
     if kind == 'PLAN':
         metrics.update({
             'participants_without_angle': participants_covered(parsed, expected['participants']),
@@ -574,7 +605,6 @@ CHECK_LABELS = (
     ('first_names', 'prénoms seulement'),
     ('numbers', 'aucun chiffre inventé'),
     ('names', 'aucun nom inventé'),
-    ('rhetoric', 'aucun ethos/pathos/logos'),
     ('slots', 'aucun créneau inventé'),
     ('participants', 'chaque participant a un angle'),
     ('plans', 'plans A/B/C ≤ 3'),
@@ -597,7 +627,6 @@ def checks(metrics):
         'first_names': not metrics['last_names_in_output'] and not metrics['last_names_in_prompt'],
         'numbers': not metrics['invented_numbers'],
         'names': not metrics['invented_names'],
-        'rhetoric': not metrics['rhetoric_labels'],
         # Older records (before G13d) have no slot metric: recomputed by --rescore.
         'slots': not metrics.get('invented_slots'),
         'participants': not metrics['participants_without_angle'] if plan else None,

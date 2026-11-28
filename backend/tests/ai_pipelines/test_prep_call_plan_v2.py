@@ -16,7 +16,8 @@ Now:
     sections, product_pitch, participants [{ref, angle}],
     campaign_diagnostic;
   * validated server side (services/prep_call/plan_validator.py): a
-    classical rhetoric label or a last name of the roster is REFUSED
+    last name of the roster is REFUSED (a classical rhetoric label too until
+    G13g — no longer)
     (PARSE_ERROR, nothing written); a ref that is not one participant's
     exact label (G4 roster) is DROPPED, never guessed — traced;
     campaign_diagnostic is null except for a campaign activity outside a
@@ -133,18 +134,21 @@ def test_the_plan_schema_is_sent_as_the_response_schema(authed_api_a, scene, pat
 
 
 # =============================================================================
-# REPRO 2 — a rhetoric label or a last name is refused
+# REPRO 2 — a last name is refused; a rhetoric label no longer is (G13g)
 # =============================================================================
 
 @pytest.mark.parametrize('label', ['ethos', 'Pathos', 'LOGOS'])
-def test_a_rhetoric_label_is_refused(authed_api_a, scene, patch_active_provider, label):
+def test_a_rhetoric_label_is_no_longer_refused(authed_api_a, scene, patch_active_provider, label):
+    """G13g (PO decision of 28/11): ethos / pathos / logos are the prompt's
+    INTERNAL frame — the evaluation measures they do not show in the output;
+    the server no longer refuses them (renamed from
+    test_a_rhetoric_label_is_refused)."""
     answer = _answer(context=f'Lead with {label}: their own story first.')
 
-    run = _post(authed_api_a, scene['meeting'], patch_active_provider, answer, status=502)
+    run = _post(authed_api_a, scene['meeting'], patch_active_provider, answer)
 
-    assert run.status == AIPipelineStatus.PARSE_ERROR
-    assert 'rhetoric label' in run.error_message
-    assert _snapshot_of(scene['meeting']) is None
+    assert run.status == AIPipelineStatus.SUCCESS, run.error_message
+    assert _snapshot_of(scene['meeting']) is not None
 
 
 @pytest.mark.parametrize('name', ['Dupont', 'durand', 'Martin'])

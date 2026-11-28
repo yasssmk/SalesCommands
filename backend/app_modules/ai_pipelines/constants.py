@@ -584,8 +584,9 @@ PREP_CALL_MAX_CHARS_PER_SOURCE = DEAL_HEALTH_MAX_CHARS_PER_SOURCE
 
 # The Game Plan v2's outline (G10, prompts/prep_call/outline_v2.py): the
 # objective's plans A / B / C (3 at most), the top arguments per participant
-# (the deal health's own bound), the classical rhetoric labels a Game Plan
-# never writes (the deal health's list — whole words, any case).
+# (the deal health's own bound), the classical rhetoric labels — the prompt's
+# INTERNAL frame since G13g, never refused at runtime: the evaluation measures
+# that the output does not show them (the deal health's list).
 PREP_CALL_PLAN_LABELS = ('A', 'B', 'C')
 PREP_CALL_ARGUMENTS_MAX = DEAL_HEALTH_TOP_ARGUMENTS_MAX
 PREP_CALL_RHETORIC_LABELS = DEAL_HEALTH_RHETORIC_LABELS
